@@ -7,6 +7,8 @@ import { adminApiFetch } from "@/lib/admin/api-client";
 import type {
   AdminProduct,
   AdminProductCategory,
+  AdminProductVariant,
+  AdminProductVideo,
   CreateProductPayload,
   ImageLibraryItem,
 } from "@/lib/admin/types";
@@ -212,6 +214,26 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   // ── Specs ─────────────────────────────────────────────────────────────
   const [specs, setSpecs] = useState<SpecRow[]>(initialDraft?.specs ?? []);
 
+  // ── Rich content ──────────────────────────────────────────────────────
+  const [shortDescription, setShortDescription] = useState("");
+  const [deliveryInfo, setDeliveryInfo] = useState("");
+  const [warrantyInfo, setWarrantyInfo] = useState("");
+  const [returnPolicy, setReturnPolicy] = useState("");
+  const [usageGuide, setUsageGuide] = useState("");
+  const [packageItems, setPackageItems] = useState<string[]>([]);
+
+  // ── Edit-mode live variant/video state ────────────────────────────────
+  const [editVariants, setEditVariants] = useState<AdminProductVariant[]>([]);
+  const [editVideos, setEditVideos] = useState<AdminProductVideo[]>([]);
+  const [variantSaving, setVariantSaving] = useState(false);
+  const [newVariantAttrs, setNewVariantAttrs] = useState<Array<{ key: string; value: string }>>([{ key: "", value: "" }]);
+  const [newVariantPrice, setNewVariantPrice] = useState("");
+  const [newVariantStock, setNewVariantStock] = useState("0");
+  const [newVariantSku, setNewVariantSku] = useState("");
+  const [newVideoUrl, setNewVideoUrl] = useState("");
+  const [newVideoTitle, setNewVideoTitle] = useState("");
+  const [videoSaving, setVideoSaving] = useState(false);
+
   // ── UI state ──────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -251,8 +273,6 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     { label: "Imagens", done: images.length > 0 },
   ];
   const completedReadiness = readinessItems.filter((item) => item.done).length;
-
-  const variantKeys = buildVariantKeys(selectedSizes, selectedColors);
 
   const buildDraftSnapshot = useCallback(
     (): ProductDraftSnapshot => ({
@@ -395,11 +415,35 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           setVariantStock(stockMap);
         }
 
+        setShortDescription(product.shortDescription ?? "");
+        setDeliveryInfo(product.deliveryInfo ?? "");
+        setWarrantyInfo(product.warrantyInfo ?? "");
+        setReturnPolicy(product.returnPolicy ?? "");
+        setUsageGuide(product.usageGuide ?? "");
+        setPackageItems(product.packageItems ?? []);
+
+        if (product.specifications) {
+          const rows = Object.entries(product.specifications).map(([key, value]) => ({
+            id: uid(),
+            key,
+            value,
+          }));
+          setSpecs(rows);
+        }
+
         setSkuManual(true);
         setSku(generateSku(product.name));
-        setSlugManual(true);
-        setSlug(slugify(product.name));
+        setSlugManual(Boolean(product.slug));
+        setSlug(product.slug ?? slugify(product.name));
         setSeoTitle(product.name);
+
+        // Load live variants and videos
+        adminApiFetch<AdminProductVariant[]>(`/api/admin/products/${productId}/variants`)
+          .then(setEditVariants)
+          .catch(() => {});
+        adminApiFetch<AdminProductVideo[]>(`/api/admin/products/${productId}/videos`)
+          .then(setEditVideos)
+          .catch(() => {});
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "Nao foi possivel carregar o produto.";
@@ -599,40 +643,6 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
-  // ── Variants ─────────────────────────────────────────────────────────
-  function toggleSize(size: string) {
-    setSelectedSizes((prev) =>
-      prev.includes(size) ? prev.filter((s) => s !== size) : [...prev, size]
-    );
-  }
-
-  function togglePresetColor(color: { name: string; hex: string }) {
-    setSelectedColors((prev) => {
-      const exists = prev.find((c) => c.name === color.name);
-      return exists
-        ? prev.filter((c) => c.name !== color.name)
-        : [...prev, { id: uid(), ...color }];
-    });
-  }
-
-  function addCustomColor() {
-    if (!newColorName.trim()) return;
-    setSelectedColors((prev) => [
-      ...prev,
-      { id: uid(), name: newColorName.trim(), hex: newColorHex },
-    ]);
-    setNewColorName("");
-    setNewColorHex("#000000");
-  }
-
-  function removeColor(id: string) {
-    setSelectedColors((prev) => prev.filter((c) => c.id !== id));
-  }
-
-  function setVariantStockValue(key: string, value: string) {
-    setVariantStock((prev) => ({ ...prev, [key]: value }));
-  }
-
   // ── Specs ─────────────────────────────────────────────────────────────
   function addSpec() {
     setSpecs((prev) => [...prev, { id: uid(), key: "", value: "" }]);
@@ -644,6 +654,114 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   function removeSpec(id: string) {
     setSpecs((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  // ── Package items ─────────────────────────────────────────────────────
+  function addPackageItem() {
+    setPackageItems((prev) => [...prev, ""]);
+  }
+  function updatePackageItem(index: number, value: string) {
+    setPackageItems((prev) => prev.map((item, i) => (i === index ? value : item)));
+  }
+  function removePackageItem(index: number) {
+    setPackageItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // ── Edit-mode variant helpers ─────────────────────────────────────────
+  async function handleAddVariant() {
+    if (!productId || !newVariantPrice) return;
+    setVariantSaving(true);
+    try {
+      const attributes = newVariantAttrs
+        .filter((a) => a.key.trim())
+        .reduce<Record<string, string>>((acc, a) => { acc[a.key.trim()] = a.value; return acc; }, {});
+      const created = await adminApiFetch<AdminProductVariant>(
+        `/api/admin/products/${productId}/variants`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            sku: newVariantSku || undefined,
+            finalPrice: parseFloat(newVariantPrice),
+            stock: parseInt(newVariantStock) || 0,
+            active: true,
+            attributes,
+          }),
+        }
+      );
+      setEditVariants((prev) => [...prev, created]);
+      setNewVariantAttrs([{ key: "", value: "" }]);
+      setNewVariantPrice("");
+      setNewVariantStock("0");
+      setNewVariantSku("");
+    } catch {
+      // silent — user sees no change
+    } finally {
+      setVariantSaving(false);
+    }
+  }
+
+  async function handleDeleteVariant(variantId: string) {
+    if (!productId) return;
+    try {
+      await adminApiFetch(`/api/admin/products/${productId}/variants/${variantId}`, {
+        method: "DELETE",
+      });
+      setEditVariants((prev) => prev.filter((v) => v.id !== variantId));
+    } catch {
+      // silent
+    }
+  }
+
+  async function handleToggleVariantActive(variant: AdminProductVariant) {
+    if (!productId) return;
+    try {
+      const updated = await adminApiFetch<AdminProductVariant>(
+        `/api/admin/products/${productId}/variants/${variant.id}/active?active=${!variant.active}`,
+        { method: "PATCH" }
+      );
+      setEditVariants((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+    } catch {
+      // silent
+    }
+  }
+
+  // ── Edit-mode video helpers ───────────────────────────────────────────
+  async function handleAddVideo() {
+    if (!productId || !newVideoUrl.trim()) return;
+    setVideoSaving(true);
+    try {
+      const created = await adminApiFetch<AdminProductVideo>(
+        `/api/admin/products/${productId}/videos`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            url: newVideoUrl.trim(),
+            title: newVideoTitle.trim() || undefined,
+            type: "EXTERNAL_URL",
+            active: true,
+          }),
+        }
+      );
+      setEditVideos((prev) => [...prev, created]);
+      setNewVideoUrl("");
+      setNewVideoTitle("");
+    } catch {
+      // silent
+    } finally {
+      setVideoSaving(false);
+    }
+  }
+
+  async function handleDeleteVideo(videoId: number) {
+    if (!productId) return;
+    try {
+      await adminApiFetch(`/api/admin/products/${productId}/videos/${videoId}`, {
+        method: "DELETE",
+      });
+      setEditVideos((prev) => prev.filter((v) => v.id !== videoId));
+    } catch {
+      // silent
+    }
   }
 
   // ── Validation ────────────────────────────────────────────────────────
@@ -660,9 +778,15 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   // ── Submit helpers ────────────────────────────────────────────────────
   function buildPayload(asActive: boolean): CreateProductPayload {
     const profitMargin = fp - pp;
+    const specsMap = specs.reduce<Record<string, string>>((acc, s) => {
+      if (s.key.trim()) acc[s.key.trim()] = s.value;
+      return acc;
+    }, {});
     return {
       name: name.trim(),
       description: description.trim(),
+      shortDescription: shortDescription.trim() || undefined,
+      slug: slug.trim() || undefined,
       originalPrice: op || fp,
       purchasePrice: pp || fp,
       profitMargin: profitMargin > 0 ? profitMargin : 0,
@@ -673,6 +797,12 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       volume: volume ? parseFloat(volume) : undefined,
       stock: parseInt(stock) || 0,
       active: asActive,
+      deliveryInfo: deliveryInfo.trim() || undefined,
+      warrantyInfo: warrantyInfo.trim() || undefined,
+      returnPolicy: returnPolicy.trim() || undefined,
+      usageGuide: usageGuide.trim() || undefined,
+      specifications: Object.keys(specsMap).length > 0 ? specsMap : undefined,
+      packageItems: packageItems.filter(Boolean).length > 0 ? packageItems.filter(Boolean) : undefined,
     };
   }
 
@@ -905,6 +1035,23 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
               {errors.name && (
                 <p className="mt-1 text-xs text-[var(--color-danger)]">{errors.name}</p>
               )}
+            </div>
+
+            {/* Short description */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                Resumo curto{" "}
+                <span className="ml-1 font-normal normal-case text-[var(--color-text-secondary)]">(opcional, max. 500 car.)</span>
+              </label>
+              <textarea
+                className="admin-input resize-none text-sm"
+                rows={2}
+                placeholder="Frase breve que aparece no topo da ficha do produto…"
+                value={shortDescription}
+                maxLength={500}
+                onChange={(e) => setShortDescription(e.target.value)}
+              />
+              <FieldHint text="Aparece na listagem e no topo da ficha do produto, antes da descricao longa." />
             </div>
 
             {/* Description */}
@@ -1200,151 +1347,127 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
           {/* Variants card */}
           <div className="admin-card p-6 flex flex-col gap-5">
-            <div className="flex items-center justify-between">
-              <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
-                Variantes
-              </h2>
-              <Toggle value={variantsEnabled} onChange={setVariantsEnabled} label="Activar variantes" />
-            </div>
+            <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
+              Variantes
+            </h2>
 
-            {variantsEnabled && (
-              <div className="flex flex-col gap-6">
-                {/* Sizes */}
-                <div>
-                  <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-                    Tamanhos
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {ALL_SIZES.map((size) => (
-                      <button
-                        key={size}
-                        onClick={() => toggleSize(size)}
-                        className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-all border ${
-                          selectedSizes.includes(size)
-                            ? "border-[var(--color-danger)] bg-[var(--color-danger)] text-white"
-                            : "border-[var(--color-border-strong)] text-[var(--color-text-secondary)] hover:border-[var(--color-danger)]"
-                        }`}
-                      >
-                        {size}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Colors */}
-                <div>
-                  <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-                    Cores
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 mb-3">
-                    {PRESET_COLORS.map((color) => {
-                      const active = selectedColors.some((c) => c.name === color.name);
-                      return (
-                        <button
-                          key={color.name}
-                          onClick={() => togglePresetColor(color)}
-                          title={color.name}
-                          className={`relative h-8 w-8 rounded-full border-2 transition-all ${
-                            active
-                              ? "border-[var(--color-danger)] scale-110"
-                              : "border-[var(--color-border-strong)] hover:scale-110"
-                          }`}
-                          style={{ backgroundColor: color.hex }}
-                        >
-                          {active && (
-                            <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow">
-                              ✓
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Selected custom colors */}
-                  {selectedColors.filter((c) => !PRESET_COLORS.some((p) => p.name === c.name)).map((color) => (
-                    <div key={color.id} className="mb-2 flex items-center gap-2">
-                      <span
-                        className="h-5 w-5 rounded-full border border-[var(--color-border)]"
-                        style={{ backgroundColor: color.hex }}
-                      />
-                      <span className="text-sm text-[var(--color-text-primary)]">{color.name}</span>
-                      <button
-                        onClick={() => removeColor(color.id)}
-                        className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-danger)]"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-
-                  {/* Add custom color */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="color"
-                      value={newColorHex}
-                      onChange={(e) => setNewColorHex(e.target.value)}
-                      className="h-8 w-10 cursor-pointer rounded-lg border border-[var(--color-border)] bg-transparent p-0.5"
-                    />
-                    <input
-                      className="admin-input py-2 text-sm"
-                      placeholder="Nome da cor personalizada"
-                      value={newColorName}
-                      onChange={(e) => setNewColorName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && addCustomColor()}
-                    />
-                    <button
-                      onClick={addCustomColor}
-                      className="shrink-0 rounded-full border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:border-[var(--color-danger)] transition-colors"
-                    >
-                      + Adicionar
-                    </button>
-                  </div>
-                </div>
-
-                {/* Variant stock table */}
-                {variantKeys.length > 0 && (
-                  <div>
-                    <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-                      Stock por variante
-                    </p>
-                    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
-                            <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">
-                              Variante
-                            </th>
-                            <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">
-                              Stock
-                            </th>
+            {isEdit ? (
+              /* ── Edit mode: live backend-integrated variant manager ── */
+              <div className="flex flex-col gap-4">
+                {editVariants.length > 0 && (
+                  <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
+                          <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Label</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">SKU</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Preco</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Stock</th>
+                          <th className="px-4 py-2.5 text-center text-xs font-semibold text-[var(--color-text-secondary)]">Activo</th>
+                          <th className="w-8" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editVariants.map((v) => (
+                          <tr key={v.id} className="border-b border-[var(--color-border)] last:border-0">
+                            <td className="px-4 py-2.5 font-medium text-[var(--color-text-primary)]">
+                              {v.label || v.sku || `#${v.id}`}
+                            </td>
+                            <td className="px-4 py-2.5 font-mono text-xs text-[var(--color-text-secondary)]">{v.sku ?? "—"}</td>
+                            <td className="px-4 py-2.5 text-right font-[family-name:var(--font-sora)] font-semibold">
+                              {(v.effectivePrice ?? v.finalPrice ?? 0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right">{v.stock}</td>
+                            <td className="px-4 py-2.5 text-center">
+                              <button
+                                onClick={() => handleToggleVariantActive(v)}
+                                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${v.active ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}
+                              >
+                                {v.active ? "Sim" : "Nao"}
+                              </button>
+                            </td>
+                            <td className="px-2 py-2">
+                              <button
+                                onClick={() => handleDeleteVariant(v.id)}
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] transition-colors text-base leading-none"
+                                title="Remover"
+                              >
+                                ×
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {variantKeys.map((vk) => (
-                            <tr
-                              key={vk.key}
-                              className="border-b border-[var(--color-border)] last:border-0"
-                            >
-                              <td className="px-4 py-2.5 text-[var(--color-text-primary)] font-medium">
-                                {vk.label}
-                              </td>
-                              <td className="px-4 py-2 text-right">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  className="w-20 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-3 py-1.5 text-right text-sm font-[family-name:var(--font-sora)] font-semibold outline-none focus:border-[rgba(232,67,26,0.4)] focus:ring-2 focus:ring-[rgba(232,67,26,0.12)]"
-                                  value={variantStock[vk.key] ?? "0"}
-                                  onChange={(e) => setVariantStockValue(vk.key, e.target.value)}
-                                />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+
+                {/* Add variant form */}
+                <div className="rounded-2xl border border-dashed border-[var(--color-border-strong)] p-4 flex flex-col gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                    Nova variante
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {newVariantAttrs.map((attr, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          className="admin-input py-1.5 text-sm flex-1"
+                          placeholder="Atributo (ex: Cor)"
+                          value={attr.key}
+                          onChange={(e) => setNewVariantAttrs((prev) => prev.map((a, i) => i === idx ? { ...a, key: e.target.value } : a))}
+                        />
+                        <input
+                          className="admin-input py-1.5 text-sm flex-1"
+                          placeholder="Valor (ex: Verde)"
+                          value={attr.value}
+                          onChange={(e) => setNewVariantAttrs((prev) => prev.map((a, i) => i === idx ? { ...a, value: e.target.value } : a))}
+                        />
+                        {newVariantAttrs.length > 1 && (
+                          <button
+                            onClick={() => setNewVariantAttrs((prev) => prev.filter((_, i) => i !== idx))}
+                            className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-danger)]"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setNewVariantAttrs((prev) => [...prev, { key: "", value: "" }])}
+                      className="self-start text-xs text-[var(--color-danger)] hover:underline"
+                    >
+                      + Atributo
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">SKU (opcional)</label>
+                      <input className="admin-input py-1.5 text-sm font-mono" value={newVariantSku} onChange={(e) => setNewVariantSku(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Preco (MZN)</label>
+                      <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={newVariantPrice} onChange={(e) => setNewVariantPrice(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock</label>
+                      <input type="number" min="0" className="admin-input py-1.5 text-sm" value={newVariantStock} onChange={(e) => setNewVariantStock(e.target.value)} />
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleAddVariant}
+                    disabled={variantSaving || !newVariantPrice}
+                    className="self-start rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)] transition-colors disabled:opacity-50"
+                  >
+                    {variantSaving ? "A guardar…" : "+ Adicionar variante"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ── Create mode: simple picker (variants saved after product creation) ── */
+              <div className="flex flex-col gap-6">
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Guarda o produto primeiro e despois gere as variantes nesta seccao.
+                </p>
               </div>
             )}
           </div>
@@ -1408,6 +1531,138 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
               + Adicionar especificação
             </button>
           </div>
+
+          {/* Package items card */}
+          <div className="admin-card p-6 flex flex-col gap-4">
+            <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
+              Conteudo da caixa
+            </h2>
+            <FieldHint text="Lista o que vem incluido na embalagem (ex: 1x Tenis, 1x Caixa, 2x Palmilhas)." />
+            {packageItems.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  className="admin-input py-2 text-sm flex-1"
+                  placeholder={`Item ${idx + 1}`}
+                  value={item}
+                  onChange={(e) => updatePackageItem(idx, e.target.value)}
+                />
+                <button
+                  onClick={() => removePackageItem(idx)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] transition-colors text-base leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={addPackageItem}
+              className="self-start rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)] transition-colors"
+            >
+              + Adicionar item
+            </button>
+          </div>
+
+          {/* Rich content card */}
+          <div className="admin-card p-6 flex flex-col gap-5">
+            <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
+              Informacao adicional
+            </h2>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                Entrega e prazo
+              </label>
+              <textarea
+                className="admin-input resize-none text-sm"
+                rows={3}
+                placeholder="Ex: Entrega em 3-5 dias uteis. Gratis para encomendas acima de 5000 MZN."
+                value={deliveryInfo}
+                onChange={(e) => setDeliveryInfo(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                Garantia
+              </label>
+              <textarea
+                className="admin-input resize-none text-sm"
+                rows={2}
+                placeholder="Ex: Garantia de 12 meses contra defeitos de fabrico."
+                value={warrantyInfo}
+                onChange={(e) => setWarrantyInfo(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                Politica de devolucao
+              </label>
+              <textarea
+                className="admin-input resize-none text-sm"
+                rows={2}
+                placeholder="Ex: Devolucao aceite em 7 dias apos a entrega, produto sem uso."
+                value={returnPolicy}
+                onChange={(e) => setReturnPolicy(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                Guia de uso / cuidados
+              </label>
+              <textarea
+                className="admin-input resize-none text-sm"
+                rows={3}
+                placeholder="Ex: Lavar a 30 graus. Nao usar secador."
+                value={usageGuide}
+                onChange={(e) => setUsageGuide(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Videos card (edit mode only) */}
+          {isEdit && (
+            <div className="admin-card p-6 flex flex-col gap-4">
+              <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
+                Videos do produto
+              </h2>
+              {editVideos.map((video) => (
+                <div key={video.id} className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+                      {video.title || video.url}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-[var(--color-text-secondary)]">{video.url}</p>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteVideo(video.id)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] transition-colors text-base leading-none"
+                    title="Remover"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <div className="flex flex-col gap-2">
+                <input
+                  className="admin-input text-sm"
+                  placeholder="URL do video (YouTube, TikTok, externo…)"
+                  value={newVideoUrl}
+                  onChange={(e) => setNewVideoUrl(e.target.value)}
+                />
+                <input
+                  className="admin-input text-sm"
+                  placeholder="Titulo (opcional)"
+                  value={newVideoTitle}
+                  onChange={(e) => setNewVideoTitle(e.target.value)}
+                />
+                <button
+                  onClick={handleAddVideo}
+                  disabled={videoSaving || !newVideoUrl.trim()}
+                  className="self-start rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)] transition-colors disabled:opacity-50"
+                >
+                  {videoSaving ? "A guardar…" : "+ Adicionar video"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Right sidebar ───────────────────────────────────────────── */}
@@ -1659,32 +1914,6 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       />
     </div>
   );
-}
-
-// ── Variant key helpers ───────────────────────────────────────────────────
-
-function variantKey(size: string, color: string) {
-  return `${size}|${color}`;
-}
-
-function buildVariantKeys(
-  sizes: string[],
-  colors: ColorVariant[]
-): Array<{ key: string; label: string }> {
-  if (sizes.length === 0 && colors.length === 0) return [];
-  if (sizes.length === 0) {
-    return colors.map((c) => ({ key: variantKey("", c.name), label: c.name }));
-  }
-  if (colors.length === 0) {
-    return sizes.map((s) => ({ key: variantKey(s, ""), label: s }));
-  }
-  const result: Array<{ key: string; label: string }> = [];
-  for (const s of sizes) {
-    for (const c of colors) {
-      result.push({ key: variantKey(s, c.name), label: `${s} — ${c.name}` });
-    }
-  }
-  return result;
 }
 
 // ── Tiny sub-components ───────────────────────────────────────────────────

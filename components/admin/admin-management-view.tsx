@@ -211,6 +211,16 @@ function generateSecurePassword() {
   return Array.from(bytes, (value) => chars[value % chars.length]).join("");
 }
 
+function normalizeMozambiquePhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  let local = digits;
+  if (local.startsWith("00258")) local = local.slice(2);
+  if (local.startsWith("258")) local = local.slice(3);
+  if (local.startsWith("0")) local = local.slice(1);
+  return /^(82|83|84|85|86|87)\d{7}$/.test(local) ? `+258${local}` : null;
+}
+
 function buildCsv(admins: ManagedAdmin[]) {
   const rows = [
     ["Nome", "Email", "Telefone", "Role", "Estado", "Ultimo acesso"].join(","),
@@ -531,7 +541,8 @@ function AdminFormDrawer({
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Telefone</label>
-              <input value={form.phone} onChange={(event) => onChange("phone", event.target.value)} className="admin-input w-full" placeholder="+258..." />
+              <input value={form.phone} onChange={(event) => onChange("phone", event.target.value)} className="admin-input w-full" inputMode="tel" placeholder="+258 8x xxx xxxx" />
+              <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">Use um numero mocambicano valido: 82, 83, 84, 85, 86 ou 87.</p>
             </div>
             {mode === "create" ? (
               <div>
@@ -697,17 +708,19 @@ export function AdminManagementView() {
     const nameParts = fullName.split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] ?? "";
     const lastName = nameParts.slice(1).join(" ");
+    const normalizedPhone = normalizeMozambiquePhone(form.phone);
     if (!fullName || !form.email.trim()) return showFeedback("error", "Nome completo e email são obrigatórios.");
+    if (normalizedPhone === null) return showFeedback("error", "Telefone invalido. Use um numero mocambicano no formato +2588xxxxxxxx.");
     if (drawerMode === "create" && !form.password.trim()) return showFeedback("error", "Define uma senha temporária para o novo administrador.");
     if (drawerMode === "edit" && selectedAdmin?.email === currentUserEmail && form.role !== "SUPER_ADMIN") return showFeedback("error", "Nao podes rebaixar a tua própria role de SUPER_ADMIN.");
 
     setSaving(true);
     try {
       if (drawerMode === "create") {
-        await adminApiFetch("/api/super-admin/admins", { method: "POST", body: JSON.stringify({ firstName, lastName, email: form.email.trim(), phone: form.phone.trim(), password: form.password, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
+        await adminApiFetch("/api/super-admin/admins", { method: "POST", body: JSON.stringify({ firstName, lastName, email: form.email.trim(), phone: normalizedPhone, password: form.password, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
         showFeedback("success", "Administrador criado com sucesso.");
       } else if (selectedAdmin) {
-        await adminApiFetch(`/api/super-admin/admins/${selectedAdmin.id}`, { method: "PUT", body: JSON.stringify({ firstName, lastName, email: form.email.trim(), phone: form.phone.trim(), role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
+        await adminApiFetch(`/api/super-admin/admins/${selectedAdmin.id}`, { method: "PUT", body: JSON.stringify({ firstName, lastName, email: form.email.trim(), phone: normalizedPhone, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
         showFeedback("success", "Alterações guardadas com sucesso.");
       }
       setDrawerOpen(false);

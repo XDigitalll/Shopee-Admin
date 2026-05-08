@@ -76,6 +76,7 @@ type BackendOrderDetail = {
   urgent?: boolean | null;
   status?: string;
   externalCartUrl?: string | null;
+  requestInputType?: "LINK" | "DESCRIPTION" | null;
   productDetails?: string | null;
   requestedQuantity?: number | null;
   requestScreenshotUrl?: string | null;

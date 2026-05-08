@@ -597,6 +597,27 @@ export type AdminProductVariant = {
   size: string | null;
   stock: number;
   finalPrice: number | null;
+  promotionalPrice: number | null;
+  effectivePrice: number | null;
+  active: boolean;
+  mainImageUrl: string | null;
+  displayOrder: number;
+  attributes: Record<string, string>;
+  label: string;
+  inStock: boolean;
+};
+
+export type ProductVideoType = "UPLOAD" | "YOUTUBE" | "TIKTOK" | "INSTAGRAM" | "EXTERNAL_URL";
+
+export type AdminProductVideo = {
+  id: number;
+  url: string;
+  type: ProductVideoType;
+  title: string | null;
+  thumbnailUrl: string | null;
+  sortOrder: number;
+  active: boolean;
+  createdAt: string | null;
 };
 
 export type AdminProductCategory = {
@@ -612,6 +633,8 @@ export type AdminProduct = {
   code?: string | null;
   name: string;
   description: string;
+  shortDescription: string | null;
+  slug: string | null;
   originalPrice: number;
   purchasePrice: number;
   profitMargin: number;
@@ -625,13 +648,26 @@ export type AdminProduct = {
   gallery: ProductImageItem[];
   primaryImageUrl: string | null;
   variants: AdminProductVariant[];
+  hasVariants: boolean;
+  variantAttributeKeys: string[];
   status: ProductStatus;
   source: string;
+  // Rich content
+  specifications: Record<string, string> | null;
+  packageItems: string[] | null;
+  videoUrl: string | null;
+  deliveryInfo: string | null;
+  warrantyInfo: string | null;
+  returnPolicy: string | null;
+  usageGuide: string | null;
+  videos: AdminProductVideo[];
 };
 
 export type CreateProductPayload = {
   name: string;
   description: string;
+  shortDescription?: string;
+  slug?: string;
   originalPrice: number;
   purchasePrice: number;
   profitMargin: number;
@@ -642,6 +678,13 @@ export type CreateProductPayload = {
   volume?: number;
   stock: number;
   active: boolean;
+  videoUrl?: string;
+  deliveryInfo?: string;
+  warrantyInfo?: string;
+  returnPolicy?: string;
+  usageGuide?: string;
+  specifications?: Record<string, string>;
+  packageItems?: string[];
 };
 
 export type AdminProductsPageResponse = {
