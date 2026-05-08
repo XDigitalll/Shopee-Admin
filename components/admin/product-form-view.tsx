@@ -41,6 +41,10 @@ function generateSku(name: string): string {
     .slice(0, 24);
 }
 
+function variantKey(size: string, color: string): string {
+  return `${size.trim()}::${color.trim()}`;
+}
+
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -230,9 +234,25 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [newVariantPrice, setNewVariantPrice] = useState("");
   const [newVariantStock, setNewVariantStock] = useState("0");
   const [newVariantSku, setNewVariantSku] = useState("");
+  const [newVariantImageUrl, setNewVariantImageUrl] = useState("");
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [newVideoTitle, setNewVideoTitle] = useState("");
   const [videoSaving, setVideoSaving] = useState(false);
+
+  // ── Inline variant edit state ─────────────────────────────────────────
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{
+    attrs: Array<{ key: string; value: string }>;
+    sku: string;
+    price: string;
+    stock: string;
+    active: boolean;
+    imageFile: File | null;
+    imagePreview: string | null;
+  }>({ attrs: [], sku: "", price: "", stock: "0", active: true, imageFile: null, imagePreview: null });
+  const [editSaving, setEditSaving] = useState(false);
+  const [galleryPickerOpen, setGalleryPickerOpen] = useState(false);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
 
   // ── UI state ──────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -273,6 +293,16 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     { label: "Imagens", done: images.length > 0 },
   ];
   const completedReadiness = readinessItems.filter((item) => item.done).length;
+  const activeVariantStockTotal = editVariants
+    .filter((variant) => variant.active)
+    .reduce((sum, variant) => sum + (Number(variant.stock) || 0), 0);
+  const hasLiveVariants = isEdit && editVariants.length > 0;
+
+  function imageSourceLabel(url: string | null | undefined): string {
+    if (!url) return "Sem imagem";
+    const galleryUrls = new Set(images.flatMap((image) => [image.url, image.thumbnailUrl].filter(Boolean) as string[]));
+    return galleryUrls.has(url) ? "Galeria" : "Upload";
+  }
 
   const buildDraftSnapshot = useCallback(
     (): ProductDraftSnapshot => ({
@@ -684,6 +714,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
             finalPrice: parseFloat(newVariantPrice),
             stock: parseInt(newVariantStock) || 0,
             active: true,
+            mainImageUrl: newVariantImageUrl.trim() || undefined,
             attributes,
           }),
         }
@@ -693,6 +724,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       setNewVariantPrice("");
       setNewVariantStock("0");
       setNewVariantSku("");
+      setNewVariantImageUrl("");
     } catch {
       // silent — user sees no change
     } finally {
@@ -722,6 +754,133 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       setEditVariants((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
     } catch {
       // silent
+    }
+  }
+
+  // ── Inline variant edit helpers ───────────────────────────────────────
+  function startEdit(v: AdminProductVariant) {
+    const attrs = Object.entries(v.attributes || {}).map(([key, value]) => ({ key, value }));
+    setEditForm({
+      attrs: attrs.length > 0 ? attrs : [{ key: "", value: "" }],
+      sku: v.sku ?? "",
+      price: String(v.finalPrice ?? ""),
+      stock: String(v.stock),
+      active: v.active,
+      imageFile: null,
+      imagePreview: v.mainImageUrl ?? null,
+    });
+    setEditingVariantId(v.id);
+    setGalleryPickerOpen(false);
+  }
+
+  function cancelEdit() {
+    if (editForm.imageFile && editForm.imagePreview) {
+      URL.revokeObjectURL(editForm.imagePreview);
+    }
+    setEditingVariantId(null);
+    setGalleryPickerOpen(false);
+  }
+
+  function handleEditImageFile(file: File | null) {
+    if (!file) return;
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif", "image/bmp", "image/tiff"];
+    if (!allowed.includes(file.type)) {
+      alert("Formato inválido. Use JPEG, PNG ou WebP.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Imagem demasiado grande. Máximo 5 MB.");
+      return;
+    }
+    if (editForm.imageFile && editForm.imagePreview) {
+      URL.revokeObjectURL(editForm.imagePreview);
+    }
+    setEditForm((prev) => ({ ...prev, imageFile: file, imagePreview: URL.createObjectURL(file) }));
+  }
+
+  async function applyVariantImageUrl(variantId: string, mainImageUrl: string | null) {
+    if (!productId) return;
+    const updated = await adminApiFetch<AdminProductVariant>(
+      `/api/admin/products/${productId}/variants/${variantId}/image-url`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ mainImageUrl }),
+      }
+    );
+    setEditVariants((prev) => prev.map((variant) => (variant.id === updated.id ? updated : variant)));
+    setEditForm((prev) => ({ ...prev, imageFile: null, imagePreview: updated.mainImageUrl ?? null }));
+  }
+
+  async function handleSelectGalleryImage(url: string) {
+    if (!editingVariantId) return;
+    try {
+      await applyVariantImageUrl(editingVariantId, url);
+      setGalleryPickerOpen(false);
+    } catch {
+      // silent — user can retry
+    }
+  }
+
+  async function handleRemoveVariantImage() {
+    if (!editingVariantId) return;
+    try {
+      await applyVariantImageUrl(editingVariantId, null);
+      setGalleryPickerOpen(false);
+    } catch {
+      // silent — user can retry
+    }
+  }
+
+  async function saveEdit() {
+    if (!productId || !editingVariantId) return;
+    setEditSaving(true);
+    try {
+      let uploadedUrl: string | null = null;
+
+      if (editForm.imageFile) {
+        const fd = new FormData();
+        fd.append("file", editForm.imageFile);
+        const token = typeof window !== "undefined" ? (localStorage.getItem("shopee_admin_token") ?? "") : "";
+        const imgRes = await fetch(
+          `/api/admin/products/${productId}/variants/${editingVariantId}/image`,
+          { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
+        );
+        if (imgRes.ok) {
+          const imgData = (await imgRes.json()) as AdminProductVariant;
+          uploadedUrl = imgData.mainImageUrl ?? null;
+        }
+      }
+
+      const attributes = editForm.attrs
+        .filter((a) => a.key.trim())
+        .reduce<Record<string, string>>((acc, a) => { acc[a.key.trim()] = a.value; return acc; }, {});
+
+      const payload: Record<string, unknown> = {
+        sku: editForm.sku.trim() || undefined,
+        finalPrice: parseFloat(editForm.price) || 0,
+        stock: parseInt(editForm.stock) || 0,
+        active: editForm.active,
+        attributes,
+      };
+
+      if (uploadedUrl !== null) {
+        payload.mainImageUrl = uploadedUrl;
+      } else if (!editForm.imageFile && editForm.imagePreview) {
+        payload.mainImageUrl = editForm.imagePreview;
+      }
+
+      const updated = await adminApiFetch<AdminProductVariant>(
+        `/api/admin/products/${productId}/variants/${editingVariantId}`,
+        { method: "PUT", body: JSON.stringify(payload) }
+      );
+
+      setEditVariants((prev) => prev.map((v) => (v.id === editingVariantId ? updated : v)));
+      if (editForm.imageFile && editForm.imagePreview) URL.revokeObjectURL(editForm.imagePreview);
+      setEditingVariantId(null);
+    } catch {
+      // silent — user retries
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -795,7 +954,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       subCategory: undefined,
       weight: weight ? parseFloat(weight) : undefined,
       volume: volume ? parseFloat(volume) : undefined,
-      stock: parseInt(stock) || 0,
+      stock: hasLiveVariants ? activeVariantStockTotal : parseInt(stock) || 0,
       active: asActive,
       deliveryInfo: deliveryInfo.trim() || undefined,
       warrantyInfo: warrantyInfo.trim() || undefined,
@@ -1352,53 +1511,288 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
             </h2>
 
             {isEdit ? (
-              /* ── Edit mode: live backend-integrated variant manager ── */
+              /* ── Edit mode: professional variant manager ── */
               <div className="flex flex-col gap-4">
                 {editVariants.length > 0 && (
+                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">Este produto usa stock por variante.</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                      Stock total calculado: <strong>{activeVariantStockTotal}</strong> unidades. A soma considera apenas variantes activas.
+                    </p>
+                  </div>
+                )}
+
+                {/* Hidden file input for inline edit image upload */}
+                <input
+                  ref={editImageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif,image/gif,image/bmp,image/tiff"
+                  className="hidden"
+                  onChange={(e) => handleEditImageFile(e.target.files?.[0] ?? null)}
+                />
+
+                {/* Variant list */}
+                {editVariants.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-[var(--color-border-strong)] py-10 text-center">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                    <p className="text-sm font-semibold text-[var(--color-text-secondary)]">Sem variantes ainda</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">Adiciona a primeira variante abaixo.</p>
+                  </div>
+                ) : (
                   <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
-                          <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Label</th>
-                          <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">SKU</th>
-                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Preco</th>
+                          <th className="w-12 px-3 py-2.5" />
+                          <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Variante</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Preço</th>
                           <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Stock</th>
-                          <th className="px-4 py-2.5 text-center text-xs font-semibold text-[var(--color-text-secondary)]">Activo</th>
-                          <th className="w-8" />
+                          <th className="px-4 py-2.5 text-center text-xs font-semibold text-[var(--color-text-secondary)]">Estado</th>
+                          <th className="px-3 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Ações</th>
                         </tr>
                       </thead>
                       <tbody>
                         {editVariants.map((v) => (
-                          <tr key={v.id} className="border-b border-[var(--color-border)] last:border-0">
-                            <td className="px-4 py-2.5 font-medium text-[var(--color-text-primary)]">
-                              {v.label || v.sku || `#${v.id}`}
+                          <tr
+                            key={v.id}
+                            className="border-b border-[var(--color-border)] last:border-0 transition-colors"
+                            style={{ background: editingVariantId === v.id ? "rgba(232,67,26,0.04)" : undefined }}
+                          >
+                            {/* Thumbnail — click to open edit for this variant */}
+                            <td className="px-3 py-2.5">
+                              <button
+                                type="button"
+                                onClick={() => editingVariantId !== v.id && startEdit(v)}
+                                title={v.mainImageUrl ? "Clique para editar" : "Sem imagem — clique para adicionar"}
+                                className="group relative h-10 w-10 overflow-hidden rounded-xl border border-[var(--color-border)] transition hover:border-[var(--color-danger)] focus:outline-none"
+                              >
+                                {v.mainImageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={v.mainImageUrl} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-[var(--color-background-tertiary)]">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </div>
+                              </button>
                             </td>
-                            <td className="px-4 py-2.5 font-mono text-xs text-[var(--color-text-secondary)]">{v.sku ?? "—"}</td>
-                            <td className="px-4 py-2.5 text-right font-[family-name:var(--font-sora)] font-semibold">
+                            {/* Label + SKU */}
+                            <td className="px-4 py-2.5">
+                              <p className="font-semibold text-[var(--color-text-primary)]">{v.label || `#${v.id}`}</p>
+                              {v.sku && <p className="mt-0.5 font-mono text-[10px] text-[var(--color-text-secondary)]">{v.sku}</p>}
+                              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                                Imagem: {imageSourceLabel(v.mainImageUrl)}
+                              </p>
+                            </td>
+                            {/* Price */}
+                            <td className="px-4 py-2.5 text-right font-[family-name:var(--font-sora)] font-semibold text-[var(--color-text-primary)]">
                               {(v.effectivePrice ?? v.finalPrice ?? 0).toFixed(2)}
                             </td>
-                            <td className="px-4 py-2.5 text-right">{v.stock}</td>
+                            {/* Stock */}
+                            <td className="px-4 py-2.5 text-right">
+                              <span className={`font-semibold ${v.stock <= 0 ? "text-[var(--color-danger)]" : v.stock <= 5 ? "text-orange-500" : "text-[var(--color-text-primary)]"}`}>
+                                {v.stock}
+                              </span>
+                            </td>
+                            {/* Active toggle */}
                             <td className="px-4 py-2.5 text-center">
                               <button
                                 onClick={() => handleToggleVariantActive(v)}
-                                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${v.active ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}
+                                className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${v.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
                               >
-                                {v.active ? "Sim" : "Nao"}
+                                {v.active ? "Activo" : "Inactivo"}
                               </button>
                             </td>
-                            <td className="px-2 py-2">
-                              <button
-                                onClick={() => handleDeleteVariant(v.id)}
-                                className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] transition-colors text-base leading-none"
-                                title="Remover"
-                              >
-                                ×
-                              </button>
+                            {/* Actions */}
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center justify-end gap-1">
+                                {/* Image shortcut */}
+                                <button
+                                  onClick={() => {
+                                    if (editingVariantId !== v.id) startEdit(v);
+                                    setGalleryPickerOpen(true);
+                                  }}
+                                  title="Trocar imagem da variante"
+                                  className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-background-tertiary)] hover:text-[var(--color-text-primary)]"
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                  Img
+                                </button>
+                                {/* Edit / Cancel */}
+                                <button
+                                  onClick={() => editingVariantId === v.id ? cancelEdit() : startEdit(v)}
+                                  title={editingVariantId === v.id ? "Cancelar edição" : "Editar variante"}
+                                  className={`flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${editingVariantId === v.id ? "bg-[rgba(232,67,26,0.1)] text-[var(--color-danger)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-background-tertiary)] hover:text-[var(--color-text-primary)]"}`}
+                                >
+                                  {editingVariantId === v.id ? (
+                                    <>
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                      Cancelar
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                      Editar
+                                    </>
+                                  )}
+                                </button>
+                                {/* Delete */}
+                                <button
+                                  onClick={() => handleDeleteVariant(v.id)}
+                                  title="Remover variante"
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-secondary)] transition-colors hover:bg-red-50 hover:text-[var(--color-danger)]"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+
+                    {/* Inline edit panel */}
+                    {editingVariantId && (
+                      <div className="border-t-4 border-t-[var(--color-danger)] bg-[var(--color-background)] px-5 py-5">
+                        <div className="mb-5 flex items-center gap-2">
+                          <span className="h-3 w-3 rounded-full bg-[var(--color-danger)]" />
+                          <p className="text-sm font-bold text-[var(--color-text-primary)]">Editar variante</p>
+                        </div>
+
+                        {/* Attributes */}
+                        <div className="mb-3 flex flex-col gap-2">
+                          {editForm.attrs.map((attr, idx) => (
+                            <div key={idx} className="flex gap-2 items-center">
+                              <input
+                                className="admin-input py-1.5 text-sm flex-1"
+                                placeholder="Atributo (ex: Cor)"
+                                value={attr.key}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, attrs: prev.attrs.map((a, i) => i === idx ? { ...a, key: e.target.value } : a) }))}
+                              />
+                              <input
+                                className="admin-input py-1.5 text-sm flex-1"
+                                placeholder="Valor (ex: Verde)"
+                                value={attr.value}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, attrs: prev.attrs.map((a, i) => i === idx ? { ...a, value: e.target.value } : a) }))}
+                              />
+                              {editForm.attrs.length > 1 && (
+                                <button onClick={() => setEditForm((prev) => ({ ...prev, attrs: prev.attrs.filter((_, i) => i !== idx) }))} className="text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] text-sm">×</button>
+                              )}
+                            </div>
+                          ))}
+                          <button onClick={() => setEditForm((prev) => ({ ...prev, attrs: [...prev.attrs, { key: "", value: "" }] }))} className="self-start text-xs text-[var(--color-danger)] hover:underline">+ Atributo</button>
+                        </div>
+
+                        {/* SKU / Price / Stock / Active */}
+                        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          <div>
+                            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">SKU</label>
+                            <input className="admin-input py-1.5 text-sm font-mono" value={editForm.sku} onChange={(e) => setEditForm((prev) => ({ ...prev, sku: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Preço (MZN)</label>
+                            <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={editForm.price} onChange={(e) => setEditForm((prev) => ({ ...prev, price: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock</label>
+                            <input type="number" min="0" className="admin-input py-1.5 text-sm" value={editForm.stock} onChange={(e) => setEditForm((prev) => ({ ...prev, stock: e.target.value }))} />
+                          </div>
+                          <div className="flex flex-col justify-end">
+                            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Estado</label>
+                            <button
+                              onClick={() => setEditForm((prev) => ({ ...prev, active: !prev.active }))}
+                              className={`rounded-xl border py-1.5 text-sm font-semibold transition-colors ${editForm.active ? "border-green-300 bg-green-50 text-green-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}
+                            >
+                              {editForm.active ? "Activo" : "Inactivo"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Image upload */}
+                        <div className="mb-4">
+                          <label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">Imagem da variante</label>
+                          <div className="flex items-start gap-4">
+                            {editForm.imagePreview ? (
+                              <div className="relative flex-none">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={editForm.imagePreview} alt="Preview" className="h-20 w-20 rounded-xl object-cover border-2 border-[var(--color-danger)]" />
+                                <button
+                                  onClick={() => {
+                                    if (editForm.imageFile && editForm.imagePreview) URL.revokeObjectURL(editForm.imagePreview);
+                                    setEditForm((prev) => ({ ...prev, imageFile: null, imagePreview: null }));
+                                  }}
+                                  className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-danger)] text-[10px] text-white shadow"
+                                >×</button>
+                              </div>
+                            ) : (
+                              <div className="flex h-20 w-20 flex-none items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-border-strong)] bg-[var(--color-background-tertiary)]">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                              </div>
+                            )}
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={() => editImageInputRef.current?.click()}
+                                className="rounded-xl border border-[var(--color-border-strong)] px-4 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                              >
+                                {editForm.imagePreview ? "Upload nova imagem" : "Upload nova imagem"}
+                              </button>
+                              <button
+                                onClick={() => setGalleryPickerOpen((open) => !open)}
+                                className="rounded-xl border border-[var(--color-border-strong)] px-4 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                              >
+                                Escolher da galeria do produto
+                              </button>
+                              {editForm.imagePreview && (
+                                <button
+                                  onClick={handleRemoveVariantImage}
+                                  className="rounded-xl border border-red-200 px-4 py-2 text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-red-50"
+                                >
+                                  Remover imagem da variante
+                                </button>
+                              )}
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                                Origem: {imageSourceLabel(editForm.imagePreview)}
+                              </p>
+                              <p className="text-[10px] text-[var(--color-text-secondary)]">JPEG, PNG ou WebP · máx. 5 MB</p>
+                              {editForm.imageFile && <p className="text-[10px] font-semibold text-green-600">✓ {editForm.imageFile.name}</p>}
+                            </div>
+                          </div>
+                          {galleryPickerOpen && images.length > 0 && (
+                            <div className="mt-3 grid grid-cols-4 gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-3 sm:grid-cols-6">
+                              {images.map((image) => (
+                                <button
+                                  key={image.id}
+                                  type="button"
+                                  onClick={() => handleSelectGalleryImage(image.url)}
+                                  className="aspect-square overflow-hidden rounded-xl border border-[var(--color-border)] transition hover:border-[var(--color-danger)]"
+                                  title="Usar esta imagem na variante"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={image.thumbnailUrl ?? image.url} alt="" className="h-full w-full object-cover" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Save / Cancel */}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={saveEdit}
+                            disabled={editSaving}
+                            className="admin-button-danger py-2 px-5 text-sm disabled:opacity-50"
+                          >
+                            {editSaving ? "A guardar…" : "Guardar alterações"}
+                          </button>
+                          <button onClick={cancelEdit} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1452,6 +1846,27 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                       <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock</label>
                       <input type="number" min="0" className="admin-input py-1.5 text-sm" value={newVariantStock} onChange={(e) => setNewVariantStock(e.target.value)} />
                     </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-[var(--color-text-secondary)]">Imagem da variante (URL, opcional)</label>
+                    <input
+                      className="admin-input py-1.5 text-sm"
+                      placeholder="https://…"
+                      value={newVariantImageUrl}
+                      onChange={(e) => setNewVariantImageUrl(e.target.value)}
+                    />
+                    {newVariantImageUrl.trim() && (
+                      <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={newVariantImageUrl.trim()}
+                          alt="Preview"
+                          className="h-14 w-14 flex-none rounded-lg object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
+                        <p className="text-xs text-[var(--color-text-secondary)] break-all">{newVariantImageUrl.trim()}</p>
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={handleAddVariant}
@@ -1741,6 +2156,12 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
             <h3 className="font-[family-name:var(--font-sora)] font-semibold text-sm">
               Stock
             </h3>
+            {hasLiveVariants && (
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-3 text-xs text-[var(--color-text-secondary)]">
+                <p className="font-semibold text-[var(--color-text-primary)]">Este produto usa stock por variante.</p>
+                <p className="mt-1">Stock total calculado: <strong>{activeVariantStockTotal}</strong> unidades.</p>
+              </div>
+            )}
             <Toggle value={manageStock} onChange={setManageStock} label="Gerir stock" />
             {manageStock && (
               <>
@@ -1753,6 +2174,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                     min="0"
                     className="admin-input font-[family-name:var(--font-sora)] font-semibold text-sm"
                     value={stock}
+                    disabled={hasLiveVariants}
                     onChange={(e) => setStock(e.target.value)}
                   />
                 </div>
