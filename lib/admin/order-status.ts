@@ -1,0 +1,129 @@
+export const RAW_ADMIN_ORDER_STATUSES = [
+  "CREATED",
+  "UNDER_REVIEW",
+  "QUOTED",
+  "APPROVED",
+  "PENDING_PAYMENT",
+  "PAID",
+  "ORDERED",
+  "SHIPPED",
+  "IN_TRANSIT",
+  "ARRIVED",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "CANCELLED",
+  "FAILED",
+] as const;
+
+export const ORDER_QUEUE_STATUSES = [
+  "ALL",
+  "ANALYSIS",
+  "PAYMENT",
+  "EXECUTION",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
+
+export const CUSTOMER_ORDER_STAGES = [
+  "RECEIVED",
+  "PRICING",
+  "AWAITING_PAYMENT",
+  "CONFIRMED",
+  "PROCESSING",
+  "INTERNATIONAL_TRANSIT",
+  "AT_HQ",
+  "ON_THE_WAY",
+  "DELIVERED",
+  "CANCELLED",
+] as const;
+
+export type RawAdminOrderStatus = (typeof RAW_ADMIN_ORDER_STATUSES)[number];
+export type OrderQueueStatus = (typeof ORDER_QUEUE_STATUSES)[number];
+export type CustomerOrderStage = (typeof CUSTOMER_ORDER_STAGES)[number];
+
+const RAW_STATUS_SET = new Set<string>(RAW_ADMIN_ORDER_STATUSES);
+const QUEUE_STATUS_SET = new Set<string>(ORDER_QUEUE_STATUSES);
+
+export function isRawAdminOrderStatus(value: string | null | undefined): value is RawAdminOrderStatus {
+  return Boolean(value && RAW_STATUS_SET.has(value));
+}
+
+export function isQueueStatus(value: string | null | undefined): value is OrderQueueStatus {
+  return Boolean(value && QUEUE_STATUS_SET.has(value));
+}
+
+export function resolveUiOrderStatus(
+  status: string | null | undefined,
+  type: "EXTERNAL" | "INTERNAL" = "INTERNAL"
+): RawAdminOrderStatus {
+  if (type === "EXTERNAL" && status === "CREATED") {
+    return "UNDER_REVIEW";
+  }
+
+  if (status === "IN_TRANSIT" || status === "ARRIVED" || status === "OUT_FOR_DELIVERY") {
+    return "SHIPPED";
+  }
+
+  if (isRawAdminOrderStatus(status)) {
+    return status;
+  }
+
+  return "UNDER_REVIEW";
+}
+
+export function resolveOrderQueueStatus(status: string | null | undefined): Exclude<OrderQueueStatus, "ALL"> {
+  switch (status) {
+    case "CREATED":
+    case "UNDER_REVIEW":
+    case "QUOTED":
+      return "ANALYSIS";
+    case "APPROVED":
+    case "PENDING_PAYMENT":
+      return "PAYMENT";
+    case "PAID":
+    case "ORDERED":
+    case "SHIPPED":
+    case "IN_TRANSIT":
+    case "ARRIVED":
+    case "OUT_FOR_DELIVERY":
+      return "EXECUTION";
+    case "DELIVERED":
+      return "COMPLETED";
+    case "CANCELLED":
+    case "FAILED":
+      return "CANCELLED";
+    default:
+      return "ANALYSIS";
+  }
+}
+
+export function resolveCustomerOrderStage(status: string | null | undefined): CustomerOrderStage {
+  switch (status) {
+    case "CREATED":
+      return "RECEIVED";
+    case "UNDER_REVIEW":
+    case "QUOTED":
+      return "PRICING";
+    case "APPROVED":
+    case "PENDING_PAYMENT":
+      return "AWAITING_PAYMENT";
+    case "PAID":
+      return "CONFIRMED";
+    case "ORDERED":
+      return "PROCESSING";
+    case "IN_TRANSIT":
+    case "SHIPPED":
+      return "INTERNATIONAL_TRANSIT";
+    case "ARRIVED":
+      return "AT_HQ";
+    case "OUT_FOR_DELIVERY":
+      return "ON_THE_WAY";
+    case "DELIVERED":
+      return "DELIVERED";
+    case "CANCELLED":
+    case "FAILED":
+      return "CANCELLED";
+    default:
+      return "RECEIVED";
+  }
+}
