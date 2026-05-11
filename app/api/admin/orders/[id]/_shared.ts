@@ -498,7 +498,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     deliveryMethod: order.deliveryMethod ?? null,
     urgentRequest: Boolean(order.urgent),
     externalCartUrl: order.externalCartUrl ?? "",
-    requestInputType: (order.requestInputType as "LINK" | "DESCRIPTION" | null) ?? null,
+    requestInputType: order.requestInputType ?? null,
     productDetails: order.productDetails ?? "",
     requestedQuantity: Number(order.requestedQuantity ?? 1),
     requestScreenshotUrl: order.requestScreenshotUrl ?? "",
