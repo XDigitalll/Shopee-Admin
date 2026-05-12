@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { AdminConfirmDialog, AdminSectionSkeleton } from "@/components/admin/feedback-state";
 import { adminApiFetch } from "@/lib/admin/api-client";
@@ -49,8 +50,9 @@ type DetailAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "focus-tracking" | "validate-payment" | "collect-and-deliver" | "cancel-order" | "mark-status";
+      action: "focus-tracking" | "validate-payment" | "collect-and-deliver" | "cancel-order" | "mark-status" | "handoff";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
+      targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT";
     };
 
 type DetailActionCommand = Extract<DetailAction, { action: string }>;
@@ -164,7 +166,7 @@ function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) 
   return humanizeOrderStatus(step);
 }
 
-function buildPrimaryAction(detail: ExternalOrderDetail): DetailAction | null {
+function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean): DetailAction | null {
   const status = detail.status;
   const paymentValidated = isPaymentValidated(detail.payment.status);
   const cashOnDelivery = detail.payment.method === "CASH_ON_DELIVERY";
@@ -173,8 +175,15 @@ function buildPrimaryAction(detail: ExternalOrderDetail): DetailAction | null {
   if (status === "UNDER_REVIEW" || (detail.type === "EXTERNAL" && status === "CREATED")) {
     return { label: "Analisar e cotar", href: `/admin/orders/${detail.id}/quote` };
   }
+  if (status === "APPROVED") {
+    return isSuperAdmin
+      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+      : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
+  }
   if (status === "PENDING_PAYMENT") {
-    return { label: "Validar em pagamentos", href: `/admin/payments?orderId=${detail.id}` };
+    return isSuperAdmin
+      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+      : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
   }
 
   if (pickupOrder) {
@@ -195,7 +204,9 @@ function buildPrimaryAction(detail: ExternalOrderDetail): DetailAction | null {
 
   if (isInternalDeliveryOrder(detail)) {
     if (status === "PAID") {
-      return { label: "Abrir modulo delivery", href: "/admin/delivery" };
+      return isSuperAdmin
+        ? { label: "Ver em entregas", href: "/admin/delivery" }
+        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
     }
     if (status === "ORDERED" || status === "ARRIVED") {
       return { label: "Iniciar entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" };
@@ -220,7 +231,9 @@ function buildPrimaryAction(detail: ExternalOrderDetail): DetailAction | null {
     return { label: "Marcar como chegado a sede", action: "mark-status", targetStatus: "ARRIVED" };
   }
   if (status === "ARRIVED") {
-    return { label: "Abrir modulo delivery", href: "/admin/delivery" };
+    return isSuperAdmin
+      ? { label: "Ver em entregas", href: "/admin/delivery" }
+      : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
   }
   if (status === "OUT_FOR_DELIVERY" && cashOnDelivery && !paymentValidated) {
     return { label: "Confirmar cobrança e entrega", action: "collect-and-deliver", targetStatus: "DELIVERED" };
@@ -235,7 +248,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail): DetailAction | null {
   return null;
 }
 
-function buildQuickActions(detail: ExternalOrderDetail) {
+function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
   const status = detail.status;
   const paymentValidated = isPaymentValidated(detail.payment.status);
   const cashOnDelivery = detail.payment.method === "CASH_ON_DELIVERY";
@@ -245,8 +258,15 @@ function buildQuickActions(detail: ExternalOrderDetail) {
   if (detail.type === "EXTERNAL" && ["CREATED", "UNDER_REVIEW"].includes(status)) {
     actions.push({ label: "Analisar e cotar", href: `/admin/orders/${detail.id}/quote` });
   }
+  if (status === "APPROVED") {
+    actions.push(isSuperAdmin
+      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+      : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" });
+  }
   if (status === "PENDING_PAYMENT") {
-    actions.push({ label: "Validar em pagamentos", href: `/admin/payments?orderId=${detail.id}` });
+    actions.push(isSuperAdmin
+      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+      : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" });
   }
 
   if (pickupOrder) {
@@ -265,7 +285,9 @@ function buildQuickActions(detail: ExternalOrderDetail) {
     }
   } else if (isInternalDeliveryOrder(detail)) {
     if (status === "PAID") {
-      actions.push({ label: "Abrir modulo delivery", href: "/admin/delivery" });
+      actions.push(isSuperAdmin
+        ? { label: "Ver em entregas", href: "/admin/delivery" }
+        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" });
     }
     if (status === "ORDERED" || status === "ARRIVED") {
       actions.push({ label: "Iniciar entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" });
@@ -293,7 +315,9 @@ function buildQuickActions(detail: ExternalOrderDetail) {
       actions.push({ label: "Actualizar rastreio", action: "focus-tracking" });
     }
     if (status === "ARRIVED") {
-      actions.push({ label: "Abrir modulo delivery", href: "/admin/delivery" });
+      actions.push(isSuperAdmin
+        ? { label: "Ver em entregas", href: "/admin/delivery" }
+        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" });
     }
     if (status === "OUT_FOR_DELIVERY" && cashOnDelivery && !paymentValidated) {
       actions.push({ label: "Confirmar cobrança e entrega", action: "collect-and-deliver", targetStatus: "DELIVERED" });
@@ -317,6 +341,8 @@ function buildQuickActions(detail: ExternalOrderDetail) {
 
 export function OrderDetailView({ orderId }: { orderId: string }) {
   const router = useRouter();
+  const { effectiveRole } = useAdminAuth();
+  const isSuperAdmin = effectiveRole === "SUPER_ADMIN";
   const trackingRef = useRef<HTMLDivElement | null>(null);
   const [detail, setDetail] = useState<ExternalOrderDetail | null>(null);
   const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
@@ -357,8 +383,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   const totals = useMemo(() => (detail ? buildTotals(detail) : null), [detail]);
-  const primaryAction = detail ? buildPrimaryAction(detail) : null;
-  const quickActions = detail ? buildQuickActions(detail) : [];
+  const primaryAction = detail ? buildPrimaryAction(detail, isSuperAdmin) : null;
+  const quickActions = detail ? buildQuickActions(detail, isSuperAdmin) : [];
   const trackingSteps = useMemo(() => getTrackingSteps(detail), [detail]);
   const currentStatus = normalizeTrackingStatus(detail);
   const currentStepIndex = getCurrentStepIndex(trackingSteps, currentStatus);
@@ -383,7 +409,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
   useAdminLiveRefresh(refreshData, { intervalMs: 15_000, minIntervalMs: 5_000 });
 
-  async function runAction(action: DetailActionCommand["action"], targetStatus?: DetailActionCommand["targetStatus"]) {
+  async function runAction(
+    action: DetailActionCommand["action"],
+    targetStatus?: DetailActionCommand["targetStatus"],
+    targetQueue?: DetailActionCommand["targetQueue"]
+  ) {
     if (!detail) return;
 
     if (action === "focus-tracking") {
@@ -395,6 +425,21 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     try {
       if (action === "validate-payment") {
         await adminApiFetch(`/api/admin/orders/${detail.id}/payment/validate`, { method: "PUT" });
+        await refreshData();
+        return;
+      }
+
+      if (action === "handoff") {
+        if (!targetQueue) {
+          throw new Error("Fila destino em falta para handoff.");
+        }
+        await adminApiFetch(`/api/admin/orders/${detail.id}/handoff`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            targetQueue,
+            note: "Encaminhado pelos detalhes do pedido",
+          }),
+        });
         await refreshData();
         return;
       }
@@ -509,7 +554,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               ) : (
                 <button
                   type="button"
-                  onClick={() => startTransition(async () => runAction(primaryAction.action, primaryAction.targetStatus))}
+                  onClick={() => startTransition(async () => runAction(primaryAction.action, primaryAction.targetStatus, primaryAction.targetQueue))}
                   className="admin-button-danger"
                 >
                   {isPending ? "A processar..." : primaryAction.label}
@@ -855,9 +900,15 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   </div>
                 ) : null}
                 {canValidatePayment(detail) ? (
-                  <button type="button" onClick={() => router.push(`/admin/payments?orderId=${detail.id}`)} className="admin-button-danger">
-                    Validar em pagamentos
-                  </button>
+                  isSuperAdmin ? (
+                    <button type="button" onClick={() => router.push(`/admin/payments?orderId=${detail.id}`)} className="admin-button-danger">
+                      Ver em pagamentos
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => startTransition(async () => runAction("handoff", undefined, "PAYMENTS"))} className="admin-button-danger">
+                      Enviar para equipa de pagamentos
+                    </button>
+                  )
                 ) : null}
                 {detail.payment.notes ? (
                   <div className="rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
@@ -882,7 +933,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <button
                     key={action.label}
                     type="button"
-                    onClick={() => startTransition(async () => runAction(action.action, action.targetStatus))}
+                    onClick={() => startTransition(async () => runAction(action.action, action.targetStatus, action.targetQueue))}
                     className="rounded-full px-4 py-3 text-sm font-semibold text-[var(--color-danger)]"
                   >
                     {action.label}
@@ -891,7 +942,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <button
                     key={action.label}
                     type="button"
-                    onClick={() => startTransition(async () => runAction(action.action, action.targetStatus))}
+                    onClick={() => startTransition(async () => runAction(action.action, action.targetStatus, action.targetQueue))}
                     className="admin-button-muted justify-center"
                   >
                     {action.label}

@@ -17,6 +17,7 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, formatRelativePercent, humanizeRole } from "@/lib/admin/format";
+import { isDeliveryActionRequired } from "@/lib/admin/operational-queue";
 import type {
   DeliveryActiveOrder,
   DeliveryDriver,
@@ -422,7 +423,7 @@ export function DeliveryDashboardView() {
   useAdminLiveRefresh(() => loadData(true), { intervalMs: 15_000, minIntervalMs: 5_000 });
 
   const pendingNeedingAction = useMemo(
-    () => pending.filter((order) => !order.deliveryFee || !order.assignedDriverId).slice(0, 5),
+    () => pending.filter(isDeliveryActionRequired).slice(0, 5),
     [pending]
   );
 
@@ -490,7 +491,7 @@ export function DeliveryDashboardView() {
           </div>
           <div className="mt-5 space-y-3">
             {(pendingNeedingAction.length > 0 ? pendingNeedingAction : pending.slice(0, 4)).map((order) => {
-              const needsAttention = !order.deliveryFee || !order.assignedDriverId;
+              const needsAttention = isDeliveryActionRequired(order);
               return (
               <div key={order.id} className={`relative rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-4 ${needsAttention ? "ring-1 ring-[rgba(249,115,22,0.18)]" : ""}`}>
                 {needsAttention ? <AttentionDot className="absolute right-4 top-4" label="Entrega ainda precisa de acao" /> : null}
@@ -714,7 +715,7 @@ export function DeliveryPendingView() {
       const driversPayload = driverMode
         ? { content: [] }
         : await adminApiFetch<DeliveryDriversResponse>("/api/admin/delivery/drivers");
-      setOrders(ordersPayload);
+      setOrders([...ordersPayload].sort((left, right) => Number(isDeliveryActionRequired(right)) - Number(isDeliveryActionRequired(left))));
       setDrivers(driversPayload.content);
       setForms((current) => {
         const next = createInitialPendingForms(ordersPayload);
@@ -1154,7 +1155,7 @@ export function DeliveryActiveView() {
   const loadData = useCallback(async (background = false) => {
     try {
       const payload = await adminApiFetch<DeliveryActiveOrder[]>("/api/admin/delivery/active");
-      setOrders(payload);
+      setOrders([...payload].sort((left, right) => Number(isDeliveryActionRequired(right)) - Number(isDeliveryActionRequired(left))));
       if (!background) {
         setFeedback(null);
       }
@@ -1309,13 +1310,18 @@ export function DeliveryActiveView() {
         <div className="grid gap-4">
           {visibleOrders.map((order) => {
             const isOnRoute = order.status === "OUT_FOR_DELIVERY";
+            const needsAttention = isDeliveryActionRequired(order);
 
             return (
-            <section key={order.id} className="admin-card p-5">
+            <section key={order.id} className={`admin-card relative p-5 ${needsAttention ? "ring-1 ring-[rgba(249,115,22,0.18)]" : ""}`}>
+              {needsAttention ? <AttentionDot className="absolute right-5 top-5" label="Entrega ainda precisa de acao" /> : null}
               <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="rounded-full bg-[rgba(232,67,26,0.1)] px-3 py-1 text-xs font-semibold text-[var(--color-danger)]">{order.number}</span>
+                    <span className="rounded-full bg-[rgba(232,67,26,0.1)] px-3 py-1 text-xs font-semibold text-[var(--color-danger)]">
+                      {needsAttention ? <AttentionDot label="Entrega ainda precisa de acao" className="mr-2 h-2.5 w-2.5" /> : null}
+                      {order.number}
+                    </span>
                     <DriverContactBadge name={order.driverName} phone={order.driverPhone} />
                     {!isOnRoute ? (
                       <span className="rounded-full bg-[#FAEEDA] px-3 py-1 text-xs font-semibold text-[#8A5A00]">

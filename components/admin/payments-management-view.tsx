@@ -1,1204 +1,566 @@
 "use client";
 
-import Image, { type ImageLoaderProps } from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { AttentionDot } from "@/components/admin/attention-dot";
-import { AdminConfirmDialog, AdminFeedbackDock, AdminListLoadingOverlay, AdminStateCard, AdminTableSkeleton } from "@/components/admin/feedback-state";
+import { AdminBanner, AdminCardListSkeleton, AdminFeedbackDock } from "@/components/admin/feedback-state";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
-import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { adminApiFetch } from "@/lib/admin/api-client";
-import { formatMoney } from "@/lib/admin/format";
+import { formatMoney, humanizePaymentMethod } from "@/lib/admin/format";
 import type {
-  AdminPaymentListItem,
-  AdminPaymentMethodFilter,
-  AdminPaymentPeriodFilter,
-  AdminPaymentReceiptResponse,
-  AdminPaymentStatsResponse,
-  AdminPaymentStatusFilter,
-  AdminPaymentsPageResponse,
+  AwaitingPaymentSubmissionsPage,
+  PaymentAwaitingSubmission,
+  PaymentSubmission,
+  PaymentSubmissionQueue,
+  PaymentSubmissionQueueStats,
+  PaymentSubmissionsPage,
 } from "@/lib/admin/types";
 
-type PaymentsOverviewResponse = {
-  stats: AdminPaymentStatsResponse;
-  page: AdminPaymentsPageResponse;
-};
-
-const passthroughImageLoader = ({ src }: ImageLoaderProps) => src;
-
-const STATUS_OPTIONS: Array<{
-  value: AdminPaymentStatusFilter;
+const QUEUES: Array<{
+  key: PaymentSubmissionQueue;
   label: string;
-  tone: string;
+  empty: string;
+  needsAction: boolean;
 }> = [
-  { value: "ALL", label: "Todos", tone: "border-[var(--color-border)] text-[var(--color-text-primary)]" },
-  { value: "PENDING", label: "Pendentes", tone: "border-[#F5C778] text-[#9A5B00]" },
-  { value: "VALIDATED", label: "Validados", tone: "border-[#8DD9A8] text-[#166534]" },
-  { value: "REJECTED", label: "Rejeitados", tone: "border-[#F3A4A4] text-[#B42318]" },
+  { key: "AWAITING_SUBMISSION", label: "Aguardando submissao", empty: "Nenhum pagamento pendente", needsAction: false },
+  { key: "SUBMITTED", label: "Submetidos", empty: "Nenhum pagamento submetido", needsAction: true },
+  { key: "UNDER_REVIEW", label: "Em revisao", empty: "Nenhum pagamento em revisao", needsAction: true },
+  { key: "APPROVED", label: "Aprovados", empty: "Nenhum pagamento aprovado", needsAction: false },
+  { key: "REJECTED", label: "Rejeitados", empty: "Nenhum pagamento rejeitado", needsAction: false },
+  { key: "SUSPICIOUS", label: "Suspeitos", empty: "Nenhum pagamento suspeito", needsAction: true },
 ];
 
-const METHOD_OPTIONS: Array<{
-  value: AdminPaymentMethodFilter;
-  label: string;
-}> = [
-  { value: "ALL", label: "Todos os métodos" },
-  { value: "MPESA", label: "M-Pesa" },
-  { value: "EMOLA", label: "e-Mola" },
-  { value: "VISA", label: "Visa" },
-  { value: "MASTERCARD", label: "Mastercard" },
-];
-
-const PERIOD_OPTIONS: Array<{
-  value: AdminPaymentPeriodFilter;
-  label: string;
-}> = [
-  { value: "ALL", label: "Todo o período" },
-  { value: "TODAY", label: "Hoje" },
-  { value: "7D", label: "Últimos 7 dias" },
-  { value: "30D", label: "Últimos 30 dias" },
-];
-
-const METHOD_BADGE_STYLES: Record<string, string> = {
-  MPESA: "bg-[rgba(99,153,34,0.12)] text-[#4D7C0F]",
-  EMOLA: "bg-[rgba(55,138,221,0.12)] text-[#1D4ED8]",
-  VISA: "bg-[rgba(99,102,241,0.12)] text-[#5B21B6]",
-  MASTERCARD: "bg-[rgba(245,158,11,0.14)] text-[#B45309]",
-};
-
-const STATUS_BADGE_STYLES: Record<AdminPaymentListItem["status"], string> = {
-  PENDING: "bg-[#FAEEDA] text-[#9A5B00]",
-  VALIDATED: "bg-[#EAF3DE] text-[#166534]",
-  REJECTED: "bg-[#FCEBEB] text-[#B42318]",
-  CANCELLED: "bg-[#F3F4F6] text-[#4B5563]",
-};
-
-const STATUS_LABELS: Record<AdminPaymentListItem["status"], string> = {
-  PENDING: "Pendente",
-  VALIDATED: "Validado",
+const STATUS_LABELS: Record<string, string> = {
+  SUBMITTED: "Submetido",
+  UNDER_REVIEW: "Em revisao",
+  APPROVED: "Aprovado",
   REJECTED: "Rejeitado",
-  CANCELLED: "Cancelado",
+  FLAGGED: "Suspeito",
 };
 
-type FiltersState = {
-  status: AdminPaymentStatusFilter;
-  method: AdminPaymentMethodFilter;
-  search: string;
-  period: AdminPaymentPeriodFilter;
-  page: number;
-  size: number;
+const RISK_LABELS: Record<string, string> = {
+  DUPLICATE_REFERENCE: "Referencia duplicada",
+  AMOUNT_MISMATCH: "Valor diferente",
+  PAYER_PHONE_USED_IN_MULTIPLE_ORDERS: "Telefone repetido",
+  MISSING_PROOF: "Comprovativo ausente",
+  PAYMENT_OUTSIDE_EXPECTED_TIME: "Fora do tempo esperado",
 };
 
-function formatDateTime(value: string | null) {
-  if (!value) {
-    return "Sem registo";
-  }
+const METHOD_LABELS: Record<string, string> = {
+  MPESA: "MPESA",
+  EMOLA: "EMOLA",
+  BANK_TRANSFER: "BANK",
+  VISA_MANUAL: "VISA",
+};
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "Sem registo";
   try {
-    return new Intl.DateTimeFormat("pt-PT", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(new Date(value));
+    return new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
   } catch {
     return value;
   }
 }
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "CL";
-}
-
-function getMethodLabel(payment: AdminPaymentListItem) {
-  if (payment.method === "CASH_ON_DELIVERY") {
-    return "Cobrança na entrega";
+function pageFrom<T>(payload: { content?: T[]; page?: number; number?: number; size?: number; totalElements?: number; totalPages?: number } | T[] | null) {
+  if (Array.isArray(payload)) {
+    return { content: payload, page: 0, size: payload.length, totalElements: payload.length, totalPages: payload.length ? 1 : 0 };
   }
-
-  if (!payment.receiptSubmitted) {
-    return "Por definir";
-  }
-
-  if (payment.method === "MPESA") return "M-Pesa";
-  if (payment.method === "EMOLA") return "e-Mola";
-  return payment.method || "Sem método";
-}
-
-function downloadCsv(rows: AdminPaymentListItem[]) {
-  const escape = (value: string | number | null | undefined) => {
-    const text = String(value ?? "");
-    if (/[",\n]/.test(text)) {
-      return `"${text.replace(/"/g, "\"\"")}"`;
-    }
-    return text;
+  return {
+    content: payload?.content ?? [],
+    page: Number(payload?.page ?? payload?.number ?? 0),
+    size: Number(payload?.size ?? 10),
+    totalElements: Number(payload?.totalElements ?? payload?.content?.length ?? 0),
+    totalPages: Number(payload?.totalPages ?? 0),
   };
-
-  const lines = [
-    ["Pagamento", "Pedido", "Cliente", "Método", "Valor", "Data", "Estado"].join(","),
-    ...rows.map((row) =>
-      [
-        row.id,
-        row.orderNumber,
-        row.customerName,
-        row.method ?? "—",
-        row.amount,
-        row.submittedAt ?? "",
-        STATUS_LABELS[row.status],
-      ]
-        .map(escape)
-        .join(","),
-    ),
-  ];
-
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "pagamentos.csv";
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
-function buildQuery(filters: FiltersState, deferredSearch: string) {
-  const params = new URLSearchParams();
+function queueCount(stats: PaymentSubmissionQueueStats | null, queue: PaymentSubmissionQueue) {
+  if (!stats) return 0;
+  if (queue === "AWAITING_SUBMISSION") return stats.awaitingSubmission;
+  if (queue === "SUBMITTED") return stats.submitted;
+  if (queue === "UNDER_REVIEW") return stats.underReview;
+  if (queue === "APPROVED") return stats.approved;
+  if (queue === "REJECTED") return stats.rejected;
+  return stats.suspicious;
+}
 
-  if (filters.status !== "ALL") params.set("status", filters.status);
-  if (filters.method !== "ALL") params.set("method", filters.method);
-  if (filters.period !== "ALL") params.set("period", filters.period);
-  if (deferredSearch.trim()) params.set("search", deferredSearch.trim());
-  params.set("page", String(filters.page));
-  params.set("size", String(filters.size));
+function methodBadge(method: string | null | undefined) {
+  const value = method || "UNKNOWN";
+  const label = METHOD_LABELS[value] ?? humanizePaymentMethod(value).toUpperCase();
+  const className =
+    value === "MPESA" ? "bg-[#EAF3DE] text-[#27500A]"
+      : value === "EMOLA" ? "bg-[#E8F1FE] text-[#1D4ED8]"
+      : value === "BANK_TRANSFER" ? "bg-[#FFF2D6] text-[#8A5A00]"
+      : "bg-[#EEEDFE] text-[#3C3489]";
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-black ${className}`}>{label}</span>;
+}
 
-  return params.toString();
+function statusBadge(status: string) {
+  const className =
+    status === "APPROVED" ? "bg-[#EAF3DE] text-[#166534]"
+      : status === "REJECTED" ? "bg-[#FCEBEB] text-[#B42318]"
+      : status === "FLAGGED" ? "bg-[#FFF1F2] text-[#BE123C]"
+      : status === "UNDER_REVIEW" ? "bg-[#EEEDFE] text-[#3C3489]"
+      : "bg-[#FAEEDA] text-[#9A5B00]";
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${className}`}>{STATUS_LABELS[status] ?? status}</span>;
+}
+
+function riskChips(flags: string[] = []) {
+  if (!flags.length) {
+    return <span className="rounded-full bg-[#EAF3DE] px-2.5 py-1 text-xs font-semibold text-[#166534]">Sem alertas</span>;
+  }
+  return flags.map((flag) => (
+    <span key={flag} className="rounded-full bg-[#FFF1D6] px-2.5 py-1 text-xs font-semibold text-[#9A5B00]">
+      {RISK_LABELS[flag] ?? flag}
+    </span>
+  ));
+}
+
+function difference(submission: PaymentSubmission) {
+  return Number(submission.amount ?? 0) - Number(submission.expectedAmount ?? 0);
+}
+
+function proofKind(submission: PaymentSubmission) {
+  const type = submission.proofType?.toLowerCase() || "";
+  const url = submission.proofUrl?.toLowerCase() || "";
+  if (type.includes("pdf") || url.endsWith(".pdf")) return "pdf";
+  if (type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(url)) return "image";
+  return submission.proofUrl ? "file" : "none";
+}
+
+function ActionDot({ visible }: { visible: boolean }) {
+  return visible ? <span className="h-2.5 w-2.5 rounded-full bg-[#F97316]" aria-label="Precisa de accao" /> : null;
+}
+
+function AwaitingCard({ item }: { item: PaymentAwaitingSubmission }) {
+  return (
+    <article className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-danger)]">Aguardando cliente</p>
+          <h3 className="mt-2 font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">
+            Pedido {item.orderCode || `#${item.orderId}`}
+          </h3>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{item.customerName || item.customerEmail || "Cliente sem nome"}</p>
+        </div>
+        <span className="rounded-full bg-[#FAEEDA] px-3 py-1 text-xs font-bold text-[#9A5B00]">Pendente</span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <Info label="Valor esperado" value={formatMoney(item.expectedAmount ?? 0)} />
+        <Info label="Criado em" value={formatDateTime(item.orderDate)} />
+        <Info label="Estado" value={item.orderStatus || "PENDING_PAYMENT"} />
+      </div>
+      <Link href={`/admin/orders/${item.orderId}`} className="mt-4 inline-flex rounded-2xl border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)]">
+        Abrir pedido
+      </Link>
+    </article>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3">
+      <p className="text-xs font-semibold text-[var(--color-text-muted)]">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">{value || "Sem registo"}</p>
+    </div>
+  );
+}
+
+function SubmissionCard({
+  item,
+  selected,
+  onClick,
+}: {
+  item: PaymentSubmission;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const flags = item.riskFlags ?? [];
+  const actionRequired = ["SUBMITTED", "UNDER_REVIEW", "FLAGGED"].includes(item.status);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-[24px] border bg-[var(--color-background-secondary)] p-5 text-left transition ${
+        selected ? "border-[var(--color-danger)] shadow-[0_18px_50px_rgba(232,67,26,0.12)]" : flags.length ? "border-[#F59E0B]" : "border-[var(--color-border)]"
+      }`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <ActionDot visible={actionRequired} />
+            <p className="truncate font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">
+              Pedido {item.orderCode || `#${item.orderId}`}
+            </p>
+          </div>
+          <p className="mt-1 truncate text-sm text-[var(--color-text-secondary)]">
+            {item.payerName || "Pagador sem nome"} {item.payerPhone ? `- ${item.payerPhone}` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {methodBadge(item.paymentMethod)}
+          {statusBadge(item.status)}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <Info label="Valor esperado" value={formatMoney(item.expectedAmount ?? 0)} />
+        <Info label="Valor submetido" value={formatMoney(item.amount ?? 0)} />
+        <Info label="Referencia" value={item.transactionReference || "Sem referencia"} />
+        <Info label="Submetido" value={formatDateTime(item.submittedAt)} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">{riskChips(flags)}</div>
+      <div className="mt-4 flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
+        <span>{item.proofUrl ? "Comprovativo disponivel" : "Sem comprovativo"}</span>
+        <span>Dif.: {formatMoney(difference(item))}</span>
+      </div>
+    </button>
+  );
+}
+
+function SubmissionDrawer({
+  submission,
+  isLoading,
+  note,
+  setNote,
+  onClose,
+  onAction,
+  busyAction,
+  canDecide,
+}: {
+  submission: PaymentSubmission | null;
+  isLoading: boolean;
+  note: string;
+  setNote: (value: string) => void;
+  onClose: () => void;
+  onAction: (action: "review" | "approve" | "reject" | "flag" | "request-new-proof") => void;
+  busyAction: string | null;
+  canDecide: boolean;
+}) {
+  const proof = submission ? proofKind(submission) : "none";
+  const canProcess = submission && ["SUBMITTED", "UNDER_REVIEW", "FLAGGED"].includes(submission.status);
+
+  return (
+    <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_0_80px_rgba(0,0,0,0.24)]">
+      <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-danger)]">Analise financeira</p>
+          <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
+            {submission ? `Submissao #${submission.id}` : "Detalhe"}
+          </h2>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">
+          Fechar
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {isLoading ? (
+          <AdminCardListSkeleton rows={2} />
+        ) : submission ? (
+          <div className="space-y-5">
+            <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                {methodBadge(submission.paymentMethod)}
+                {statusBadge(submission.status)}
+                {submission.riskFlags?.length ? <span className="rounded-full bg-[#FFF1F2] px-2.5 py-1 text-xs font-black text-[#BE123C]">Suspeito</span> : null}
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Info label="Pedido" value={submission.orderCode || `#${submission.orderId}`} />
+                <Info label="Valor esperado" value={formatMoney(submission.expectedAmount ?? 0)} />
+                <Info label="Valor enviado" value={formatMoney(submission.amount ?? 0)} />
+                <Info label="Diferenca" value={formatMoney(difference(submission))} />
+                <Info label="Metodo" value={humanizePaymentMethod(submission.paymentMethod)} />
+                <Info label="Telefone" value={submission.payerPhone} />
+                <Info label="Referencia" value={submission.transactionReference} />
+                <Info label="Banco" value={submission.payerBank} />
+                <Info label="Submetido" value={formatDateTime(submission.submittedAt)} />
+                <Info label="Revisto por" value={submission.reviewedBy} />
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Comprovativo</h3>
+                {submission.proofUrl ? (
+                  <a href={submission.proofUrl} target="_blank" rel="noreferrer" download className="admin-button-muted">
+                    Abrir / download
+                  </a>
+                ) : null}
+              </div>
+              <div className="mt-4 overflow-hidden rounded-[20px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
+                {proof === "image" && submission.proofUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={submission.proofUrl} alt="Comprovativo de pagamento" className="max-h-[520px] w-full object-contain" />
+                ) : proof === "pdf" && submission.proofUrl ? (
+                  <iframe src={submission.proofUrl} title="Comprovativo PDF" className="h-[520px] w-full" />
+                ) : proof === "file" && submission.proofUrl ? (
+                  <div className="p-6 text-sm text-[var(--color-text-secondary)]">Ficheiro disponivel para abertura externa.</div>
+                ) : (
+                  <div className="p-6 text-sm text-[var(--color-text-secondary)]">Nenhum comprovativo anexado.</div>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+              <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Risk flags</h3>
+              <div className="mt-3 flex flex-wrap gap-2">{riskChips(submission.riskFlags)}</div>
+            </section>
+
+            <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+              <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Historico</h3>
+              <div className="mt-4 space-y-3">
+                {(submission.orderHistory ?? []).length ? (submission.orderHistory ?? []).map((entry, index) => (
+                  <div key={`${entry.id ?? index}`} className="rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3">
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">{entry.action || "Evento"}</p>
+                    <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{entry.description || "Sem descricao"}</p>
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                      {formatDateTime(entry.createdAt ?? null)} - {entry.performedByName || entry.performedByEmail || "Sistema"}
+                    </p>
+                  </div>
+                )) : <p className="text-sm text-[var(--color-text-secondary)]">Sem historico disponivel.</p>}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+              <label className="block">
+                <span className="text-sm font-semibold">Nota da revisao</span>
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} className="admin-input mt-2 min-h-24 w-full" placeholder="Motivo, referencia interna ou instrucao para o cliente." />
+              </label>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <button type="button" onClick={() => onAction("review")} disabled={!canProcess || Boolean(busyAction)} className="admin-button-muted justify-center">
+                  {busyAction === "review" ? "A iniciar..." : "Iniciar revisao"}
+                </button>
+                <button type="button" onClick={() => onAction("approve")} disabled={!canProcess || !canDecide || Boolean(busyAction)} className="admin-button-danger justify-center">
+                  {busyAction === "approve" ? "A aprovar..." : "Aprovar pagamento"}
+                </button>
+                <button type="button" onClick={() => onAction("reject")} disabled={!canProcess || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center">
+                  {busyAction === "reject" ? "A rejeitar..." : "Rejeitar"}
+                </button>
+                <button type="button" onClick={() => onAction("flag")} disabled={!canProcess || Boolean(busyAction)} className="admin-button-muted justify-center">
+                  {busyAction === "flag" ? "A marcar..." : "Marcar suspeito"}
+                </button>
+                <button type="button" onClick={() => onAction("request-new-proof")} disabled={!canProcess || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center sm:col-span-2">
+                  {busyAction === "request-new-proof" ? "A solicitar..." : "Pedir novo comprovativo"}
+                </button>
+              </div>
+              {!canDecide ? <p className="mt-3 text-xs text-[var(--color-text-secondary)]">A tua role permite acompanhar a fila, mas a decisao final exige SUPER_ADMIN ou FINANCE_MANAGER.</p> : null}
+            </section>
+          </div>
+        ) : (
+          <p className="text-sm text-[var(--color-text-secondary)]">Seleciona uma submissao para abrir a analise.</p>
+        )}
+      </div>
+    </aside>
+  );
 }
 
 export function PaymentsManagementView() {
-  const { hasAccess } = useAdminAuth();
+  const { hasAccess, effectiveRole } = useAdminAuth();
   const searchParams = useSearchParams();
-  const requestedOrderId = searchParams.get("orderId");
-  const [filters, setFilters] = useState<FiltersState>({
-    status: "ALL",
-    method: "ALL",
-    search: requestedOrderId ?? "",
-    period: "ALL",
-    page: 0,
-    size: 10,
-  });
-  const deferredSearch = useDeferredValue(filters.search);
-
-  const [stats, setStats] = useState<AdminPaymentStatsResponse | null>(null);
-  const [pageData, setPageData] = useState<AdminPaymentsPageResponse | null>(null);
-  const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null);
-  const [receiptUrls, setReceiptUrls] = useState<Record<number, string | null>>({});
-  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
-  const [error, setError] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [feedback, setFeedback] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isReceiptLoading, setIsReceiptLoading] = useState(false);
-  const [busyPaymentId, setBusyPaymentId] = useState<number | null>(null);
-  const [rejectingPaymentId, setRejectingPaymentId] = useState<number | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [decisionModal, setDecisionModal] = useState<{
-    type: "validate" | "reject";
-    payment: AdminPaymentListItem;
-  } | null>(null);
-  const [shouldFocusAction, setShouldFocusAction] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [notifyMessage, setNotifyMessage] = useState("");
-  const [notifyingPaymentId, setNotifyingPaymentId] = useState<number | null>(null);
-  const [cancelOrderModal, setCancelOrderModal] = useState<{ orderId: number; orderNumber: string } | null>(null);
-  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
-  const actionRegionRef = useRef<HTMLDivElement | null>(null);
-  const hasLoadedPaymentsRef = useRef(false);
-
-  const query = useMemo(() => buildQuery(filters, deferredSearch), [filters, deferredSearch]);
-
-  const payments = useMemo(() => pageData?.content ?? [], [pageData]);
-  const paymentMatchedByOrderId = useMemo(
-    () => (requestedOrderId
-      ? payments.find((item) => String(item.orderId) === requestedOrderId) ?? null
-      : null),
-    [payments, requestedOrderId],
+  const initialQueue = (searchParams.get("queue") || "SUBMITTED") as PaymentSubmissionQueue;
+  const initialSearch = searchParams.get("orderId") || "";
+  const [activeQueue, setActiveQueue] = useState<PaymentSubmissionQueue>(
+    QUEUES.some((queue) => queue.key === initialQueue) ? initialQueue : "SUBMITTED"
   );
-  const effectiveSelectedPaymentId = paymentMatchedByOrderId?.id ?? selectedPaymentId;
-  const selectedPayment =
-    payments.find((item) => item.id === effectiveSelectedPaymentId) ?? null;
+  const [stats, setStats] = useState<PaymentSubmissionQueueStats | null>(null);
+  const [submissionsPage, setSubmissionsPage] = useState<PaymentSubmissionsPage | null>(null);
+  const [awaitingPage, setAwaitingPage] = useState<AwaitingPaymentSubmissionsPage | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selected, setSelected] = useState<PaymentSubmission | null>(null);
+  const [search, setSearch] = useState(initialSearch);
+  const [note, setNote] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const canDecide = effectiveRole === "SUPER_ADMIN" || effectiveRole === "FINANCE_MANAGER";
 
-    async function load() {
-      if (!hasLoadedPaymentsRef.current) {
-        setIsLoading(true);
-      }
-      setError("");
-
-      try {
-        const overview = await adminApiFetch<PaymentsOverviewResponse>(
-          `/api/admin/payments/overview?${query}`,
-        );
-
-        if (cancelled) {
-          return;
-        }
-
-        setStats(overview.stats);
-        setPageData(overview.page);
-        hasLoadedPaymentsRef.current = true;
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Não foi possível carregar os pagamentos.",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [query, refreshKey]);
-
-  useAdminLiveRefresh(() => setRefreshKey((value) => value + 1), {
-    enabled: hasAccess("payments"),
-    intervalMs: 10_000,
-    minIntervalMs: 4_000,
-    runOnMount: false,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadReceipt(paymentId: number) {
-      if (receiptUrls[paymentId] !== undefined) {
-        return;
-      }
-
-      setIsReceiptLoading(true);
-      try {
-        const payload = await adminApiFetch<AdminPaymentReceiptResponse>(
-          `/api/admin/payments/${paymentId}/receipt`,
-        );
-        if (!cancelled) {
-          setReceiptUrls((current) => ({
-            ...current,
-            [paymentId]: payload.url ?? null,
-          }));
-        }
-      } catch {
-        if (!cancelled) {
-          setReceiptUrls((current) => ({
-            ...current,
-            [paymentId]: null,
-          }));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsReceiptLoading(false);
-        }
-      }
-    }
-
-    if (selectedPayment?.receiptSubmitted) {
-      void loadReceipt(selectedPayment.id);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [receiptUrls, selectedPayment]);
-
-  function setFilter<K extends keyof FiltersState>(key: K, value: FiltersState[K]) {
-    setFilters((current) => ({
-      ...current,
-      [key]: value,
-      page: key === "page" ? Number(value) : 0,
-    }));
-  }
-
-  async function refreshStats() {
+  async function load(queue = activeQueue) {
+    setIsLoading(true);
+    setError("");
     try {
-      const payload = await adminApiFetch<AdminPaymentStatsResponse>("/api/admin/payments/stats");
-      setStats(payload);
-    } catch {
-      // Keep the current snapshot if stats refresh fails.
-    }
-  }
-
-  function patchPayment(updated: AdminPaymentListItem) {
-    setPageData((current) => {
-      if (!current) {
-        return current;
+      const queueStats = await adminApiFetch<PaymentSubmissionQueueStats>("/api/admin/payment-submissions/queues");
+      setStats(queueStats);
+      if (queue === "AWAITING_SUBMISSION") {
+        const list = await adminApiFetch<AwaitingPaymentSubmissionsPage>("/api/admin/payment-submissions/awaiting?page=0&size=50");
+        setAwaitingPage(pageFrom<PaymentAwaitingSubmission>(list));
+        setSubmissionsPage(null);
+      } else {
+        const list = await adminApiFetch<PaymentSubmissionsPage>(`/api/admin/payment-submissions?queue=${queue}&page=0&size=50`);
+        setSubmissionsPage(pageFrom<PaymentSubmission>(list));
+        setAwaitingPage(null);
       }
-
-      const nextContent = current.content
-        .map((item) => (item.id === updated.id ? updated : item))
-        .filter((item) => {
-          if (filters.status === "ALL") {
-            return true;
-          }
-          return item.status === filters.status;
-        });
-
-      return {
-        ...current,
-        content: nextContent,
-      };
-    });
-  }
-
-  async function validatePayment(paymentId: number) {
-    setBusyPaymentId(paymentId);
-    setActionError("");
-    setFeedback("");
-
-    try {
-      const updated = await adminApiFetch<AdminPaymentListItem>(
-        `/api/admin/payments/${paymentId}/validate`,
-        { method: "PUT" },
-      );
-      patchPayment(updated);
-      setRejectingPaymentId(null);
-      setRejectReason("");
-      setDecisionModal(null);
-      setFeedback(`Pagamento #${paymentId} validado com sucesso.`);
-      await refreshStats();
-    } catch (mutationError) {
-      setActionError(
-        mutationError instanceof Error
-          ? mutationError.message
-          : "Não foi possível validar o pagamento.",
-      );
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Nao foi possivel carregar a fila financeira.");
     } finally {
-      setBusyPaymentId(null);
-    }
-  }
-
-  async function rejectPayment(paymentId: number) {
-    if (!rejectReason.trim()) {
-      setActionError("Indica o motivo da rejeição antes de confirmar.");
-      return;
-    }
-
-    setBusyPaymentId(paymentId);
-    setActionError("");
-
-    try {
-      const updated = await adminApiFetch<AdminPaymentListItem>(
-        `/api/admin/payments/${paymentId}/reject`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ reason: rejectReason.trim() }),
-        },
-      );
-      patchPayment(updated);
-      setRejectingPaymentId(null);
-      setRejectReason("");
-      setDecisionModal(null);
-      setFeedback(`Pagamento #${paymentId} rejeitado com sucesso.`);
-      await refreshStats();
-    } catch (mutationError) {
-      setActionError(
-        mutationError instanceof Error
-          ? mutationError.message
-          : "Não foi possível rejeitar o pagamento.",
-      );
-    } finally {
-      setBusyPaymentId(null);
-    }
-  }
-
-  async function cancelOrder(orderId: number) {
-    setIsCancellingOrder(true);
-    setActionError("");
-    setFeedback("");
-
-    try {
-      await adminApiFetch(
-        `/api/admin/orders/${orderId}/cancel`,
-        { method: "PUT" },
-      );
-      setCancelOrderModal(null);
-      setFeedback("Pedido cancelado com sucesso.");
-      setRefreshKey((value) => value + 1);
-    } catch (cancelError) {
-      setCancelOrderModal(null);
-      setActionError(
-        cancelError instanceof Error
-          ? cancelError.message
-          : "Não foi possível cancelar o pedido.",
-      );
-    } finally {
-      setIsCancellingOrder(false);
-    }
-  }
-
-  async function notifyClient(paymentId: number) {
-    setNotifyingPaymentId(paymentId);
-    setActionError("");
-    setFeedback("");
-
-    try {
-      await adminApiFetch(
-        `/api/admin/payments/${paymentId}/notify-client`,
-        {
-          method: "POST",
-          body: notifyMessage.trim() ? JSON.stringify({ message: notifyMessage.trim() }) : undefined,
-        },
-      );
-      setNotifyMessage("");
-      setFeedback("Cliente notificado com sucesso.");
-    } catch (notifyError) {
-      setActionError(
-        notifyError instanceof Error
-          ? notifyError.message
-          : "Não foi possível notificar o cliente.",
-      );
-    } finally {
-      setNotifyingPaymentId(null);
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    if (!selectedPayment || !shouldFocusAction) {
-      return;
+    if (hasAccess("payments")) {
+      void load(activeQueue);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeQueue, hasAccess]);
 
-    const frame = window.requestAnimationFrame(() => {
-      const target = actionRegionRef.current?.querySelector<HTMLElement>("[data-auto-focus-action='true']");
-      if (!target) {
-        return;
-      }
+  async function openDetail(id: number) {
+    setSelectedId(id);
+    setIsDetailLoading(true);
+    setNote("");
+    try {
+      const detail = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${id}`);
+      setSelected(detail);
+      setNote(detail.reviewNote || "");
+    } catch (detailError) {
+      setFeedback({ tone: "error", message: detailError instanceof Error ? detailError.message : "Nao foi possivel abrir a submissao." });
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
 
-      target.focus({ preventScroll: true });
-      target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-      setShouldFocusAction(false);
-    });
+  async function handleAction(action: "review" | "approve" | "reject" | "flag" | "request-new-proof") {
+    if (!selected) return;
+    setBusyAction(action);
+    try {
+      const updated = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${selected.id}/${action}`, {
+        method: "POST",
+        body: JSON.stringify({ note: note.trim() || null }),
+      });
+      setSelected(updated);
+      setFeedback({
+        tone: "success",
+        message:
+          action === "approve" ? "Pagamento aprovado"
+            : action === "reject" ? "Pagamento rejeitado"
+            : action === "flag" ? "Pagamento marcado como suspeito"
+            : action === "request-new-proof" ? "Novo comprovativo solicitado"
+            : "Revisao iniciada",
+      });
+      await load(activeQueue);
+    } catch (actionError) {
+      setFeedback({ tone: "error", message: actionError instanceof Error ? actionError.message : "Nao foi possivel processar a acao." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
-    return () => window.cancelAnimationFrame(frame);
-  }, [selectedPayment, shouldFocusAction]);
+  const filteredSubmissions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const content = submissionsPage?.content ?? [];
+    if (!query) return content;
+    return content.filter((item) => [
+      item.orderCode,
+      item.orderId,
+      item.payerName,
+      item.payerPhone,
+      item.transactionReference,
+      item.paymentMethod,
+    ].some((value) => String(value ?? "").toLowerCase().includes(query)));
+  }, [search, submissionsPage]);
+
+  const filteredAwaiting = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const content = awaitingPage?.content ?? [];
+    if (!query) return content;
+    return content.filter((item) => [
+      item.orderCode,
+      item.orderId,
+      item.customerName,
+      item.customerEmail,
+    ].some((value) => String(value ?? "").toLowerCase().includes(query)));
+  }, [awaitingPage, search]);
 
   if (!hasAccess("payments")) {
     return null;
   }
 
-  const selectedReceiptUrl =
-    selectedPayment && selectedPayment.receiptSubmitted
-      ? receiptUrls[selectedPayment.id] ?? null
-      : null;
-
   return (
     <div className="space-y-6">
-      <section className="admin-card p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <section className="sticky top-[88px] z-10 rounded-[28px] border border-[var(--color-border)] bg-[color:var(--color-surface-overlay)]/95 px-6 py-5 backdrop-blur-xl">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-danger)]">
-              Gestão financeira
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h1 className="font-[family-name:var(--font-sora)] text-3xl font-semibold text-[var(--color-text-primary)]">
-                Pagamentos
-              </h1>
-              <span className="inline-flex rounded-full bg-[#FAEEDA] px-3 py-1 text-sm font-semibold text-[#9A5B00]">
-                {stats?.pendingValidationCount ?? 0} pendente(s) de validação
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-              Controla pagamentos submetidos, revê comprovativos e valida o que entra em caixa.
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-danger)]">Financeiro operacional</p>
+            <h1 className="mt-2 font-[family-name:var(--font-sora)] text-3xl font-semibold text-[var(--color-text-primary)]">Validação de pagamentos</h1>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Fila semi-manual para rever submissões, comprovativos e riscos antes de marcar pedidos como pagos.</p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-2xl border border-[rgba(22,163,74,0.18)] bg-[rgba(22,163,74,0.08)] px-4 py-3 text-right">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#166534]">
-                Total validado hoje
-              </p>
-              <p className="mt-1 font-[family-name:var(--font-sora)] text-xl font-semibold text-[#166534]">
-                {formatMoney(stats?.validatedTodayAmount ?? 0)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => downloadCsv(payments)}
-              className="admin-button-muted"
-            >
-              Exportar
-            </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input value={search} onChange={(event) => setSearch(event.target.value)} className="admin-input min-w-[280px]" placeholder="Pesquisar pedido, telefone ou referencia" />
+            <button type="button" onClick={() => void load()} className="admin-button-muted">Actualizar</button>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            key: "ALL" as const,
-            label: "Todos",
-            value: stats?.all ?? 0,
-            accent: "border-[var(--color-border)] bg-white text-[var(--color-text-primary)]",
-          },
-          {
-            key: "PENDING" as const,
-            label: "Pendentes",
-            value: stats?.pending ?? 0,
-            accent: "border-[#F5C778] bg-[#FFF7E8] text-[#9A5B00]",
-          },
-          {
-            key: "VALIDATED" as const,
-            label: "Validados",
-            value: stats?.validated ?? 0,
-            accent: "border-[#8DD9A8] bg-[#F1FBF4] text-[#166534]",
-          },
-          {
-            key: "REJECTED" as const,
-            label: "Rejeitados",
-            value: stats?.rejected ?? 0,
-            accent: "border-[#F3A4A4] bg-[#FFF4F4] text-[#B42318]",
-          },
-        ].map((card) => {
-          const active = filters.status === card.key;
+      {error ? <AdminBanner tone="error" message={error} /> : null}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        {QUEUES.map((queue) => {
+          const active = activeQueue === queue.key;
+          const count = queueCount(stats, queue.key);
           return (
             <button
-              key={card.key}
+              key={queue.key}
               type="button"
-              onClick={() => setFilter("status", card.key)}
-              className={`admin-card cursor-pointer border p-5 text-left transition hover:-translate-y-0.5 ${card.accent} ${
-                active ? "ring-2 ring-[rgba(232,67,26,0.16)]" : ""
-              }`}
+              onClick={() => setActiveQueue(queue.key)}
+              className={`admin-card p-4 text-left transition ${active ? "border-[var(--color-danger)] bg-[#FFF0EC]" : ""}`}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-80">
-                {card.label}
-              </p>
-              <p className="mt-3 font-[family-name:var(--font-sora)] text-3xl font-semibold">
-                {card.value}
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[var(--color-text-primary)]">{queue.label}</p>
+                <ActionDot visible={queue.needsAction && count > 0} />
+              </div>
+              <p className="mt-3 font-[family-name:var(--font-sora)] text-3xl font-semibold text-[var(--color-text-primary)]">{count}</p>
             </button>
           );
         })}
       </section>
 
-      <section className="admin-card p-5">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-2">
-            {STATUS_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setFilter("status", option.value)}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                  filters.status === option.value
-                    ? "border-[var(--color-danger)] bg-[rgba(232,67,26,0.1)] text-[var(--color-danger)]"
-                    : option.tone
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+      <section className="relative min-h-[420px]">
+        {isLoading ? (
+          <AdminCardListSkeleton rows={4} />
+        ) : activeQueue === "AWAITING_SUBMISSION" ? (
+          <div className="space-y-4">
+            {filteredAwaiting.length ? filteredAwaiting.map((item) => <AwaitingCard key={item.orderId} item={item} />) : <AdminBanner message={QUEUES.find((q) => q.key === activeQueue)?.empty || "Fila vazia"} />}
           </div>
-
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
-            <div className="flex flex-wrap gap-2">
-              {METHOD_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setFilter("method", option.value)}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    filters.method === option.value
-                      ? "border-[var(--color-danger)] bg-[rgba(232,67,26,0.1)] text-[var(--color-danger)]"
-                      : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="space-y-4">
+              {filteredSubmissions.length ? filteredSubmissions.map((item) => (
+                <SubmissionCard key={item.id} item={item} selected={selectedId === item.id} onClick={() => void openDetail(item.id)} />
+              )) : <AdminBanner message={QUEUES.find((q) => q.key === activeQueue)?.empty || "Fila vazia"} />}
             </div>
-
-            <div className="grid flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-              <input
-                type="search"
-                value={filters.search}
-                onChange={(event) => setFilter("search", event.target.value)}
-                placeholder="Pesquisar por ID do pagamento, pedido ou cliente"
-                className="admin-input w-full"
-              />
-              <select
-                value={filters.period}
-                onChange={(event) => setFilter("period", event.target.value as AdminPaymentPeriodFilter)}
-                className="admin-input w-full"
-              >
-                {PERIOD_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <div className="hidden xl:block">
+              <div className="sticky top-[210px] rounded-[28px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-5">
+                <p className="font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">Painel de revisão</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">Seleciona uma submissão para abrir o drawer com comprovativo, riscos, histórico e ações financeiras.</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="admin-card relative overflow-hidden" aria-busy={isLoading}>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left">
-              <thead className="border-b border-[var(--color-border)] text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                <tr>
-                  {["Pagamento", "Pedido", "Cliente", "Método", "Valor", "Data", "Estado / acções"].map((head) => (
-                    <th key={head} className="px-5 py-4 font-medium">
-                      {head}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading && payments.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-8">
-                      <div className="space-y-4">
-                        <AdminStateCard
-                          title="A carregar pagamentos"
-                          message="Estamos a reunir comprovativos, estados de validacao e detalhes da cobranca."
-                          tone="loading"
-                          compact
-                        />
-                        <AdminTableSkeleton columns={5} rows={3} />
-                      </div>
-                    </td>
-                  </tr>
-                ) : null}
-
-                {payments.map((payment) => {
-                  const isSelected = selectedPayment?.id === payment.id;
-                  const showRejectForm = rejectingPaymentId === payment.id;
-                  const canReviewPayment =
-                    payment.status === "PENDING" &&
-                    (payment.receiptSubmitted || payment.method === "CASH_ON_DELIVERY");
-                  return (
-                    <tr
-                      key={payment.id}
-                      onClick={() => {
-                        setSelectedPaymentId(payment.id);
-                        setShouldFocusAction(true);
-                        setActionError("");
-                      }}
-                      className={`cursor-pointer border-b border-[var(--color-border)] align-top transition last:border-b-0 hover:bg-[var(--color-background-tertiary)]/60 ${
-                        isSelected ? "bg-[rgba(232,67,26,0.05)]" : ""
-                      }`}
-                    >
-                      <td className="px-5 py-4 font-[family-name:var(--font-sora)] text-sm font-semibold text-[var(--color-text-primary)]">
-                        <span className="inline-flex items-center gap-2">
-                          {canReviewPayment ? <AttentionDot label="Pagamento pendente de validacao" /> : null}
-                          #{payment.id}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <Link
-                          href={`/admin/orders/${payment.orderId}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="text-sm font-semibold text-[var(--color-danger)] hover:underline"
-                        >
-                          {payment.orderNumber}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(232,67,26,0.12)] text-xs font-semibold text-[var(--color-danger)]">
-                            {initials(payment.customerName)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                              {payment.customerName}
-                            </p>
-                            <p className="text-xs text-[var(--color-text-secondary)]">
-                              {payment.customerEmail || payment.customerPhone || "Sem contacto"}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            METHOD_BADGE_STYLES[payment.receiptSubmitted ? payment.method ?? "" : ""] ??
-                            "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
-                          }`}
-                        >
-                          {getMethodLabel(payment)}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-sm font-semibold text-[var(--color-text-primary)]">
-                        {formatMoney(payment.amount)}
-                      </td>
-                      <td className="px-5 py-4 text-sm text-[var(--color-text-secondary)]">
-                        {formatDateTime(payment.submittedAt || payment.paymentDate)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="space-y-3">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              STATUS_BADGE_STYLES[payment.status]
-                            }`}
-                          >
-                            {canReviewPayment ? <AttentionDot label="Pagamento pendente de validacao" className="mr-2 h-2.5 w-2.5" /> : null}
-                            {STATUS_LABELS[payment.status]}
-                          </span>
-
-                          {canReviewPayment ? (
-                            <div className="space-y-2">
-                              {showRejectForm ? (
-                                <div
-                                  className="space-y-2"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  <input
-                                    type="text"
-                                    value={rejectReason}
-                                    onChange={(event) => setRejectReason(event.target.value)}
-                                    placeholder="Motivo da rejeição"
-                                    className="admin-input w-full text-sm"
-                                  />
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => void rejectPayment(payment.id)}
-                                      className="rounded-xl bg-[#B42318] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#991b1b]"
-                                      disabled={busyPaymentId === payment.id}
-                                    >
-                                      {busyPaymentId === payment.id ? "A rejeitar..." : "Confirmar"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setRejectingPaymentId(null);
-                                        setRejectReason("");
-                                      }}
-                                      className="rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)]"
-                                    >
-                                      Cancelar
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div
-                                  className="flex flex-wrap gap-2"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => void validatePayment(payment.id)}
-                                    className="rounded-xl bg-[#166534] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#14532d]"
-                                    disabled={busyPaymentId === payment.id}
-                                  >
-                                    {busyPaymentId === payment.id ? "A validar..." : "Validar"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setRejectingPaymentId(payment.id);
-                                      setRejectReason(payment.adminNote ?? "");
-                                    }}
-                                    className="rounded-xl bg-[#B42318] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#991b1b]"
-                                  >
-                                    Rejeitar
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ) : payment.status === "PENDING" ? (
-                            <p className="max-w-[220px] text-xs text-[var(--color-text-secondary)]">
-                              {payment.method === "CASH_ON_DELIVERY"
-                                ? "Pagamento configurado para cobrança na entrega."
-                                : "Aguardando submissão do comprovativo pelo cliente."}
-                            </p>
-                          ) : payment.adminNote ? (
-                            <p className="max-w-[220px] text-xs text-[var(--color-text-secondary)]">
-                              {payment.adminNote}
-                            </p>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {!isLoading && payments.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-5 py-12 text-center text-sm text-[var(--color-text-secondary)]"
-                    >
-                      Nenhum pagamento encontrado para os filtros escolhidos.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-[var(--color-border)] px-5 py-4">
-            <p className="text-sm text-[var(--color-text-secondary)]">
-              Página {(pageData?.page ?? 0) + 1} de {Math.max(pageData?.totalPages ?? 1, 1)}
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setFilter("page", Math.max(filters.page - 1, 0))}
-                disabled={isLoading || (pageData?.page ?? 0) <= 0}
-                className="admin-button-muted disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setFilter(
-                    "page",
-                    Math.min(filters.page + 1, Math.max((pageData?.totalPages ?? 1) - 1, 0)),
-                  )
-                }
-                disabled={isLoading || (pageData?.page ?? 0) >= Math.max((pageData?.totalPages ?? 1) - 1, 0)}
-                className="admin-button-muted disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Seguinte
-              </button>
-            </div>
-          </div>
-          <AdminListLoadingOverlay
-            visible={isLoading && payments.length > 0}
-            title="A carregar pagamentos"
-            message="Estamos a buscar a pagina de pagamentos."
-          />
-        </section>
-
-        <aside className="sticky top-[96px] h-fit space-y-4">
-          <section className="admin-card p-5">
-            {selectedPayment ? (
-              <>
-                <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] pb-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
-                      Detalhes
-                    </p>
-                    <h2 className="mt-2 font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">
-                      Pagamento #{selectedPayment.id}
-                    </h2>
-                  </div>
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      STATUS_BADGE_STYLES[selectedPayment.status]
-                    }`}
-                  >
-                    {STATUS_LABELS[selectedPayment.status]}
-                  </span>
-                </div>
-
-                <div className="space-y-5 pt-4 text-sm">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
-                      Pedido associado
-                    </p>
-                    <Link
-                      href={`/admin/orders/${selectedPayment.orderId}`}
-                      className="mt-1 inline-flex text-sm font-semibold text-[var(--color-danger)] hover:underline"
-                    >
-                      {selectedPayment.orderNumber}
-                    </Link>
-                  </div>
-
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
-                      Cliente
-                    </p>
-                    <p className="mt-1 font-semibold text-[var(--color-text-primary)]">
-                      {selectedPayment.customerName}
-                    </p>
-                    <p className="mt-1 text-[var(--color-text-secondary)]">
-                      {selectedPayment.customerEmail || "Sem email"}
-                    </p>
-                    <p className="text-[var(--color-text-secondary)]">
-                      {selectedPayment.customerPhone || "Sem telefone"}
-                    </p>
-                  </div>
-
-                  <div className="grid gap-3">
-                    {[
-                      ["Método", getMethodLabel(selectedPayment)],
-                      ["Referência", selectedPayment.receiptSubmitted ? selectedPayment.transactionId || "Sem referência" : "Aguardando cliente"],
-                      ["Valor", formatMoney(selectedPayment.amount)],
-                      ["Data", formatDateTime(selectedPayment.submittedAt || selectedPayment.paymentDate)],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3"
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
-                          {label}
-                        </p>
-                        <p className="mt-1 font-medium text-[var(--color-text-primary)]">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
-                        Comprovativo
-                      </p>
-                      {selectedPayment.receiptSubmitted && selectedReceiptUrl ? (
-                        <button
-                          type="button"
-                          onClick={() => setReceiptModalOpen(true)}
-                          className="text-xs font-semibold text-[var(--color-danger)]"
-                        >
-                          Ver comprovativo em tamanho completo
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-3 overflow-hidden rounded-[20px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
-                      {!selectedPayment.receiptSubmitted ? (
-                        <div className="flex h-[220px] items-center justify-center px-6 text-center text-sm text-[var(--color-text-secondary)]">
-                          {selectedPayment.method === "CASH_ON_DELIVERY"
-                            ? "Este pedido foi configurado para cobrança na entrega e não precisa de comprovativo prévio."
-                            : "Este pedido já caiu no sector de pagamentos, mas ainda está à espera do comprovativo do cliente."}
-                        </div>
-                      ) : isReceiptLoading ? (
-                        <div className="flex h-[220px] items-center justify-center text-sm text-[var(--color-text-secondary)]">
-                          A carregar comprovativo...
-                        </div>
-                      ) : selectedReceiptUrl ? (
-                        <div className="relative h-[220px] w-full">
-                          <Image
-                            loader={passthroughImageLoader}
-                            unoptimized
-                            src={selectedReceiptUrl}
-                            alt={`Comprovativo do pagamento ${selectedPayment.id}`}
-                            fill
-                            sizes="320px"
-                            className="object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex h-[220px] items-center justify-center px-6 text-center text-sm text-[var(--color-text-secondary)]">
-                          Este pagamento ainda não tem um comprovativo disponível.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedPayment.notes ? (
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
-                        Observações
-                      </p>
-                      <p className="mt-1 text-[var(--color-text-primary)]">{selectedPayment.notes}</p>
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4 space-y-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
-                      Notificar cliente
-                    </p>
-                    <textarea
-                      value={notifyMessage}
-                      onChange={(event) => setNotifyMessage(event.target.value)}
-                      placeholder="Mensagem para o cliente (opcional — será enviada via Telegram e visível no portal)"
-                      rows={3}
-                      className="admin-input w-full resize-none text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void notifyClient(selectedPayment.id)}
-                      disabled={notifyingPaymentId === selectedPayment.id}
-                      className="w-full rounded-2xl bg-[#1D4ED8] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-60"
-                    >
-                      {notifyingPaymentId === selectedPayment.id ? "A notificar..." : "Notificar cliente"}
-                    </button>
-                  </div>
-
-                  <div ref={actionRegionRef}>
-                  {selectedPayment.status === "PENDING" && selectedPayment.receiptSubmitted ? (
-                    <div className="space-y-3">
-                      <button
-                        type="button"
-                        data-auto-focus-action="true"
-                        onClick={() => setDecisionModal({ type: "validate", payment: selectedPayment })}
-                        className="w-full rounded-2xl bg-[#166534] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#14532d]"
-                        disabled={busyPaymentId === selectedPayment.id}
-                      >
-                        {busyPaymentId === selectedPayment.id
-                          ? "A validar pagamento..."
-                          : selectedPayment.method === "CASH_ON_DELIVERY"
-                            ? "Marcar como pago"
-                            : "Validar pagamento"}
-                      </button>
-
-                      <div className="space-y-2 rounded-2xl border border-[rgba(180,35,24,0.18)] bg-[rgba(180,35,24,0.04)] p-4">
-                        <input
-                          type="text"
-                          value={rejectingPaymentId === selectedPayment.id ? rejectReason : ""}
-                          onFocus={() => {
-                            setRejectingPaymentId(selectedPayment.id);
-                            setRejectReason(selectedPayment.adminNote ?? "");
-                          }}
-                          onChange={(event) => {
-                            setRejectingPaymentId(selectedPayment.id);
-                            setRejectReason(event.target.value);
-                          }}
-                          placeholder="Motivo da rejeição"
-                          className="admin-input w-full text-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRejectingPaymentId(selectedPayment.id);
-                            setDecisionModal({ type: "reject", payment: selectedPayment });
-                          }}
-                          className="w-full rounded-2xl bg-[#B42318] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#991b1b]"
-                          disabled={busyPaymentId === selectedPayment.id}
-                        >
-                          {busyPaymentId === selectedPayment.id ? "A rejeitar..." : "Rejeitar"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : selectedPayment.status === "PENDING" ? (
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
-                      {selectedPayment.method === "CASH_ON_DELIVERY"
-                        ? "Este pedido está marcado para cobrança na entrega. Quando o valor entrar, podes marcar como pago aqui."
-                        : "À espera da submissão do comprovativo pelo cliente para poderes validar ou rejeitar."}
-                    </div>
-                  ) : (
-                    <Link
-                      href={`/admin/orders/${selectedPayment.orderId}`}
-                      data-auto-focus-action="true"
-                      className="inline-flex w-full justify-center rounded-2xl bg-[#E8431A] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#cf3c17]"
-                    >
-                      Abrir pedido associado
-                    </Link>
-                  )}
-                  </div>
-
-                  {selectedPayment.status !== "VALIDATED" && selectedPayment.status !== "CANCELLED" ? (
-                    <button
-                      type="button"
-                      onClick={() => setCancelOrderModal({ orderId: selectedPayment.orderId, orderNumber: selectedPayment.orderNumber })}
-                      className="mt-2 w-full rounded-2xl border border-[rgba(180,35,24,0.25)] bg-transparent px-4 py-2.5 text-sm font-semibold text-[#B42318] transition hover:bg-[rgba(180,35,24,0.06)]"
-                    >
-                      Cancelar pedido
-                    </button>
-                  ) : null}
-                </div>
-              </>
-            ) : (
-              <div className="py-12 text-center text-sm text-[var(--color-text-secondary)]">
-                Selecciona um pagamento para ver os detalhes.
-              </div>
-            )}
-          </section>
-        </aside>
-      </div>
-
-      {receiptModalOpen && selectedReceiptUrl ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
-          onClick={() => setReceiptModalOpen(false)}
-        >
-          <div
-            className="max-h-[90vh] max-w-5xl overflow-hidden rounded-[28px] bg-white p-4 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="relative h-[82vh] w-[min(90vw,1200px)]">
-              <Image
-                loader={passthroughImageLoader}
-                unoptimized
-                src={selectedReceiptUrl}
-                alt="Comprovativo em tamanho completo"
-                fill
-                sizes="90vw"
-                className="object-contain"
-              />
-            </div>
-          </div>
-        </div>
+      {selectedId ? (
+        <SubmissionDrawer
+          submission={selected}
+          isLoading={isDetailLoading}
+          note={note}
+          setNote={setNote}
+          onClose={() => {
+            setSelectedId(null);
+            setSelected(null);
+          }}
+          onAction={handleAction}
+          busyAction={busyAction}
+          canDecide={canDecide}
+        />
       ) : null}
 
-      <AdminFeedbackDock
-        feedback={
-          actionError
-            ? { tone: "error", message: actionError }
-            : error
-              ? { tone: "error", message: error }
-              : feedback
-                ? { tone: "success", message: feedback }
-                : null
-        }
-        onClose={() => {
-          setError("");
-          setActionError("");
-          setFeedback("");
-        }}
-      />
-      <AdminConfirmDialog
-        open={Boolean(decisionModal)}
-        title={decisionModal?.type === "reject" ? "Rejeitar pagamento?" : "Validar pagamento?"}
-        message={
-          decisionModal?.type === "reject"
-            ? `O pagamento #${decisionModal.payment.id} sera rejeitado e o cliente vera o motivo da devolucao.`
-            : `O pagamento #${decisionModal?.payment.id ?? ""} sera marcado como validado e o pedido podera avancar.`
-        }
-        confirmLabel={decisionModal?.type === "reject" ? "Rejeitar pagamento" : "Validar pagamento"}
-        danger={decisionModal?.type === "reject"}
-        pending={busyPaymentId === decisionModal?.payment.id}
-        onCancel={() => {
-          setDecisionModal(null);
-          if (!decisionModal || decisionModal.type !== "reject") {
-            setRejectReason("");
-          }
-        }}
-        onConfirm={() => {
-          if (!decisionModal) return;
-          if (decisionModal.type === "reject") {
-            void rejectPayment(decisionModal.payment.id);
-            return;
-          }
-          void validatePayment(decisionModal.payment.id);
-        }}
-      >
-        {decisionModal?.type === "reject" ? (
-          <input
-            type="text"
-            value={rejectReason}
-            onChange={(event) => setRejectReason(event.target.value)}
-            placeholder="Motivo da rejeicao"
-            className="admin-input w-full text-sm"
-          />
-        ) : null}
-      </AdminConfirmDialog>
-
-      <AdminConfirmDialog
-        open={Boolean(cancelOrderModal)}
-        title="Cancelar pedido?"
-        message={`O pedido ${cancelOrderModal?.orderNumber ?? ""} sera cancelado permanentemente. Esta accao nao pode ser desfeita.`}
-        confirmLabel="Cancelar pedido"
-        danger
-        pending={isCancellingOrder}
-        onCancel={() => setCancelOrderModal(null)}
-        onConfirm={() => {
-          if (!cancelOrderModal) return;
-          void cancelOrder(cancelOrderModal.orderId);
-        }}
-      />
+      <AdminFeedbackDock feedback={feedback} onClose={() => setFeedback(null)} />
     </div>
   );
 }
