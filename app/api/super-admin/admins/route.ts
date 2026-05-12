@@ -3,6 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchBackend, jsonError, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 import { filterManagedAdmins, mapManagedAdmin, mapManagedAdminsPage } from "@/app/api/super-admin/admins/_shared";
 
+function normalizeMozambiquePhone(value: unknown) {
+  if (typeof value !== "string") return "";
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  let local = digits;
+  if (local.startsWith("00258")) local = local.slice(2);
+  if (local.startsWith("258")) local = local.slice(3);
+  if (local.startsWith("0")) local = local.slice(1);
+  return /^(82|83|84|85|86|87)\d{7}$/.test(local) ? `+258${local}` : null;
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   let response: Response;
@@ -38,12 +49,16 @@ export async function POST(request: NextRequest) {
   const firstName = typeof incoming?.firstName === "string" ? incoming.firstName.trim() : "";
   const lastName = typeof incoming?.lastName === "string" ? incoming.lastName.trim() : "";
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const phone = normalizeMozambiquePhone(incoming?.phone);
+  if (phone === null) {
+    return jsonError("Telefone invalido. Use um numero mocambicano no formato +2588xxxxxxxx.", 400);
+  }
   const response = await fetchBackend(request, "/super-admin/admins", {
     method: "POST",
     body: JSON.stringify({
       name: fullName || (typeof incoming?.name === "string" ? incoming.name.trim() : ""),
       email: typeof incoming?.email === "string" ? incoming.email.trim() : "",
-      phone: typeof incoming?.phone === "string" ? incoming.phone.trim() : "",
+      phone,
       password: typeof incoming?.password === "string" ? incoming.password : "",
       role: typeof incoming?.role === "string" ? incoming.role : "ADMIN",
       roles: Array.isArray(incoming?.roles) ? incoming.roles : undefined,

@@ -58,6 +58,8 @@ type BackendTransaction = {
   customerName?: string;
   method?: string;
   amount?: number;
+  commission?: number | null;
+  commissionAmount?: number | null;
   status?: string;
 };
 
@@ -238,7 +240,7 @@ export async function GET(request: NextRequest) {
       orderNumber: tx.orderNumber ?? "",
       customer: tx.customerName ?? "",
       totalAmount: Number(tx.amount ?? 0),
-      commission: 0,
+      commission: Number(tx.commission ?? tx.commissionAmount ?? 0),
       paymentMethod: METHOD_LABELS[tx.method ?? ""] ?? (tx.method ?? ""),
       status: normalizeStatus(tx.status),
     })),
