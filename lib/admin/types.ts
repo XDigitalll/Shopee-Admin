@@ -44,6 +44,9 @@ export type OrdersFilterState = {
     | "UNDER_REVIEW"
     | "QUOTED"
     | "PENDING_PAYMENT"
+    | "PAYMENT_SUBMITTED"
+    | "PAYMENT_UNDER_REVIEW"
+    | "PAYMENT_REJECTED"
     | "PAID"
     | "SHIPPED";
   type: "ALL" | "EXTERNAL" | "INTERNAL";
@@ -423,6 +426,78 @@ export type AdminPaymentReceiptResponse = {
   url: string | null;
 };
 
+export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED";
+export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS";
+export type PaymentMethodType = "EMOLA" | "MPESA" | "BANK_TRANSFER" | "VISA_MANUAL";
+
+export type PaymentSubmissionQueueStats = {
+  awaitingSubmission: number;
+  submitted: number;
+  underReview: number;
+  approved: number;
+  rejected: number;
+  suspicious: number;
+};
+
+export type PaymentAwaitingSubmission = {
+  orderId: number;
+  orderCode: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  expectedAmount: number | null;
+  orderStatus: string | null;
+  orderDate: string | null;
+};
+
+export type PaymentSubmission = {
+  id: number;
+  orderId: number | null;
+  orderCode: string | null;
+  orderStatus: string | null;
+  expectedAmount: number | null;
+  paymentMethod: PaymentMethodType | string | null;
+  payerName: string | null;
+  payerPhone: string | null;
+  payerBank: string | null;
+  transactionReference: string | null;
+  amount: number | null;
+  currency: string | null;
+  proofUrl: string | null;
+  proofType: string | null;
+  status: PaymentSubmissionStatus;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  riskFlags: string[];
+  matchedTransactionId: string | null;
+  metadata: Record<string, unknown> | null;
+  orderHistory?: Array<{
+    id?: number;
+    action?: string | null;
+    description?: string | null;
+    performedByEmail?: string | null;
+    performedByName?: string | null;
+    createdAt?: string | null;
+  }>;
+};
+
+export type PaymentSubmissionsPage = {
+  content: PaymentSubmission[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+export type AwaitingPaymentSubmissionsPage = {
+  content: PaymentAwaitingSubmission[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+};
+
 export type CreateExternalOrderPayload = {
   deliveryMethod: "DELIVERY" | "STORE_PICKUP";
   sourceStore:
@@ -596,8 +671,11 @@ export type AdminProductVariant = {
   color: string | null;
   size: string | null;
   stock: number;
+  purchasePrice: number | null;
   finalPrice: number | null;
   promotionalPrice: number | null;
+  profitAmount: number | null;
+  marginPercentage: number | null;
   effectivePrice: number | null;
   active: boolean;
   mainImageUrl: string | null;

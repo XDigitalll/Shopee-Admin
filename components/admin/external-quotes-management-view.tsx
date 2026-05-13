@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { AttentionDot } from "@/components/admin/attention-dot";
 import { AdminCardListSkeleton, AdminConfirmDialog, AdminFeedbackDock, AdminStateCard } from "@/components/admin/feedback-state";
@@ -10,6 +10,8 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney } from "@/lib/admin/format";
+import { isActionRequired, sortOperationalQueue } from "@/lib/admin/operational-queue";
+import type { AdminRole } from "@/lib/admin/roles";
 import type {
   AdminQuoteDetail,
   AdminQuoteListItem,
@@ -87,10 +89,10 @@ function buildAction(item: AdminQuoteListItem) {
 }
 
 function quoteNeedsAttention(item: AdminQuoteListItem | AdminQuoteDetail) {
-  return ["UNDER_REVIEW", "DRAFT", "SENT"].includes(item.status);
+  return isActionRequired(item, "QUOTES");
 }
 
-function buildDetailActions(detail: AdminQuoteDetail) {
+function buildDetailActions(detail: AdminQuoteDetail, role: AdminRole | null) {
   if (detail.status === "UNDER_REVIEW") {
     return {
       primary: { label: "Analisar e cotar", href: `/admin/orders/${detail.id}/quote` },
@@ -118,7 +120,9 @@ function buildDetailActions(detail: AdminQuoteDetail) {
   if (detail.status === "APPROVED") {
     return {
       primary: { label: "Ver detalhes completos", href: `/admin/orders/${detail.id}` },
-      secondary: { label: "Acompanhar pagamento", href: `/admin/payments?orderId=${detail.id}` },
+      secondary: role === "SUPER_ADMIN"
+        ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+        : undefined,
       danger: null,
     };
   }
@@ -157,7 +161,7 @@ function exportAsCsv(items: AdminQuoteListItem[]) {
 }
 
 export function ExternalQuotesManagementView() {
-  const { hasAccess } = useAdminAuth();
+  const { effectiveRole, hasAccess } = useAdminAuth();
   const [filters, setFilters] = useState(defaultFilters);
   const [quotes, setQuotes] = useState<AdminQuoteListItem[]>([]);
   const [pageMeta, setPageMeta] = useState({ page: 0, totalPages: 1, totalElements: 0 });
@@ -174,6 +178,10 @@ export function ExternalQuotesManagementView() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const visibleQuotes = useMemo(
+    () => sortOperationalQueue(quotes, "QUOTES", filters.sort === "RECENT" ? "DESC" : "ASC"),
+    [filters.sort, quotes]
+  );
 
   useAdminLiveRefresh(() => setRefreshKey((value) => value + 1), {
     enabled: hasAccess("quotes"),
@@ -220,7 +228,12 @@ export function ExternalQuotesManagementView() {
           return;
         }
 
-        setQuotes(listPayload.content);
+        const orderedContent = sortOperationalQueue(
+          listPayload.content,
+          "QUOTES",
+          filters.sort === "RECENT" ? "DESC" : "ASC"
+        );
+        setQuotes(orderedContent);
         setPageMeta({
           page: listPayload.page,
           totalPages: listPayload.totalPages,
@@ -228,7 +241,7 @@ export function ExternalQuotesManagementView() {
         });
         setStats(statsPayload);
         setSelectedId((current) =>
-          listPayload.content.some((item) => item.id === current) ? current : listPayload.content[0]?.id ?? null
+          orderedContent.some((item) => item.id === current) ? current : orderedContent[0]?.id ?? null
         );
         hasLoadedListRef.current = true;
         setError("");
@@ -319,7 +332,7 @@ export function ExternalQuotesManagementView() {
 
     setSelectedDetail(detailPayload);
     setStats(statsPayload);
-    setQuotes(listPayload.content);
+    setQuotes(sortOperationalQueue(listPayload.content, "QUOTES", filters.sort === "RECENT" ? "DESC" : "ASC"));
     setPageMeta({
       page: listPayload.page,
       totalPages: listPayload.totalPages,
@@ -408,7 +421,7 @@ export function ExternalQuotesManagementView() {
     });
   }
 
-  const detailActions = selectedDetail ? buildDetailActions(selectedDetail) : null;
+  const detailActions = selectedDetail ? buildDetailActions(selectedDetail, effectiveRole) : null;
 
   return (
     <div className="space-y-6">
@@ -548,13 +561,13 @@ export function ExternalQuotesManagementView() {
             </div>
           ) : null}
 
-          {!isLoading && !quotes.length ? (
+          {!isLoading && !visibleQuotes.length ? (
             <div className="admin-card p-8 text-sm text-[var(--color-text-secondary)]">
               Nenhuma cotação encontrada para os filtros activos.
             </div>
           ) : null}
 
-          {quotes.map((quote) => {
+          {visibleQuotes.map((quote) => {
             const action = buildAction(quote);
             const active = selectedId === quote.id;
             const needsAttention = quoteNeedsAttention(quote);
@@ -783,9 +796,11 @@ export function ExternalQuotesManagementView() {
                   ) : null}
 
                   {detailActions?.secondary ? (
-                    "href" in detailActions.secondary ? (
-                      (() => {
-                        const secondaryHref = detailActions.secondary.href ?? "#";
+                    (() => {
+                      const secondaryAction = detailActions.secondary;
+                      return "href" in secondaryAction ? (
+                        (() => {
+                        const secondaryHref = secondaryAction.href ?? "#";
                         const opensExternally = secondaryHref.startsWith("http");
 
                         return (
@@ -795,7 +810,7 @@ export function ExternalQuotesManagementView() {
                             rel={opensExternally ? "noreferrer" : undefined}
                             className="admin-button-muted justify-center"
                           >
-                            {detailActions.secondary.label}
+                            {secondaryAction.label}
                           </a>
                         );
                       })()
@@ -803,15 +818,16 @@ export function ExternalQuotesManagementView() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (detailActions.secondary.action) {
-                            void handleDangerAction(detailActions.secondary.action);
+                          if (secondaryAction.action) {
+                            void handleDangerAction(secondaryAction.action);
                           }
                         }}
                         className="admin-button-muted justify-center"
                       >
-                        {detailActions.secondary.label}
+                        {secondaryAction.label}
                       </button>
-                    )
+                    );
+                    })()
                   ) : null}
 
                   {detailActions?.danger ? (

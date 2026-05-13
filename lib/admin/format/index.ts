@@ -57,6 +57,9 @@ export function humanizeOrderStatus(status: string | null | undefined) {
     OUT_FOR_DELIVERY: "Saiu para entrega",
     DELIVERED: "Entregue",
     PENDING_PAYMENT: "Pagamento pendente",
+    PAYMENT_SUBMITTED: "Pagamento submetido",
+    PAYMENT_UNDER_REVIEW: "Pagamento em analise",
+    PAYMENT_REJECTED: "Pagamento rejeitado",
     CREATED: "Criado",
     RECEIVED: "Recebido",
     PRICING: "Em analise",
@@ -77,6 +80,8 @@ export function humanizePaymentMethod(method: string | null | undefined) {
   const labels: Record<string, string> = {
     MPESA: "M-Pesa",
     EMOLA: "e-Mola",
+    BANK_TRANSFER: "Transferencia bancaria",
+    VISA_MANUAL: "Visa / cartao manual",
     CASH_ON_DELIVERY: "Cobranca na entrega",
     CARD: "Cartao",
   };

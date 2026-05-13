@@ -72,7 +72,7 @@ function mapPriority(order: BackendOrder) {
     return { priority: "HIGH" as const, priorityLabel: "Alta" };
   }
 
-  if (["UNDER_REVIEW", "QUOTED", "PENDING_PAYMENT", "SHIPPED"].includes(uiStatus) || hoursOpen >= 8) {
+  if (["UNDER_REVIEW", "QUOTED", "PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED", "SHIPPED"].includes(uiStatus) || hoursOpen >= 8) {
     return { priority: "MEDIUM" as const, priorityLabel: "Media" };
   }
 
@@ -152,7 +152,7 @@ function isPendingQuoteCandidate(order: AdminOrderListItem) {
     return false;
   }
 
-  return ["UNDER_REVIEW", "QUOTED", "PENDING_PAYMENT"].includes(order.uiStatus);
+  return ["UNDER_REVIEW", "QUOTED", "PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED"].includes(order.uiStatus);
 }
 
 function matchesStatusFilter(order: AdminOrderListItem, status: string | null) {

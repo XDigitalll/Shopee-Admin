@@ -4,6 +4,9 @@ export const RAW_ADMIN_ORDER_STATUSES = [
   "QUOTED",
   "APPROVED",
   "PENDING_PAYMENT",
+  "PAYMENT_SUBMITTED",
+  "PAYMENT_UNDER_REVIEW",
+  "PAYMENT_REJECTED",
   "PAID",
   "ORDERED",
   "SHIPPED",
@@ -79,6 +82,9 @@ export function resolveOrderQueueStatus(status: string | null | undefined): Excl
       return "ANALYSIS";
     case "APPROVED":
     case "PENDING_PAYMENT":
+    case "PAYMENT_SUBMITTED":
+    case "PAYMENT_UNDER_REVIEW":
+    case "PAYMENT_REJECTED":
       return "PAYMENT";
     case "PAID":
     case "ORDERED":
@@ -106,6 +112,9 @@ export function resolveCustomerOrderStage(status: string | null | undefined): Cu
       return "PRICING";
     case "APPROVED":
     case "PENDING_PAYMENT":
+    case "PAYMENT_SUBMITTED":
+    case "PAYMENT_UNDER_REVIEW":
+    case "PAYMENT_REJECTED":
       return "AWAITING_PAYMENT";
     case "PAID":
       return "CONFIRMED";

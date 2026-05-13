@@ -10,6 +10,7 @@ import { useOrders } from "@/hooks/useOrders";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney, humanizeOrderStatus, humanizePaymentMethod } from "@/lib/admin/format";
 import type { OrderQueueStatus } from "@/lib/admin/order-status";
+import { isActionRequired, sortOperationalQueue, type OperationalContext } from "@/lib/admin/operational-queue";
 import type { AdminModule } from "@/lib/admin/roles";
 import type { AdminOrderListItem, OrdersFilterState, OrdersStatsResponse } from "@/lib/admin/types";
 
@@ -17,8 +18,9 @@ type DrawerAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "mark-status" | "validate-payment" | "collect-and-close";
+      action: "mark-status" | "validate-payment" | "collect-and-close" | "handoff";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
+      targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION";
     };
 
 const STATUS_CARDS = [
@@ -56,6 +58,9 @@ const STATUS_THEME: Record<string, string> = {
   QUOTED: "bg-[#fef3c7] text-[#92400e]",
   APPROVED: "bg-[#d1fae5] text-[#065f46]",
   PENDING_PAYMENT: "bg-[#FAEEDA] text-[#633806]",
+  PAYMENT_SUBMITTED: "bg-[#E8F1FE] text-[#1D4ED8]",
+  PAYMENT_UNDER_REVIEW: "bg-[#EEEDFE] text-[#3C3489]",
+  PAYMENT_REJECTED: "bg-[#FCEBEB] text-[#B42318]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
   SHIPPED: "bg-[#d1fae5] text-[#065f46]",
@@ -70,6 +75,9 @@ const TRACKING_STEPS = [
   "UNDER_REVIEW",
   "QUOTED",
   "PENDING_PAYMENT",
+  "PAYMENT_SUBMITTED",
+  "PAYMENT_UNDER_REVIEW",
+  "PAYMENT_REJECTED",
   "PAID",
   "ORDERED",
   "SHIPPED",
@@ -122,8 +130,11 @@ function isInternalDeliveryOrder(order: AdminOrderListItem | null) {
   return order?.type === "INTERNAL" && order?.deliveryMethod !== "STORE_PICKUP";
 }
 
-function orderNeedsAttention(order: AdminOrderListItem) {
-  return !["COMPLETED", "CANCELLED"].includes(order.queueStatus);
+function paymentQueueForOrder(status: string) {
+  if (status === "PAYMENT_UNDER_REVIEW") return "UNDER_REVIEW";
+  if (status === "PAYMENT_REJECTED") return "REJECTED";
+  if (status === "PAYMENT_SUBMITTED") return "SUBMITTED";
+  return "AWAITING_SUBMISSION";
 }
 
 function getDrawerTrackingSteps(order: AdminOrderListItem | null, mode: "orders" | "delivery") {
@@ -230,6 +241,8 @@ function OrdersDrawer({
   shouldFocusAction,
   onActionFocused,
   mode,
+  operationalContext,
+  onFeedback,
 }: {
   order: AdminOrderListItem | null;
   onClose: () => void;
@@ -237,7 +250,10 @@ function OrdersDrawer({
   shouldFocusAction: boolean;
   onActionFocused: () => void;
   mode: "orders" | "delivery";
+  operationalContext: OperationalContext;
+  onFeedback: (message: string) => void;
 }) {
+  const { effectiveRole } = useAdminAuth();
   const [isPending, startTransition] = useTransition();
   const actionRegionRef = useRef<HTMLDivElement | null>(null);
   const trackingSteps = getDrawerTrackingSteps(order, mode);
@@ -293,11 +309,20 @@ function OrdersDrawer({
     if (orderItem.uiStatus === "QUOTED") {
       return { label: "Ver cotacao enviada", href: `/admin/orders/${orderItem.id}/quote` };
     }
-    if (orderItem.uiStatus === "PENDING_PAYMENT") {
-      return { label: "Validar em pagamentos", href: `/admin/payments?orderId=${orderItem.id}` };
+    if (orderItem.uiStatus === "APPROVED") {
+      return effectiveRole === "SUPER_ADMIN"
+        ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${orderItem.id}` }
+        : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
+    }
+    if (["PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED"].includes(orderItem.uiStatus)) {
+      return effectiveRole === "SUPER_ADMIN"
+        ? { label: orderItem.uiStatus === "PAYMENT_REJECTED" ? "Ver submissao financeira" : "Ver em pagamentos", href: `/admin/payments?orderId=${orderItem.id}&queue=${paymentQueueForOrder(orderItem.uiStatus)}` }
+        : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
     }
     if (isInternalDeliveryOrder(orderItem) && orderItem.uiStatus === "PAID") {
-      return { label: "Seguir para delivery", href: "/admin/delivery" };
+      return effectiveRole === "SUPER_ADMIN"
+        ? { label: "Ver em entregas", href: "/admin/delivery" }
+        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
     }
     if (orderItem.uiStatus === "PAID") {
       return { label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" };
@@ -309,7 +334,9 @@ function OrdersDrawer({
       return { label: "Marcar como chegado a sede", action: "mark-status", targetStatus: "ARRIVED" };
     }
     if (orderItem.type === "EXTERNAL" && orderItem.status === "ARRIVED") {
-      return { label: "Seguir para delivery", href: "/admin/delivery" };
+      return effectiveRole === "SUPER_ADMIN"
+        ? { label: "Ver em entregas", href: "/admin/delivery" }
+        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
     }
     if (orderItem.uiStatus === "SHIPPED") {
       return { label: "Actualizar rastreio", href: `/admin/orders/${orderItem.id}` };
@@ -376,6 +403,31 @@ function OrdersDrawer({
         method: "PUT",
         body: JSON.stringify({ status: targetStatus }),
       });
+      onActionComplete();
+    });
+  }
+
+  async function handleHandoff(targetQueue: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION") {
+    if (!order) return;
+
+    startTransition(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/handoff`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          targetQueue,
+          note: "Encaminhado pela fila de pedidos",
+        }),
+      });
+
+      onFeedback(
+        targetQueue === "PAYMENTS"
+          ? "Pedido enviado para a equipa de pagamentos."
+          : targetQueue === "DELIVERY"
+            ? "Pedido enviado para a equipa de delivery."
+            : targetQueue === "QUOTES"
+              ? "Pedido enviado para a equipa de cotacoes."
+              : "Pedido enviado para a equipa de execucao."
+      );
       onActionComplete();
     });
   }
@@ -510,6 +562,11 @@ function OrdersDrawer({
                         return;
                       }
 
+                      if (action.action === "handoff" && action.targetQueue) {
+                        void handleHandoff(action.targetQueue);
+                        return;
+                      }
+
                       if (action.targetStatus) {
                         void handleOrderAdvance(action.targetStatus);
                       }
@@ -573,6 +630,7 @@ type SharedViewProps = {
   showExternalCreate: boolean;
   lockedType?: OrdersFilterState["type"] | null;
   drawerMode?: "orders" | "delivery";
+  operationalContext: OperationalContext;
 };
 
 function SharedOrdersView({
@@ -600,8 +658,16 @@ function SharedOrdersView({
   showExternalCreate,
   lockedType = null,
   drawerMode = "orders",
+  operationalContext,
 }: SharedViewProps) {
   const { hasAccess } = useAdminAuth();
+  const [feedback, setFeedback] = useState("");
+  const sortedOrders = useMemo(
+    () => orders
+      ? { ...orders, content: sortOperationalQueue(orders.content, operationalContext) }
+      : null,
+    [operationalContext, orders]
+  );
 
   if (!hasAccess(requiredModule)) {
     return null;
@@ -636,6 +702,7 @@ function SharedOrdersView({
       {error ? <AdminBanner message={error} tone="error" /> : null}
 
       {notice ? <AdminBanner message={notice} tone="success" /> : null}
+      {feedback ? <AdminBanner message={feedback} tone="success" /> : null}
 
       {showStatusCards ? (
         <section className="grid gap-4 xl:grid-cols-5">
@@ -749,8 +816,8 @@ function SharedOrdersView({
                 </tr>
               </thead>
               <tbody>
-                {orders?.content.map((order) => {
-                  const needsAttention = orderNeedsAttention(order);
+                {sortedOrders?.content.map((order) => {
+                  const needsAttention = isActionRequired(order, operationalContext);
                   return (
                   <tr
                     key={order.id}
@@ -788,7 +855,7 @@ function SharedOrdersView({
                   </tr>
                   );
                 })}
-                {!orders?.content.length && !isLoading ? (
+                {!sortedOrders?.content.length && !isLoading ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-8">
                       <AdminStateCard
@@ -799,7 +866,7 @@ function SharedOrdersView({
                     </td>
                   </tr>
                 ) : null}
-                {isLoading && !orders?.content.length ? (
+                {isLoading && !sortedOrders?.content.length ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-8">
                       <div className="space-y-4">
@@ -820,17 +887,17 @@ function SharedOrdersView({
 
           <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-6 py-4 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-[var(--color-text-secondary)]">
-              Pagina {(orders?.page ?? 0) + 1} de {orders?.totalPages ?? 1}
+              Pagina {(sortedOrders?.page ?? 0) + 1} de {sortedOrders?.totalPages ?? 1}
             </p>
             <div className="flex items-center gap-2">
-              {Array.from({ length: orders?.totalPages ?? 1 }).map((_, index) => (
+              {Array.from({ length: sortedOrders?.totalPages ?? 1 }).map((_, index) => (
                 <button
                   key={index}
                   type="button"
                   onClick={() => setPage(index)}
                   disabled={isLoading}
                   className={`h-10 min-w-10 rounded-full px-3 text-sm font-medium transition ${
-                    (orders?.page ?? 0) === index
+                    (sortedOrders?.page ?? 0) === index
                       ? "bg-[var(--color-danger)] text-white"
                       : "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
                   } disabled:cursor-not-allowed disabled:opacity-60`}
@@ -841,7 +908,7 @@ function SharedOrdersView({
             </div>
           </div>
           <AdminListLoadingOverlay
-            visible={isLoading && Boolean(orders?.content.length)}
+            visible={isLoading && Boolean(sortedOrders?.content.length)}
             title="A carregar pedidos"
             message="Estamos a buscar a pagina selecionada."
           />
@@ -854,6 +921,8 @@ function SharedOrdersView({
           shouldFocusAction={shouldFocusAction}
           onActionFocused={onActionFocused}
           mode={drawerMode}
+          operationalContext={operationalContext}
+          onFeedback={setFeedback}
         />
       </div>
     </div>
@@ -980,6 +1049,7 @@ export function OrdersManagementView() {
       showStatusCards
       showExternalCreate
       drawerMode="orders"
+      operationalContext="ORDERS"
     />
   );
 }
@@ -1038,6 +1108,7 @@ export function ExternalQuotesView() {
       showExternalCreate
       lockedType="EXTERNAL"
       drawerMode="orders"
+      operationalContext="QUOTES"
     />
   );
 }
@@ -1108,6 +1179,7 @@ export function PaymentsQueueView() {
       showStatusCards={false}
       showExternalCreate={false}
       drawerMode="orders"
+      operationalContext="PAYMENTS"
     />
   );
 }
@@ -1166,6 +1238,7 @@ export function DeliveryManagementView() {
       showStatusCards={false}
       showExternalCreate={false}
       drawerMode="delivery"
+      operationalContext="DELIVERY"
     />
   );
 }
