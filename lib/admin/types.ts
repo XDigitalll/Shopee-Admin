@@ -671,8 +671,11 @@ export type AdminProductVariant = {
   color: string | null;
   size: string | null;
   stock: number;
+  purchasePrice: number | null;
   finalPrice: number | null;
   promotionalPrice: number | null;
+  profitAmount: number | null;
+  marginPercentage: number | null;
   effectivePrice: number | null;
   active: boolean;
   mainImageUrl: string | null;

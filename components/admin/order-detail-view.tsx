@@ -108,6 +108,17 @@ function buildTotals(detail: ExternalOrderDetail) {
   return { subtotal, freight, customs, commission, discount, total };
 }
 
+function formatOrderItemMoney(detail: ExternalOrderDetail, amount: number) {
+  if (amount <= 0) return "—";
+  if (detail.type === "INTERNAL") {
+    return formatMoney(amount, "MZN");
+  }
+  if (detail.quoteExchangeRate) {
+    return formatMoney(amount * detail.quoteExchangeRate, "MZN");
+  }
+  return `${amount.toFixed(2)} ${detail.quoteCurrency || "ZAR"}`;
+}
+
 function normalizeTrackingStatus(detail: ExternalOrderDetail | null): TrackableStatus | "" {
   const status = detail?.status ?? "";
   if (!detail) return "";
@@ -706,18 +717,10 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                       </td>
                       <td className="px-4 py-4">{item.quantity}</td>
                       <td className="px-4 py-4 font-[family-name:var(--font-sora)]">
-                        {detail.quoteExchangeRate && item.originalPriceUsd > 0
-                          ? formatMoney(item.originalPriceUsd * detail.quoteExchangeRate)
-                          : item.originalPriceUsd > 0
-                            ? `${item.originalPriceUsd.toFixed(2)} ${detail.quoteCurrency || "ZAR"}`
-                            : "—"}
+                        {formatOrderItemMoney(detail, item.originalPriceUsd)}
                       </td>
                       <td className="px-4 py-4 font-[family-name:var(--font-sora)] font-semibold">
-                        {detail.quoteExchangeRate && item.originalPriceUsd > 0
-                          ? formatMoney(item.originalPriceUsd * item.quantity * detail.quoteExchangeRate)
-                          : item.originalPriceUsd > 0
-                            ? `${(item.originalPriceUsd * item.quantity).toFixed(2)} ${detail.quoteCurrency || "ZAR"}`
-                            : "—"}
+                        {formatOrderItemMoney(detail, item.originalPriceUsd * item.quantity)}
                       </td>
                     </tr>
                   ))}

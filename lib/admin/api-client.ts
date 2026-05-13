@@ -134,7 +134,8 @@ async function requestWithToken(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  if (options.body && !headers.has("Content-Type")) {
+  const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !headers.has("Content-Type") && !isFormDataBody) {
     headers.set("Content-Type", "application/json");
   }
 

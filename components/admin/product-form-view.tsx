@@ -70,7 +70,13 @@ const ACCEPTED_IMAGE_TYPES = [
   "image/png",
   "image/webp",
   "image/avif",
+  "image/gif",
+  "image/bmp",
+  "image/tiff",
+  "image/svg+xml",
 ];
+
+const ACCEPTED_IMAGE_INPUT = "image/*";
 
 // ── Local types ───────────────────────────────────────────────────────────
 
@@ -134,6 +140,127 @@ type ProductDraftSnapshot = {
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────
+
+type VariantBuilderType =
+  | "COLOR"
+  | "SIZE"
+  | "COLOR_SIZE"
+  | "MODEL"
+  | "CAPACITY"
+  | "EYEWEAR"
+  | "TECH"
+  | "CUSTOM";
+
+type BuilderAttribute = {
+  id: string;
+  name: string;
+  values: string;
+};
+
+type GeneratedVariantDraft = {
+  id: string;
+  label: string;
+  sku: string;
+  purchasePrice: string;
+  price: string;
+  promotionalPrice: string;
+  stock: string;
+  active: boolean;
+  attributes: Record<string, string>;
+  mainImageUrl: string;
+  imageFile: File | null;
+  imagePreview: string | null;
+  error?: string;
+};
+
+function calculateVariantProfit(cost: string | number | null | undefined, price: string | number | null | undefined, promo?: string | number | null) {
+  const c = Number(cost || 0);
+  const p = Number(promo || price || 0);
+  return p - c;
+}
+
+function calculateVariantMargin(cost: string | number | null | undefined, price: string | number | null | undefined, promo?: string | number | null) {
+  const effective = Number(promo || price || 0);
+  if (!effective) return 0;
+  return (calculateVariantProfit(cost, price, promo) / effective) * 100;
+}
+
+const VARIANT_PRESETS: Array<{
+  type: VariantBuilderType;
+  label: string;
+  hint: string;
+  attributes: string[];
+}> = [
+  { type: "COLOR", label: "Apenas cor", hint: "Ex: Preto, Verde, Castanho", attributes: ["Cor"] },
+  { type: "SIZE", label: "Apenas tamanho", hint: "Ex: P, M, G", attributes: ["Tamanho"] },
+  { type: "COLOR_SIZE", label: "Cor + tamanho", hint: "Gera todas as combinacoes", attributes: ["Cor", "Tamanho"] },
+  { type: "MODEL", label: "Modelo / foto", hint: "Ex: Classico, Premium", attributes: ["Modelo"] },
+  { type: "CAPACITY", label: "Capacidade", hint: "Ex: 64GB, 128GB", attributes: ["Armazenamento"] },
+  { type: "EYEWEAR", label: "Oculos", hint: "Lente e armacao", attributes: ["Cor da lente", "Cor da armacao"] },
+  { type: "TECH", label: "Tecnologia", hint: "Armazenamento, RAM e cor", attributes: ["Armazenamento", "RAM", "Cor"] },
+  { type: "CUSTOM", label: "Personalizado", hint: "Define os atributos livremente", attributes: [""] },
+];
+
+const VISUAL_ATTRIBUTE_PATTERN = /(cor|modelo|design|estampa|lente|armacao|armação)/i;
+
+function presetAttributes(type: VariantBuilderType): BuilderAttribute[] {
+  const preset = VARIANT_PRESETS.find((item) => item.type === type) ?? VARIANT_PRESETS[0];
+  return preset.attributes.map((name) => ({ id: uid(), name, values: "" }));
+}
+
+function splitVariantValues(raw: string): string[] {
+  const seen = new Set<string>();
+  return raw
+    .split(/[,\n;]/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeAttributesKey(attributes: Record<string, string>): string {
+  return Object.entries(attributes)
+    .map(([key, value]) => [key.trim().toLowerCase(), String(value).trim().toLowerCase()] as const)
+    .filter(([key, value]) => key && value)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}:${value}`)
+    .join("|");
+}
+
+function labelFromAttributes(attributes: Record<string, string>): string {
+  return Object.values(attributes).filter(Boolean).join(" / ");
+}
+
+function skuFromAttributes(baseSku: string, productName: string, attributes: Record<string, string>): string {
+  const base = (baseSku || generateSku(productName) || "VAR").toUpperCase();
+  const suffix = Object.values(attributes)
+    .map((value) => slugify(String(value)).replace(/-/g, "").toUpperCase().slice(0, 8))
+    .filter(Boolean)
+    .join("-");
+  return `${base}-${suffix}`.replace(/-+/g, "-").slice(0, 60);
+}
+
+function buildAttributeCombinations(attributes: Array<{ name: string; values: string[] }>): Record<string, string>[] {
+  return attributes.reduce<Record<string, string>[]>(
+    (acc, attribute) =>
+      acc.flatMap((combo) =>
+        attribute.values.map((value) => ({
+          ...combo,
+          [attribute.name]: value,
+        }))
+      ),
+    [{}]
+  );
+}
+
+function primaryVisualAttribute(attributes: Record<string, string>): { key: string; value: string } | null {
+  const entry = Object.entries(attributes).find(([key]) => VISUAL_ATTRIBUTE_PATTERN.test(key));
+  return entry ? { key: entry[0], value: entry[1] } : null;
+}
 
 interface ProductFormViewProps {
   productId?: string;
@@ -231,10 +358,26 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [editVideos, setEditVideos] = useState<AdminProductVideo[]>([]);
   const [variantSaving, setVariantSaving] = useState(false);
   const [newVariantAttrs, setNewVariantAttrs] = useState<Array<{ key: string; value: string }>>([{ key: "", value: "" }]);
+  const [newVariantPurchasePrice, setNewVariantPurchasePrice] = useState("");
   const [newVariantPrice, setNewVariantPrice] = useState("");
+  const [newVariantPromotionalPrice, setNewVariantPromotionalPrice] = useState("");
   const [newVariantStock, setNewVariantStock] = useState("0");
   const [newVariantSku, setNewVariantSku] = useState("");
   const [newVariantImageUrl, setNewVariantImageUrl] = useState("");
+  const [newVariantImageFile, setNewVariantImageFile] = useState<File | null>(null);
+  const [newVariantImagePreview, setNewVariantImagePreview] = useState<string | null>(null);
+  const newVariantImageInputRef = useRef<HTMLInputElement>(null);
+  const [variantBuilderType, setVariantBuilderType] = useState<VariantBuilderType>("COLOR");
+  const [builderAttrs, setBuilderAttrs] = useState<BuilderAttribute[]>(() => presetAttributes("COLOR"));
+  const [builderBasePurchasePrice, setBuilderBasePurchasePrice] = useState(initialDraft?.purchasePrice ?? "");
+  const [builderBasePrice, setBuilderBasePrice] = useState(initialDraft?.finalPrice ?? "");
+  const [builderBasePromotionalPrice, setBuilderBasePromotionalPrice] = useState("");
+  const [builderBaseStock, setBuilderBaseStock] = useState("0");
+  const [builderRows, setBuilderRows] = useState<GeneratedVariantDraft[]>([]);
+  const [builderFeedback, setBuilderFeedback] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
+  const [builderProgress, setBuilderProgress] = useState<{ done: number; total: number } | null>(null);
+  const [builderSaving, setBuilderSaving] = useState(false);
+  const builderImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [newVideoTitle, setNewVideoTitle] = useState("");
   const [videoSaving, setVideoSaving] = useState(false);
@@ -245,11 +388,13 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     attrs: Array<{ key: string; value: string }>;
     sku: string;
     price: string;
+    purchasePrice: string;
+    promotionalPrice: string;
     stock: string;
     active: boolean;
     imageFile: File | null;
     imagePreview: string | null;
-  }>({ attrs: [], sku: "", price: "", stock: "0", active: true, imageFile: null, imagePreview: null });
+  }>({ attrs: [], sku: "", price: "", purchasePrice: "", promotionalPrice: "", stock: "0", active: true, imageFile: null, imagePreview: null });
   const [editSaving, setEditSaving] = useState(false);
   const [galleryPickerOpen, setGalleryPickerOpen] = useState(false);
   const editImageInputRef = useRef<HTMLInputElement>(null);
@@ -296,6 +441,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const activeVariantStockTotal = editVariants
     .filter((variant) => variant.active)
     .reduce((sum, variant) => sum + (Number(variant.stock) || 0), 0);
+  const showBuilderImageControls = ["COLOR", "COLOR_SIZE", "MODEL", "EYEWEAR", "TECH"].includes(variantBuilderType);
+  const showBuilderUploadControls = ["MODEL", "EYEWEAR", "TECH"].includes(variantBuilderType);
   const hasLiveVariants = isEdit && editVariants.length > 0;
 
   function imageSourceLabel(url: string | null | undefined): string {
@@ -705,13 +852,15 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       const attributes = newVariantAttrs
         .filter((a) => a.key.trim())
         .reduce<Record<string, string>>((acc, a) => { acc[a.key.trim()] = a.value; return acc; }, {});
-      const created = await adminApiFetch<AdminProductVariant>(
+      let created = await adminApiFetch<AdminProductVariant>(
         `/api/admin/products/${productId}/variants`,
         {
           method: "POST",
           body: JSON.stringify({
             sku: newVariantSku || undefined,
+            purchasePrice: parseFloat(newVariantPurchasePrice) || 0,
             finalPrice: parseFloat(newVariantPrice),
+            promotionalPrice: newVariantPromotionalPrice ? parseFloat(newVariantPromotionalPrice) : undefined,
             stock: parseInt(newVariantStock) || 0,
             active: true,
             mainImageUrl: newVariantImageUrl.trim() || undefined,
@@ -719,12 +868,20 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           }),
         }
       );
+      if (newVariantImageFile) {
+        created = (await uploadVariantImage(created.id, newVariantImageFile)) ?? created;
+      }
       setEditVariants((prev) => [...prev, created]);
       setNewVariantAttrs([{ key: "", value: "" }]);
       setNewVariantPrice("");
+      setNewVariantPurchasePrice("");
+      setNewVariantPromotionalPrice("");
       setNewVariantStock("0");
       setNewVariantSku("");
       setNewVariantImageUrl("");
+      if (newVariantImagePreview?.startsWith("blob:")) URL.revokeObjectURL(newVariantImagePreview);
+      setNewVariantImageFile(null);
+      setNewVariantImagePreview(null);
     } catch {
       // silent — user sees no change
     } finally {
@@ -732,8 +889,283 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
+  function handleNewVariantImageFile(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Formato invalido. Carrega um ficheiro de imagem.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Imagem demasiado grande. Maximo 8 MB.");
+      return;
+    }
+    if (newVariantImagePreview?.startsWith("blob:")) URL.revokeObjectURL(newVariantImagePreview);
+    setNewVariantImageFile(file);
+    setNewVariantImagePreview(URL.createObjectURL(file));
+    setNewVariantImageUrl("");
+  }
+
+  function applyVariantPreset(type: VariantBuilderType) {
+    setVariantBuilderType(type);
+    setBuilderAttrs(presetAttributes(type));
+    setBuilderRows([]);
+    setBuilderFeedback(null);
+  }
+
+  function updateBuilderAttr(id: string, field: "name" | "values", value: string) {
+    setBuilderAttrs((prev) => prev.map((attr) => (attr.id === id ? { ...attr, [field]: value } : attr)));
+  }
+
+  function addColorToBuilderAttr(id: string, colorName: string) {
+    setBuilderAttrs((prev) =>
+      prev.map((attr) => {
+        if (attr.id !== id) return attr;
+        const values = splitVariantValues(attr.values);
+        if (!values.some((value) => value.toLowerCase() === colorName.toLowerCase())) {
+          values.push(colorName);
+        }
+        return { ...attr, values: values.join(", ") };
+      })
+    );
+  }
+
+  function addBuilderAttr() {
+    setBuilderAttrs((prev) => [...prev, { id: uid(), name: "", values: "" }]);
+  }
+
+  function removeBuilderAttr(id: string) {
+    setBuilderAttrs((prev) => (prev.length <= 1 ? prev : prev.filter((attr) => attr.id !== id)));
+  }
+
+  function updateBuilderRow(id: string, patch: Partial<GeneratedVariantDraft>) {
+    setBuilderRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch, error: undefined } : row)));
+  }
+
+  function removeBuilderRow(id: string) {
+    setBuilderRows((prev) => {
+      const removed = prev.find((row) => row.id === id);
+      if (removed?.imagePreview?.startsWith("blob:")) URL.revokeObjectURL(removed.imagePreview);
+      return prev.filter((row) => row.id !== id);
+    });
+  }
+
+  function generateBuilderVariants() {
+    const prepared = builderAttrs
+      .map((attr) => ({ name: attr.name.trim(), values: splitVariantValues(attr.values) }))
+      .filter((attr) => attr.name);
+
+    if (prepared.length === 0 || prepared.some((attr) => attr.values.length === 0)) {
+      setBuilderFeedback({ type: "error", message: "Define pelo menos um atributo e um valor por atributo." });
+      return;
+    }
+
+    const duplicateAttrNames = new Set<string>();
+    const attrNameSeen = new Set<string>();
+    prepared.forEach((attr) => {
+      const key = attr.name.toLowerCase();
+      if (attrNameSeen.has(key)) duplicateAttrNames.add(attr.name);
+      attrNameSeen.add(key);
+    });
+    if (duplicateAttrNames.size > 0) {
+      setBuilderFeedback({ type: "error", message: "Existem atributos repetidos. Junta os valores no mesmo campo." });
+      return;
+    }
+
+    const existingKeys = new Set(editVariants.map((variant) => normalizeAttributesKey(variant.attributes || {})));
+    const generatedKeys = new Set<string>();
+    const defaultPrice = builderBasePrice || finalPrice || newVariantPrice;
+    const defaultPurchasePrice = builderBasePurchasePrice || purchasePrice || newVariantPurchasePrice || "";
+    const defaultPromotionalPrice = builderBasePromotionalPrice || "";
+    const defaultStock = builderBaseStock || "0";
+    const combinations = buildAttributeCombinations(prepared);
+    const rows: GeneratedVariantDraft[] = [];
+    let skipped = 0;
+
+    combinations.forEach((attributes) => {
+      const key = normalizeAttributesKey(attributes);
+      if (!key || generatedKeys.has(key) || existingKeys.has(key)) {
+        skipped += 1;
+        return;
+      }
+      generatedKeys.add(key);
+      rows.push({
+        id: uid(),
+        label: labelFromAttributes(attributes),
+        sku: skuFromAttributes(sku, name, attributes),
+        purchasePrice: defaultPurchasePrice,
+        price: defaultPrice,
+        promotionalPrice: defaultPromotionalPrice,
+        stock: defaultStock,
+        active: true,
+        attributes,
+        mainImageUrl: "",
+        imageFile: null,
+        imagePreview: null,
+      });
+    });
+
+    setBuilderRows(rows);
+    setBuilderFeedback({
+      type: rows.length > 0 ? "success" : "info",
+      message:
+        rows.length > 0
+          ? `${rows.length} variantes geradas${skipped ? `, ${skipped} duplicadas ignoradas` : ""}.`
+          : "Todas as combinacoes ja existem neste produto.",
+    });
+  }
+
+  function applyBuilderPriceToAll() {
+    if (!builderBasePrice) return;
+    setBuilderRows((prev) => prev.map((row) => ({ ...row, price: builderBasePrice })));
+  }
+
+  function applyBuilderStockToAll() {
+    setBuilderRows((prev) => prev.map((row) => ({ ...row, stock: builderBaseStock || "0" })));
+  }
+
+  function handleBuilderImageFile(rowId: string, file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setBuilderFeedback({ type: "error", message: "Formato invalido. Carrega um ficheiro de imagem." });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setBuilderFeedback({ type: "error", message: "Imagem demasiado grande. Maximo 8 MB." });
+      return;
+    }
+    setBuilderRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== rowId) return row;
+        if (row.imagePreview?.startsWith("blob:")) URL.revokeObjectURL(row.imagePreview);
+        return {
+          ...row,
+          imageFile: file,
+          imagePreview: URL.createObjectURL(file),
+          mainImageUrl: "",
+          error: undefined,
+        };
+      })
+    );
+  }
+
+  function applyImageToVisualGroup(rowId: string) {
+    const source = builderRows.find((row) => row.id === rowId);
+    if (!source) return;
+    const visual = primaryVisualAttribute(source.attributes);
+    const imageUrl = source.imagePreview || source.mainImageUrl;
+    if (!visual || !imageUrl) return;
+    setBuilderRows((prev) =>
+      prev.map((row) => {
+        const candidate = primaryVisualAttribute(row.attributes);
+        if (!candidate || candidate.key !== visual.key || candidate.value !== visual.value) return row;
+        return {
+          ...row,
+          mainImageUrl: source.mainImageUrl,
+          imageFile: source.imageFile,
+          imagePreview: source.imagePreview,
+        };
+      })
+    );
+    setBuilderFeedback({ type: "success", message: `Imagem aplicada a todas as variantes com ${visual.key}: ${visual.value}.` });
+  }
+
+  async function uploadVariantImage(variantId: string, file: File) {
+    if (!productId) return null;
+    const fd = new FormData();
+    fd.append("file", file);
+    return adminApiFetch<AdminProductVariant>(
+      `/api/admin/products/${productId}/variants/${variantId}/image`,
+      { method: "POST", body: fd }
+    );
+  }
+
+  async function saveGeneratedVariants() {
+    if (!productId || builderRows.length === 0) return;
+
+    const existingKeys = new Set(editVariants.map((variant) => normalizeAttributesKey(variant.attributes || {})));
+    const seenKeys = new Set<string>();
+    const seenSkus = new Set<string>();
+    const validated = builderRows.map((row) => {
+      const key = normalizeAttributesKey(row.attributes);
+      const rowSku = row.sku.trim().toLowerCase();
+      if (Number(row.purchasePrice) < 0) return { ...row, error: "Custo nao pode ser negativo." };
+      if (!row.price || Number(row.price) <= 0) return { ...row, error: "Preco obrigatorio." };
+      if (row.promotionalPrice && (Number(row.promotionalPrice) <= 0 || Number(row.promotionalPrice) >= Number(row.price))) {
+        return { ...row, error: "Promocao deve ser menor que venda." };
+      }
+      if (Number(row.stock) < 0) return { ...row, error: "Stock nao pode ser negativo." };
+      if (!key) return { ...row, error: "Atributos obrigatorios." };
+      if (existingKeys.has(key) || seenKeys.has(key)) return { ...row, error: "Variante duplicada." };
+      if (rowSku && seenSkus.has(rowSku)) return { ...row, error: "SKU duplicado nesta criacao." };
+      seenKeys.add(key);
+      if (rowSku) seenSkus.add(rowSku);
+      return { ...row, error: undefined };
+    });
+
+    const invalid = validated.filter((row) => row.error);
+    if (invalid.length > 0) {
+      setBuilderRows(validated);
+      setBuilderFeedback({ type: "error", message: "Corrige as variantes marcadas antes de guardar." });
+      return;
+    }
+
+    setBuilderSaving(true);
+    setBuilderProgress({ done: 0, total: validated.length });
+    const createdVariants: AdminProductVariant[] = [];
+    const failedRows: GeneratedVariantDraft[] = [];
+
+    for (let index = 0; index < validated.length; index += 1) {
+      const row = validated[index];
+      try {
+        let created = await adminApiFetch<AdminProductVariant>(
+          `/api/admin/products/${productId}/variants`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              sku: row.sku.trim() || undefined,
+              purchasePrice: parseFloat(row.purchasePrice) || 0,
+              finalPrice: parseFloat(row.price),
+              promotionalPrice: row.promotionalPrice ? parseFloat(row.promotionalPrice) : undefined,
+              stock: parseInt(row.stock) || 0,
+              active: row.active,
+              mainImageUrl: row.mainImageUrl.trim() || undefined,
+              attributes: row.attributes,
+            }),
+          }
+        );
+        if (row.imageFile) {
+          created = (await uploadVariantImage(created.id, row.imageFile)) ?? created;
+        }
+        createdVariants.push(created);
+      } catch (error) {
+        failedRows.push({
+          ...row,
+          error: error instanceof Error ? error.message : "Falha ao criar esta variante.",
+        });
+      } finally {
+        setBuilderProgress({ done: index + 1, total: validated.length });
+      }
+    }
+
+    setEditVariants((prev) => [...prev, ...createdVariants]);
+    setBuilderRows(failedRows);
+    setBuilderSaving(false);
+    setBuilderProgress(null);
+    setBuilderFeedback({
+      type: failedRows.length > 0 ? "error" : "success",
+      message:
+        failedRows.length > 0
+          ? `${createdVariants.length} variantes criadas. ${failedRows.length} precisam de revisao.`
+          : `${createdVariants.length} variantes guardadas com sucesso.`,
+    });
+  }
+
   async function handleDeleteVariant(variantId: string) {
     if (!productId) return;
+    const variant = editVariants.find((item) => item.id === variantId);
+    const label = variant?.label || variant?.sku || "esta variante";
+    const confirmed = window.confirm(`Desejas mesmo eliminar ${label}? Esta acao nao pode ser desfeita.`);
+    if (!confirmed) return;
     try {
       await adminApiFetch(`/api/admin/products/${productId}/variants/${variantId}`, {
         method: "DELETE",
@@ -763,7 +1195,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     setEditForm({
       attrs: attrs.length > 0 ? attrs : [{ key: "", value: "" }],
       sku: v.sku ?? "",
+      purchasePrice: String(v.purchasePrice ?? ""),
       price: String(v.finalPrice ?? ""),
+      promotionalPrice: String(v.promotionalPrice ?? ""),
       stock: String(v.stock),
       active: v.active,
       imageFile: null,
@@ -857,7 +1291,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
       const payload: Record<string, unknown> = {
         sku: editForm.sku.trim() || undefined,
+        purchasePrice: parseFloat(editForm.purchasePrice) || 0,
         finalPrice: parseFloat(editForm.price) || 0,
+        promotionalPrice: editForm.promotionalPrice ? parseFloat(editForm.promotionalPrice) : undefined,
         stock: parseInt(editForm.stock) || 0,
         active: editForm.active,
         attributes,
@@ -1515,9 +1951,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
               <div className="flex flex-col gap-4">
                 {editVariants.length > 0 && (
                   <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
-                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">Este produto usa stock por variante.</p>
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">Este produto usa preco e stock por variante.</p>
                     <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                      Stock total calculado: <strong>{activeVariantStockTotal}</strong> unidades. A soma considera apenas variantes activas.
+                      Stock total: <strong>{activeVariantStockTotal}</strong> unidades. O preco global fica apenas como resumo do menor preco activo.
                     </p>
                   </div>
                 )}
@@ -1546,6 +1982,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                           <th className="w-12 px-3 py-2.5" />
                           <th className="px-4 py-2.5 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Variante</th>
                           <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Preço</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Lucro</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Margem</th>
                           <th className="px-4 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Stock</th>
                           <th className="px-4 py-2.5 text-center text-xs font-semibold text-[var(--color-text-secondary)]">Estado</th>
                           <th className="px-3 py-2.5 text-right text-xs font-semibold text-[var(--color-text-secondary)]">Ações</th>
@@ -1590,6 +2028,12 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                             {/* Price */}
                             <td className="px-4 py-2.5 text-right font-[family-name:var(--font-sora)] font-semibold text-[var(--color-text-primary)]">
                               {(v.effectivePrice ?? v.finalPrice ?? 0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-[family-name:var(--font-sora)] font-semibold text-green-600">
+                              {(v.profitAmount ?? calculateVariantProfit(v.purchasePrice, v.effectivePrice ?? v.finalPrice)).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-[family-name:var(--font-sora)] font-semibold text-[var(--color-text-primary)]">
+                              {(v.marginPercentage ?? calculateVariantMargin(v.purchasePrice, v.finalPrice, v.promotionalPrice)).toFixed(1)}%
                             </td>
                             {/* Stock */}
                             <td className="px-4 py-2.5 text-right">
@@ -1687,10 +2131,14 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                         </div>
 
                         {/* SKU / Price / Stock / Active */}
-                        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-6">
                           <div>
                             <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">SKU</label>
                             <input className="admin-input py-1.5 text-sm font-mono" value={editForm.sku} onChange={(e) => setEditForm((prev) => ({ ...prev, sku: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Custo</label>
+                            <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={editForm.purchasePrice} onChange={(e) => setEditForm((prev) => ({ ...prev, purchasePrice: e.target.value }))} />
                           </div>
                           <div>
                             <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Preço (MZN)</label>
@@ -1699,6 +2147,15 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                           <div>
                             <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock</label>
                             <input type="number" min="0" className="admin-input py-1.5 text-sm" value={editForm.stock} onChange={(e) => setEditForm((prev) => ({ ...prev, stock: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Promocao</label>
+                            <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={editForm.promotionalPrice} onChange={(e) => setEditForm((prev) => ({ ...prev, promotionalPrice: e.target.value }))} />
+                          </div>
+                          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-3 py-2 text-xs">
+                            <p className="text-[var(--color-text-secondary)]">Lucro / margem</p>
+                            <p className="font-bold text-green-600">{calculateVariantProfit(editForm.purchasePrice, editForm.price, editForm.promotionalPrice).toFixed(2)}</p>
+                            <p className="text-[var(--color-text-secondary)]">{calculateVariantMargin(editForm.purchasePrice, editForm.price, editForm.promotionalPrice).toFixed(1)}%</p>
                           </div>
                           <div className="flex flex-col justify-end">
                             <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Estado</label>
@@ -1796,11 +2253,418 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                   </div>
                 )}
 
+                {/* Variant builder */}
+                <div className="rounded-3xl border border-[var(--color-border-strong)] bg-[var(--color-background-secondary)] p-4 sm:p-5">
+                  <div className="mb-4 flex flex-col gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                      Construtor de variantes
+                    </p>
+                    <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
+                      Cria variacoes em lote sem trabalho repetitivo
+                    </h3>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      Escolhe um modelo, escreve varios valores por atributo e gera todas as combinacoes.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-4">
+                    {VARIANT_PRESETS.map((preset) => {
+                      const selected = preset.type === variantBuilderType;
+                      return (
+                        <button
+                          key={preset.type}
+                          type="button"
+                          onClick={() => applyVariantPreset(preset.type)}
+                          className={`rounded-2xl border p-3 text-left transition ${
+                            selected
+                              ? "border-[var(--color-danger)] bg-[rgba(232,67,26,0.08)]"
+                              : "border-[var(--color-border)] bg-[var(--color-background-tertiary)] hover:border-[var(--color-border-strong)]"
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold text-[var(--color-text-primary)]">{preset.label}</span>
+                          <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">{preset.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {variantBuilderType === "MODEL" && (
+                    <div className="mt-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+                      Depois de escrever os modelos e clicar em "Gerar variantes", cada linha tera a coluna Imagem com o botao "Upload" para carregar a foto desse modelo.
+                    </div>
+                  )}
+                  {(variantBuilderType === "COLOR" || variantBuilderType === "COLOR_SIZE") && (
+                    <div className="mt-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+                      Depois de gerar, associa cada cor a uma foto da galeria principal. Ex: Verde usa a foto verde ja carregada no produto.
+                    </div>
+                  )}
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_260px]">
+                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                            Atributos e valores
+                          </p>
+                          <p className="text-xs text-[var(--color-text-secondary)]">
+                            Separa valores por virgula, ponto e virgula ou linha.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addBuilderAttr}
+                          className="rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                        >
+                          + Atributo
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                        {builderAttrs.map((attr) => {
+                          const isColorAttribute = VISUAL_ATTRIBUTE_PATTERN.test(attr.name) && attr.name.toLowerCase().includes("cor");
+                          return (
+                            <div key={attr.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-3">
+                              <div className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
+                                <input
+                                  className="admin-input py-2 text-sm"
+                                  placeholder="Atributo"
+                                  value={attr.name}
+                                  onChange={(e) => updateBuilderAttr(attr.id, "name", e.target.value)}
+                                />
+                                <input
+                                  className="admin-input py-2 text-sm"
+                                  placeholder="Ex: Preto, Verde, Castanho"
+                                  value={attr.values}
+                                  onChange={(e) => updateBuilderAttr(attr.id, "values", e.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeBuilderAttr(attr.id)}
+                                  disabled={builderAttrs.length <= 1}
+                                  className="rounded-xl px-3 text-sm text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] disabled:opacity-40"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                              {isColorAttribute && (
+                                <div className="mt-3">
+                                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                                    Paleta rapida
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {PRESET_COLORS.map((color) => {
+                                      const selected = splitVariantValues(attr.values).some((value) => value.toLowerCase() === color.name.toLowerCase());
+                                      return (
+                                        <button
+                                          key={color.name}
+                                          type="button"
+                                          onClick={() => addColorToBuilderAttr(attr.id, color.name)}
+                                          className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                            selected
+                                              ? "border-[var(--color-danger)] text-[var(--color-danger)]"
+                                              : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]"
+                                          }`}
+                                        >
+                                          <span
+                                            className="h-4 w-4 rounded-full border border-black/10"
+                                            style={{ backgroundColor: color.hex }}
+                                          />
+                                          {color.name}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                        Valores base
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                        Estes valores entram automaticamente nas variantes quando clicas em gerar.
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-1">
+                        <div>
+                          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Custo base (MZN)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="admin-input py-2 text-sm"
+                            value={builderBasePurchasePrice}
+                            onChange={(e) => setBuilderBasePurchasePrice(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Preco base (MZN)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="admin-input py-2 text-sm"
+                            value={builderBasePrice}
+                            onChange={(e) => setBuilderBasePrice(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Promocao base</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="admin-input py-2 text-sm"
+                            value={builderBasePromotionalPrice}
+                            onChange={(e) => setBuilderBasePromotionalPrice(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock base</label>
+                          <input
+                            type="number"
+                            min="0"
+                            className="admin-input py-2 text-sm"
+                            value={builderBaseStock}
+                            onChange={(e) => setBuilderBaseStock(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={generateBuilderVariants}
+                        className="mt-4 w-full rounded-full bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-white hover:brightness-95"
+                      >
+                        Gerar variantes
+                      </button>
+                    </div>
+                  </div>
+
+                  {builderFeedback && (
+                    <div
+                      className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+                        builderFeedback.type === "error"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : builderFeedback.type === "success"
+                            ? "border-green-200 bg-green-50 text-green-700"
+                            : "border-[var(--color-border)] bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
+                      }`}
+                    >
+                      {builderFeedback.message}
+                    </div>
+                  )}
+
+                  {builderRows.length > 0 && (
+                    <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--color-border)]">
+                      <div className="flex flex-col gap-2 border-b border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--color-text-primary)]">
+                            Pre-visualizacao para guardar ({builderRows.length})
+                          </p>
+                          <p className="text-xs text-[var(--color-text-secondary)]">
+                            Confirma identificacao, preco e stock antes de criar as variantes.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={saveGeneratedVariants}
+                          disabled={builderSaving}
+                          className="rounded-full bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          {builderSaving && builderProgress
+                            ? `A guardar ${builderProgress.done}/${builderProgress.total}`
+                            : "Guardar variantes"}
+                        </button>
+                      </div>
+
+                      <div className="divide-y divide-[var(--color-border)]">
+                        {builderRows.map((row) => {
+                          const visual = primaryVisualAttribute(row.attributes);
+                          const previewUrl = row.imagePreview || row.mainImageUrl;
+                          return (
+                            <div key={row.id} className={`grid gap-3 p-4 ${row.error ? "bg-red-50/70" : ""}`}>
+                              <div className={`grid gap-3 ${showBuilderImageControls ? "xl:grid-cols-[1.2fr_1fr_1fr_auto]" : "xl:grid-cols-[1.4fr_1fr_auto]"}`}>
+                                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-3">
+                                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                                    Identificacao
+                                  </p>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <div>
+                                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Nome visivel</label>
+                                      <input
+                                        className="admin-input py-2 text-sm"
+                                        value={row.label}
+                                        onChange={(e) => updateBuilderRow(row.id, { label: e.target.value })}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">SKU</label>
+                                      <input
+                                        className="admin-input py-2 text-sm font-mono"
+                                        value={row.sku}
+                                        onChange={(e) => updateBuilderRow(row.id, { sku: e.target.value })}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {Object.entries(row.attributes).map(([key, value]) => (
+                                      <span key={key} className="rounded-full bg-[var(--color-background-tertiary)] px-2 py-0.5 text-[11px] text-[var(--color-text-secondary)]">
+                                        {key}: {value}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-3">
+                                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                                    Preco e stock
+                                  </p>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <div>
+                                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Custo</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="admin-input py-2 text-sm"
+                                        value={row.purchasePrice}
+                                        onChange={(e) => updateBuilderRow(row.id, { purchasePrice: e.target.value })}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Venda</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="admin-input py-2 text-sm"
+                                        value={row.price}
+                                        onChange={(e) => updateBuilderRow(row.id, { price: e.target.value })}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Promocao</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="admin-input py-2 text-sm"
+                                        value={row.promotionalPrice}
+                                        onChange={(e) => updateBuilderRow(row.id, { promotionalPrice: e.target.value })}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        className="admin-input py-2 text-sm"
+                                        value={row.stock}
+                                        onChange={(e) => updateBuilderRow(row.id, { stock: e.target.value })}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 rounded-xl bg-[var(--color-background-tertiary)] px-3 py-2 text-xs">
+                                    <span className="font-semibold text-green-600">
+                                      Lucro {calculateVariantProfit(row.purchasePrice, row.price, row.promotionalPrice).toFixed(2)} MZN
+                                    </span>
+                                    <span className="ml-2 text-[var(--color-text-secondary)]">
+                                      Margem {calculateVariantMargin(row.purchasePrice, row.price, row.promotionalPrice).toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <label className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)]">
+                                    <input
+                                      type="checkbox"
+                                      checked={row.active}
+                                      onChange={(e) => updateBuilderRow(row.id, { active: e.target.checked })}
+                                    />
+                                    Variante activa
+                                  </label>
+                                </div>
+
+                                {showBuilderImageControls && (
+                                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-3">
+                                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                                    {showBuilderUploadControls ? "Foto da variante" : "Foto da galeria principal"}
+                                  </p>
+                                  <label className="text-xs text-[var(--color-text-secondary)]">
+                                    {showBuilderUploadControls ? "Imagem" : "Associar imagem existente"}
+                                  </label>
+                                  <div className="flex items-center gap-2">
+                                    {previewUrl ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={previewUrl} alt="" className="h-12 w-12 rounded-lg border border-[var(--color-border)] object-cover" />
+                                    ) : (
+                                      <div className="h-12 w-12 rounded-lg border border-dashed border-[var(--color-border)]" />
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <select
+                                        className="admin-input w-full py-1.5 text-xs"
+                                        value={row.mainImageUrl}
+                                        onChange={(e) => updateBuilderRow(row.id, { mainImageUrl: e.target.value, imageFile: null, imagePreview: e.target.value || null })}
+                                      >
+                                        <option value="">Galeria / sem imagem</option>
+                                        {images.map((image) => (
+                                          <option key={image.id} value={image.url}>
+                                            {imageSourceLabel(image.url)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <input
+                                        className={`mt-1 admin-input w-full py-1.5 text-xs ${showBuilderUploadControls ? "" : "hidden"}`}
+                                        placeholder="URL da imagem"
+                                        value={row.mainImageUrl}
+                                        onChange={(e) => updateBuilderRow(row.id, { mainImageUrl: e.target.value, imageFile: null, imagePreview: e.target.value || null })}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className={`flex flex-wrap gap-2 ${showBuilderUploadControls || (visual && previewUrl) ? "" : "hidden"}`}>
+                                    <input
+                                      ref={(el) => { builderImageInputRefs.current[row.id] = el; }}
+                                      type="file"
+                                      accept={ACCEPTED_IMAGE_INPUT}
+                                      className="hidden"
+                                      onChange={(e) => handleBuilderImageFile(row.id, e.target.files?.[0] ?? null)}
+                                    />
+                                    {showBuilderUploadControls && (
+                                      <button type="button" onClick={() => builderImageInputRefs.current[row.id]?.click()} className="text-xs font-semibold text-[var(--color-danger)] hover:underline">
+                                        Upload
+                                      </button>
+                                    )}
+                                    {visual && previewUrl && (
+                                      <button type="button" onClick={() => applyImageToVisualGroup(row.id)} className="text-xs font-semibold text-[var(--color-text-secondary)] hover:text-[var(--color-danger)]">
+                                        Aplicar por {visual.key.toLowerCase()}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => removeBuilderRow(row.id)}
+                                  className="self-start rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] hover:border-red-300 hover:text-red-600"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                              {row.error && <p className="text-xs font-semibold text-red-700">{row.error}</p>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Add variant form */}
-                <div className="rounded-2xl border border-dashed border-[var(--color-border-strong)] p-4 flex flex-col gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-                    Nova variante
-                  </p>
+                <details className="rounded-2xl border border-dashed border-[var(--color-border-strong)] p-4">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                    Adicionar uma variante manual
+                  </summary>
+                  <div className="mt-4 flex flex-col gap-3">
                   <div className="flex flex-col gap-2">
                     {newVariantAttrs.map((attr, idx) => (
                       <div key={idx} className="flex gap-2 items-center">
@@ -1833,19 +2697,97 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                       + Atributo
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid gap-2 sm:grid-cols-5">
                     <div>
                       <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">SKU (opcional)</label>
                       <input className="admin-input py-1.5 text-sm font-mono" value={newVariantSku} onChange={(e) => setNewVariantSku(e.target.value)} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Preco (MZN)</label>
+                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Custo</label>
+                      <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={newVariantPurchasePrice} onChange={(e) => setNewVariantPurchasePrice(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Venda</label>
                       <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={newVariantPrice} onChange={(e) => setNewVariantPrice(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Promocao</label>
+                      <input type="number" min="0" step="0.01" className="admin-input py-1.5 text-sm" value={newVariantPromotionalPrice} onChange={(e) => setNewVariantPromotionalPrice(e.target.value)} />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Stock</label>
                       <input type="number" min="0" className="admin-input py-1.5 text-sm" value={newVariantStock} onChange={(e) => setNewVariantStock(e.target.value)} />
                     </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-3">
+                    <label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">
+                      Foto da variante
+                    </label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        ref={newVariantImageInputRef}
+                        type="file"
+                        accept={ACCEPTED_IMAGE_INPUT}
+                        className="hidden"
+                        onChange={(e) => handleNewVariantImageFile(e.target.files?.[0] ?? null)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => newVariantImageInputRef.current?.click()}
+                        className="rounded-full bg-[var(--color-danger)] px-4 py-2 text-xs font-semibold text-white"
+                      >
+                        Carregar foto
+                      </button>
+                      {images.length > 0 && (
+                        <select
+                          className="admin-input max-w-xs py-2 text-xs"
+                          value={newVariantImageUrl}
+                          onChange={(e) => {
+                            setNewVariantImageUrl(e.target.value);
+                            setNewVariantImageFile(null);
+                            setNewVariantImagePreview(e.target.value || null);
+                          }}
+                        >
+                          <option value="">Escolher da galeria</option>
+                          {images.map((image) => (
+                            <option key={image.id} value={image.url}>
+                              {imageSourceLabel(image.url)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                      Aceita ficheiros de imagem comuns: JPG, PNG, WebP, GIF, BMP, TIFF, SVG e outros suportados pelo navegador.
+                    </p>
+                    {newVariantImagePreview && (
+                      <div className="mt-3 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={newVariantImagePreview}
+                          alt="Preview"
+                          className="h-14 w-14 flex-none rounded-lg object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold text-[var(--color-text-primary)]">
+                            {newVariantImageFile?.name || "Imagem selecionada"}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (newVariantImagePreview.startsWith("blob:")) URL.revokeObjectURL(newVariantImagePreview);
+                              setNewVariantImageFile(null);
+                              setNewVariantImagePreview(null);
+                              setNewVariantImageUrl("");
+                            }}
+                            className="text-xs text-[var(--color-danger)] hover:underline"
+                          >
+                            Remover imagem
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs text-[var(--color-text-secondary)]">Imagem da variante (URL, opcional)</label>
@@ -1875,7 +2817,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                   >
                     {variantSaving ? "A guardar…" : "+ Adicionar variante"}
                   </button>
-                </div>
+                  </div>
+                </details>
               </div>
             ) : (
               /* ── Create mode: simple picker (variants saved after product creation) ── */

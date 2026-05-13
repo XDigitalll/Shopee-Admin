@@ -508,11 +508,21 @@ export function PaymentsManagementView() {
               key={queue.key}
               type="button"
               onClick={() => setActiveQueue(queue.key)}
-              className={`admin-card p-4 text-left transition ${active ? "border-[var(--color-danger)] bg-[#FFF0EC]" : ""}`}
+              aria-pressed={active}
+              className={`admin-card p-4 text-left transition ${
+                active
+                  ? "border-[var(--color-warning)] bg-[color:var(--color-surface-overlay)] shadow-[0_0_0_1px_rgba(245,158,11,0.9)]"
+                  : "hover:border-[var(--color-border-strong)]"
+              }`}
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-[var(--color-text-primary)]">{queue.label}</p>
-                <ActionDot visible={queue.needsAction && count > 0} />
+                <div className="flex items-center gap-2">
+                  {active ? (
+                    <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-warning)] shadow-[0_0_0_4px_rgba(245,158,11,0.16)]" aria-label="Categoria selecionada" />
+                  ) : null}
+                  <ActionDot visible={queue.needsAction && count > 0} />
+                </div>
               </div>
               <p className="mt-3 font-[family-name:var(--font-sora)] text-3xl font-semibold text-[var(--color-text-primary)]">{count}</p>
             </button>
