@@ -4,12 +4,10 @@ import { FormEvent, useState } from "react";
 
 import { AdminBanner, AdminSpinner } from "@/components/admin/feedback-state";
 import { adminApiFetch } from "@/lib/admin/api-client";
-import { getRoleFromToken } from "@/lib/admin/jwt";
-import { getDefaultPathForRole } from "@/lib/admin/roles";
+import { getDefaultPathForRole, type AdminRole } from "@/lib/admin/roles";
 
 type LoginResponse = {
-  token: string;
-  refreshToken: string;
+  role: AdminRole | null;
 };
 
 export default function AdminLoginPage() {
@@ -31,7 +29,7 @@ export default function AdminLoginPage() {
 
       // httpOnly cookies are set by the login route — navigate with full reload so
       // AdminAuthProvider bootstraps from /api/admin/auth/me with the new session.
-      const defaultPath = getDefaultPathForRole(getRoleFromToken(payload.token));
+      const defaultPath = getDefaultPathForRole(payload.role);
       window.location.replace(defaultPath);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Não foi possível autenticar.");
