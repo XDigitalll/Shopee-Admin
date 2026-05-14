@@ -83,7 +83,8 @@ const sections = [
     title: "CRM & Suporte",
     items: [
       { module: "customers", label: "Clientes", href: "/admin/customers", icon: UsersIcon },
-      { module: "finance", label: "Financas", href: "/admin/finance", icon: ChartIcon },
+      { module: "finance", label: "Finanças", href: "/admin/finance", icon: ChartIcon },
+      { module: "coupons", label: "Cupões", href: "/admin/coupons", icon: WalletIcon, roles: ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"] },
     ] satisfies SidebarItem[],
   },
 ];

@@ -136,7 +136,7 @@ export function ProductsListView() {
         setTotalPages(Math.max(data?.totalPages ?? 1, 1));
       })
       .catch((e) => {
-        showToast("err", e instanceof Error ? e.message : "NÃ£o foi possÃ­vel carregar os produtos.");
+        showToast("err", e instanceof Error ? e.message : "Não foi possível carregar os produtos.");
       })
       .finally(() => setLoading(false));
   }, [page, search, statusFilter]);
