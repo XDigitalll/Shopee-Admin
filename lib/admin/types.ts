@@ -335,7 +335,7 @@ export type TrackingHistoryEntry = {
 };
 
 export type QuoteSubmissionPayload = {
-  exchangeRate: number;
+  exchangeRate?: number;
   baseAmount: number;
   shippingFee: number;
   currency: string;
