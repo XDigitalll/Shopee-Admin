@@ -338,8 +338,22 @@ export default function BannersPage() {
                   Imagem do banner *
                 </label>
                 <span className="text-[11px] text-[var(--color-text-tertiary)]">
-                  Tamanho ideal: 1920 × 600 px · Máx. 5 MB · JPG / PNG / WEBP
+                  Desktop 1920 x 700 · Tablet 1200 x 700 · Mobile 900 x 1200
                 </span>
+              </div>
+
+              <div className="mb-3 grid gap-2 text-[11px] sm:grid-cols-3">
+                {[
+                  { label: "Desktop", size: "1920 x 700", ratio: "Banner largo" },
+                  { label: "Tablet", size: "1200 x 700", ratio: "Banner medio" },
+                  { label: "Mobile", size: "900 x 1200", ratio: "Mais alto" },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-[14px] border px-3 py-2" style={{ borderColor: "var(--color-border)", background: "var(--color-background-secondary)" }}>
+                    <p className="font-semibold text-[var(--color-text-primary)]">{item.label}</p>
+                    <p className="mt-0.5 text-[var(--color-text-secondary)]">{item.size}</p>
+                    <p className="text-[var(--color-text-tertiary)]">{item.ratio}</p>
+                  </div>
+                ))}
               </div>
 
               {/* Hidden file input */}
@@ -392,7 +406,7 @@ export default function BannersPage() {
                         Clica ou arrasta uma imagem aqui
                       </p>
                       <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-                        Dimensões recomendadas: 1920 × 600 px — máx. 5 MB
+                        Recomendado: desktop 1920 x 700, tablet 1200 x 700, mobile 900 x 1200. Max. 5 MB.
                       </p>
                     </div>
                   </>
