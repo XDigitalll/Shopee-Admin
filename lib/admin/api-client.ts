@@ -1,39 +1,19 @@
 "use client";
 
-import {
-  ADMIN_AUTH_CHANGE_EVENT,
-  ADMIN_REFRESH_COOKIE,
-  ADMIN_REFRESH_TOKEN_KEY,
-  ADMIN_SESSION_COOKIE,
-  ADMIN_TOKEN_KEY,
-} from "@/lib/admin/session";
+import { ADMIN_AUTH_CHANGE_EVENT } from "@/lib/admin/session";
 import { emitAdminDataChanged } from "@/lib/admin/realtime";
 
-type ApiOptions = RequestInit & {
-  token?: string | null;
-};
-
-type AdminSessionPayload = {
-  token: string;
-  refreshToken: string;
-};
+type ApiOptions = RequestInit;
 
 const GET_CACHE_TTL_MS = 5_000;
 
-let refreshPromise: Promise<AdminSessionPayload | null> | null = null;
+let refreshPromise: Promise<boolean> | null = null;
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
 const resolvedGetCache = new Map<string, { expiresAt: number; value: unknown }>();
 
 function emitAuthChange() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
+  if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(ADMIN_AUTH_CHANGE_EVENT));
-}
-
-function writeCookie(name: string, value: string) {
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=86400; SameSite=Lax`;
 }
 
 function clearAdminGetCache() {
@@ -41,79 +21,48 @@ function clearAdminGetCache() {
   resolvedGetCache.clear();
 }
 
-export function persistAdminSession(token: string, refreshToken: string) {
-  window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
-  window.localStorage.setItem(ADMIN_REFRESH_TOKEN_KEY, refreshToken);
-  writeCookie(ADMIN_SESSION_COOKIE, token);
-  writeCookie(ADMIN_REFRESH_COOKIE, refreshToken);
+// Session is managed server-side via httpOnly cookies — these are intentional no-ops.
+export function persistAdminSession(_token: string, _refreshToken: string) {
   clearAdminGetCache();
   emitAuthChange();
 }
 
-export function persistAdminToken(token: string) {
-  const refreshToken = getStoredAdminRefreshToken();
-  if (!refreshToken) {
-    return;
-  }
-
-  persistAdminSession(token, refreshToken);
-}
+export function persistAdminToken(_token: string) {}
 
 export function clearAdminSession() {
-  window.localStorage.removeItem(ADMIN_TOKEN_KEY);
-  window.localStorage.removeItem(ADMIN_REFRESH_TOKEN_KEY);
-  document.cookie = `${ADMIN_SESSION_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
-  document.cookie = `${ADMIN_REFRESH_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
   clearAdminGetCache();
   emitAuthChange();
 }
 
-export function getStoredAdminToken() {
-  return typeof window === "undefined" ? null : window.localStorage.getItem(ADMIN_TOKEN_KEY);
+// Token is in an httpOnly cookie — never accessible to JS.
+export function getStoredAdminToken(): null {
+  return null;
 }
 
-export function getStoredAdminRefreshToken() {
-  return typeof window === "undefined"
-    ? null
-    : window.localStorage.getItem(ADMIN_REFRESH_TOKEN_KEY);
+export function getStoredAdminRefreshToken(): null {
+  return null;
 }
 
-export async function refreshAdminSession() {
-  if (typeof window === "undefined") {
-    return null;
-  }
+export async function refreshAdminSession(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
 
-  if (refreshPromise) {
-    return refreshPromise;
-  }
-
-  const refreshToken = getStoredAdminRefreshToken();
-  if (!refreshToken) {
-    clearAdminSession();
-    return null;
-  }
+  if (refreshPromise) return refreshPromise;
 
   refreshPromise = fetch("/api/admin/auth/refresh", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ refreshToken }),
     cache: "no-store",
   })
-    .then(async (response) => {
-      const payload = (await response.json().catch(() => null)) as AdminSessionPayload | null;
-      if (!response.ok || !payload?.token || !payload.refreshToken) {
+    .then((response) => {
+      if (!response.ok) {
         clearAdminSession();
-        return null;
+        return false;
       }
-
-      persistAdminSession(payload.token, payload.refreshToken);
-      return payload;
+      clearAdminGetCache();
+      return true;
     })
     .catch(() => {
       clearAdminSession();
-      return null;
+      return false;
     })
     .finally(() => {
       refreshPromise = null;
@@ -122,28 +71,15 @@ export async function refreshAdminSession() {
   return refreshPromise;
 }
 
-async function requestWithToken(
-  path: string,
-  options: ApiOptions = {},
-  tokenOverride?: string | null
-) {
+async function executeRequest(path: string, options: ApiOptions = {}) {
   const headers = new Headers(options.headers);
-  const token = tokenOverride ?? options.token ?? getStoredAdminToken();
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
 
   const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (options.body && !headers.has("Content-Type") && !isFormDataBody) {
     headers.set("Content-Type", "application/json");
   }
 
-  return fetch(path, {
-    ...options,
-    headers,
-    cache: "no-store",
-  });
+  return fetch(path, { ...options, headers, cache: "no-store" });
 }
 
 export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
@@ -152,20 +88,20 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
     method === "GET" &&
     path !== "/api/admin/auth/login" &&
     path !== "/api/admin/auth/logout" &&
-    path !== "/api/admin/auth/refresh";
+    path !== "/api/admin/auth/refresh" &&
+    path !== "/api/admin/auth/me";
 
   const execute = async () => {
-    let response = await requestWithToken(path, options);
+    let response = await executeRequest(path, options);
 
     if (
       response.status === 401 &&
       path !== "/api/admin/auth/login" &&
-      path !== "/api/admin/auth/refresh" &&
-      getStoredAdminRefreshToken()
+      path !== "/api/admin/auth/refresh"
     ) {
       const refreshed = await refreshAdminSession();
-      if (refreshed?.token) {
-        response = await requestWithToken(path, options, refreshed.token);
+      if (refreshed) {
+        response = await executeRequest(path, options);
       }
     }
 
@@ -194,7 +130,6 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
           typeof payload.message === "string" &&
           payload.message) ||
         "Nao foi possivel concluir a operacao.";
-
       throw new Error(message);
     }
 
@@ -208,8 +143,7 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
     return payload;
   }
 
-  const token = options.token ?? getStoredAdminToken();
-  const cacheKey = `${token ?? "anonymous"}::${path}`;
+  const cacheKey = path;
   const now = Date.now();
   const cachedValue = resolvedGetCache.get(cacheKey);
 

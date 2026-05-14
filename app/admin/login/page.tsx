@@ -1,10 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { AdminBanner, AdminSpinner } from "@/components/admin/feedback-state";
-import { adminApiFetch, persistAdminSession } from "@/lib/admin/api-client";
+import { adminApiFetch } from "@/lib/admin/api-client";
 import { getRoleFromToken } from "@/lib/admin/jwt";
 import { getDefaultPathForRole } from "@/lib/admin/roles";
 
@@ -14,7 +13,6 @@ type LoginResponse = {
 };
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("admin@xdigital.com");
   const [password, setPassword] = useState("admin123");
   const [isLoading, setIsLoading] = useState(false);
@@ -28,18 +26,15 @@ export default function AdminLoginPage() {
     try {
       const payload = await adminApiFetch<LoginResponse>("/api/admin/auth/login", {
         method: "POST",
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        body: JSON.stringify({ email, password }),
       });
 
-      persistAdminSession(payload.token, payload.refreshToken);
-      router.replace(getDefaultPathForRole(getRoleFromToken(payload.token)));
-      router.refresh();
+      // httpOnly cookies are set by the login route — navigate with full reload so
+      // AdminAuthProvider bootstraps from /api/admin/auth/me with the new session.
+      const defaultPath = getDefaultPathForRole(getRoleFromToken(payload.token));
+      window.location.replace(defaultPath);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Não foi possível autenticar.");
-    } finally {
       setIsLoading(false);
     }
   }

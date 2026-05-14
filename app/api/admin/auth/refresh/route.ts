@@ -1,22 +1,50 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { ADMIN_REFRESH_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+const isSecure = process.env.NODE_ENV === "production";
+
+function adminCookieOpts(httpOnly: boolean, maxAge: number) {
+  return { httpOnly, secure: isSecure, sameSite: "lax" as const, path: "/", maxAge };
+}
 
 export async function POST(request: NextRequest) {
-  const body = await request.text();
+  const cookieStore = await cookies();
+
+  let refreshToken: string | undefined;
+  let rawBody = "";
+
+  try {
+    rawBody = await request.text();
+    const parsed = JSON.parse(rawBody) as { refreshToken?: string };
+    if (parsed.refreshToken?.trim()) {
+      refreshToken = parsed.refreshToken.trim();
+    }
+  } catch {
+    // No body
+  }
+
+  if (!refreshToken) {
+    refreshToken = cookieStore.get(ADMIN_REFRESH_COOKIE)?.value;
+  }
+
+  if (!refreshToken) {
+    return NextResponse.json({ message: "Sem token de renovacao disponivel." }, { status: 401 });
+  }
 
   const response = await fetch(`${BACKEND_URL}/auth/refresh`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
     cache: "no-store",
   });
 
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
+    cookieStore.set(ADMIN_SESSION_COOKIE, "", adminCookieOpts(true, 0));
+    cookieStore.set(ADMIN_REFRESH_COOKIE, "", adminCookieOpts(true, 0));
     return NextResponse.json(
       {
         message:
@@ -29,6 +57,11 @@ export async function POST(request: NextRequest) {
       },
       { status: response.status }
     );
+  }
+
+  if (payload?.token && payload?.refreshToken) {
+    cookieStore.set(ADMIN_SESSION_COOKIE, payload.token, adminCookieOpts(true, 86_400));
+    cookieStore.set(ADMIN_REFRESH_COOKIE, payload.refreshToken, adminCookieOpts(true, 2_592_000));
   }
 
   return NextResponse.json(payload, { status: response.status });

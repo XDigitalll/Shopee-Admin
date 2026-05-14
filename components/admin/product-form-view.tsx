@@ -680,9 +680,6 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           arr.forEach((f) => fd.append("files", f));
           const updated = await fetch(`/api/admin/products/${productId}/images`, {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("shopee_admin_token") ?? ""}`,
-            },
             body: fd,
           }).then((r) => r.json()) as AdminProduct;
           const gallery: FormImage[] = (updated.gallery ?? []).map((img) => ({
@@ -1274,10 +1271,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       if (editForm.imageFile) {
         const fd = new FormData();
         fd.append("file", editForm.imageFile);
-        const token = typeof window !== "undefined" ? (localStorage.getItem("shopee_admin_token") ?? "") : "";
         const imgRes = await fetch(
           `/api/admin/products/${productId}/variants/${editingVariantId}/image`,
-          { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
+          { method: "POST", body: fd }
         );
         if (imgRes.ok) {
           const imgData = (await imgRes.json()) as AdminProductVariant;
@@ -1408,9 +1404,6 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       fileImages.forEach((i) => fd.append("files", i.file!));
       await fetch(`/api/admin/products/${newProductId}/images`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("shopee_admin_token") ?? ""}`,
-        },
         body: fd,
       });
     }

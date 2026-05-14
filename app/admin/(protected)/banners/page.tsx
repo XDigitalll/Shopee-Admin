@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { adminApiFetch, getStoredAdminToken } from "@/lib/admin/api-client";
+import { adminApiFetch } from "@/lib/admin/api-client";
 
 type Banner = {
   id: number;
@@ -162,7 +162,6 @@ export default function BannersPage() {
       fd.append("file", file);
       const res = await fetch("/api/admin/banners", {
         method: "POST",
-        headers: { Authorization: `Bearer ${getStoredAdminToken() ?? ""}` },
         body: fd,
       });
       const data = await res.json() as { url?: string; message?: string };

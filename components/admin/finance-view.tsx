@@ -1569,7 +1569,7 @@ function CostBreakdownSection({
 }
 
 export function FinanceView() {
-  const { hasAccess, token } = useAdminAuth();
+  const { hasAccess } = useAdminAuth();
   const [period, setPeriod] = useState<FinancePeriod>("month");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1614,10 +1614,7 @@ export function FinanceView() {
 
   async function handleExport() {
     try {
-      const res = await fetch(
-        `/api/admin/finance/export?period=${period}&format=csv`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-      );
+      const res = await fetch(`/api/admin/finance/export?period=${period}&format=csv`);
       if (!res.ok) throw new Error("Falha ao exportar relatório.");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1633,10 +1630,7 @@ export function FinanceView() {
 
   async function handleStatement() {
     try {
-      const res = await fetch(
-        `/api/admin/finance/statement?period=${period}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-      );
+      const res = await fetch(`/api/admin/finance/statement?period=${period}`);
       if (!res.ok) throw new Error("Falha ao gerar extracto.");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
