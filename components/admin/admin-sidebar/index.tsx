@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { humanizeRole } from "@/lib/admin/format";
-import { MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
+import { canAccessSuperAdmin, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
 import {
   BannerIcon,
   BoxIcon,
@@ -170,12 +170,14 @@ export function AdminSidebar({
           </div>
         ))}
 
-        <div className="mt-8 border-t border-white/8 pt-4">
-          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
-            Super Admin
-          </p>
-          <nav className="space-y-1">{superAdminSection.map(renderNavItem)}</nav>
-        </div>
+        {canAccessSuperAdmin(effectiveRole) ? (
+          <div className="mt-8 border-t border-white/8 pt-4">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
+              Super Admin
+            </p>
+            <nav className="space-y-1">{superAdminSection.map(renderNavItem)}</nav>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-t border-white/8 px-4 py-4">
