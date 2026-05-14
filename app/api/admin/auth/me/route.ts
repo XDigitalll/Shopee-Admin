@@ -1,8 +1,18 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
+import { getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+
+type BackendProfile = Record<string, unknown> & {
+  role?: unknown;
+  roles?: unknown;
+  authorities?: unknown;
+  name?: unknown;
+  email?: unknown;
+  avatarUrl?: unknown;
+};
 
 function getExpiresAtMs(token: string): number | null {
   try {
@@ -35,6 +45,49 @@ export async function GET() {
     return NextResponse.json({ message: "Sessao invalida ou expirada." }, { status: 401 });
   }
 
-  const profile = await backendResponse.json().catch(() => null);
-  return NextResponse.json({ ...profile, expiresAt: getExpiresAtMs(token) });
+  const profile = (await backendResponse.json().catch(() => null)) as BackendProfile | null;
+  const roleCandidates = collectRoleCandidates(profile);
+  const role = getPrimaryRole(roleCandidates);
+  const roles = roleCandidates
+    .map(normalizeRole)
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return NextResponse.json({
+    ...profile,
+    role,
+    roles,
+    name: typeof profile?.name === "string" && profile.name.trim() ? profile.name : "Administrador",
+    email: typeof profile?.email === "string" ? profile.email : "",
+    avatarUrl: typeof profile?.avatarUrl === "string" ? profile.avatarUrl : null,
+    expiresAt: getExpiresAtMs(token),
+  });
+}
+
+function collectRoleCandidates(profile: BackendProfile | null) {
+  const candidates: unknown[] = [];
+
+  if (Array.isArray(profile?.roles)) {
+    candidates.push(...profile.roles);
+  }
+
+  if (profile?.role) {
+    candidates.push(profile.role);
+  }
+
+  if (Array.isArray(profile?.authorities)) {
+    for (const authority of profile.authorities) {
+      if (typeof authority === "string") {
+        candidates.push(authority.replace(/^ROLE_/, ""));
+      } else if (
+        authority &&
+        typeof authority === "object" &&
+        "authority" in authority &&
+        typeof authority.authority === "string"
+      ) {
+        candidates.push(authority.authority.replace(/^ROLE_/, ""));
+      }
+    }
+  }
+
+  return candidates;
 }

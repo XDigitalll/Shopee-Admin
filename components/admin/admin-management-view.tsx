@@ -7,7 +7,7 @@ import { DeliveryIcon, ImageIcon, LayersIcon, LockIcon, OrdersIcon, PlusIcon, Qu
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, humanizeRole } from "@/lib/admin/format";
-import { ADMIN_MODULES, ADMIN_ROLES, MODULE_METADATA, ROLE_ACCESS, type AdminModule, type AdminRole } from "@/lib/admin/roles";
+import { ADMIN_MODULES, MODULE_METADATA, ROLE_ACCESS, type AdminModule, type AdminRole } from "@/lib/admin/roles";
 import type { ManagedAdmin, ManagedAdminStatsResponse, ManagedAdminStatus, ManagedAdminsPageResponse } from "@/lib/admin/types";
 
 type RolePill = AdminRole | "ALL";
@@ -45,6 +45,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   CRM_MANAGER: { bg: "#F1EFE8", text: "#444441" },
   DELIVERY_MANAGER: { bg: "#E8F2FF", text: "#1D4ED8" },
   DELIVERY_DRIVER: { bg: "#EAF4FF", text: "#1D4ED8" },
+  USER: { bg: "#F3F4F6", text: "#374151" },
 };
 
 const ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
@@ -58,6 +59,7 @@ const ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
   CUSTOMER_SUPPORT: "Acompanha clientes e pedidos para resolver dúvidas e incidentes.",
   CRM_MANAGER: "Cuida da base de clientes, relacionamento e visão de CRM.",
   ANALYST: "Consulta indicadores, dashboards e leituras analíticas.",
+  USER: "Conta de cliente sem acesso administrativo.",
 };
 
 const PERMISSION_ROLES: AdminRole[] = ["SUPER_ADMIN", "ADMIN", "DELIVERY_DRIVER", "DELIVERY_MANAGER", "ORDER_MANAGER", "CATALOG_MANAGER", "FINANCE_MANAGER", "CUSTOMER_SUPPORT", "CRM_MANAGER", "ANALYST"];
@@ -558,7 +560,7 @@ function AdminFormDrawer({
             ) : null}
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Role</label>
-              <select value={form.role} onChange={(event) => onChange("role", event.target.value)} className="admin-input w-full">{ADMIN_ROLES.map((role) => <option key={role} value={role}>{humanizeRole(role)}</option>)}</select>
+              <select value={form.role} onChange={(event) => onChange("role", event.target.value)} className="admin-input w-full">{PERMISSION_ROLES.map((role) => <option key={role} value={role}>{humanizeRole(role)}</option>)}</select>
               <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{ROLE_DESCRIPTIONS[form.role]}</p>
             </div>
           </div>

@@ -9,6 +9,7 @@ export const ADMIN_ROLES = [
   "CUSTOMER_SUPPORT",
   "CRM_MANAGER",
   "ANALYST",
+  "USER",
 ] as const;
 
 export type AdminRole = (typeof ADMIN_ROLES)[number];
@@ -69,7 +70,22 @@ export const ROLE_ACCESS: Record<AdminRole, AdminModule[]> = {
   CUSTOMER_SUPPORT: ["dashboard", "orders", "customers"],
   CRM_MANAGER: ["dashboard", "customers"],
   ANALYST: ["dashboard", "finance"],
+  USER: [],
 };
+
+export const ROLE_PRIORITY: AdminRole[] = [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "FINANCE_MANAGER",
+  "DELIVERY_MANAGER",
+  "ORDER_MANAGER",
+  "CATALOG_MANAGER",
+  "CUSTOMER_SUPPORT",
+  "CRM_MANAGER",
+  "ANALYST",
+  "DELIVERY_DRIVER",
+  "USER",
+];
 
 export const MODULE_METADATA: Record<
   AdminModule,
@@ -188,16 +204,15 @@ export function normalizeRole(role: unknown): AdminRole | null {
 }
 
 export function getPrimaryRole(roles: unknown): AdminRole | null {
-  if (Array.isArray(roles)) {
-    for (const role of roles) {
-      const normalized = normalizeRole(role);
-      if (normalized) {
-        return normalized;
-      }
-    }
+  const normalizedRoles = Array.isArray(roles)
+    ? roles.map(normalizeRole).filter((role): role is AdminRole => Boolean(role))
+    : [normalizeRole(roles)].filter((role): role is AdminRole => Boolean(role));
+
+  if (normalizedRoles.length === 0) {
+    return null;
   }
 
-  return normalizeRole(roles);
+  return ROLE_PRIORITY.find((role) => normalizedRoles.includes(role)) ?? normalizedRoles[0] ?? null;
 }
 
 export function hasModuleAccess(role: AdminRole | null, module: AdminModule) {

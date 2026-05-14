@@ -1,9 +1,19 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_REFRESH_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
+import { getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 const isSecure = process.env.NODE_ENV === "production";
+
+type BackendProfile = Record<string, unknown> & {
+  role?: unknown;
+  roles?: unknown;
+  authorities?: unknown;
+  name?: unknown;
+  email?: unknown;
+  avatarUrl?: unknown;
+};
 
 function adminCookieOpts(httpOnly: boolean, maxAge: number) {
   return { httpOnly, secure: isSecure, sameSite: "lax" as const, path: "/", maxAge };
@@ -38,9 +48,68 @@ export async function POST(request: NextRequest) {
 
   if (payload?.token && payload?.refreshToken) {
     const cookieStore = await cookies();
+    cookieStore.set(ADMIN_SESSION_COOKIE, "", adminCookieOpts(true, 0));
+    cookieStore.set(ADMIN_REFRESH_COOKIE, "", adminCookieOpts(true, 0));
     cookieStore.set(ADMIN_SESSION_COOKIE, payload.token, adminCookieOpts(true, 86_400));
     cookieStore.set(ADMIN_REFRESH_COOKIE, payload.refreshToken, adminCookieOpts(true, 2_592_000));
   }
 
-  return NextResponse.json(payload, { status: response.status });
+  if (!payload?.token) {
+    return NextResponse.json({ message: "Resposta de login sem token." }, { status: 502 });
+  }
+
+  const profileResponse = await fetch(`${BACKEND_URL}/users/me`, {
+    headers: { Authorization: `Bearer ${payload.token}` },
+    cache: "no-store",
+  }).catch(() => null);
+
+  const profile = profileResponse?.ok
+    ? ((await profileResponse.json().catch(() => null)) as BackendProfile | null)
+    : null;
+
+  const roleCandidates = collectRoleCandidates(profile);
+  const role = getPrimaryRole(roleCandidates);
+  const roles = roleCandidates
+    .map(normalizeRole)
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return NextResponse.json(
+    {
+      role,
+      roles,
+      name: typeof profile?.name === "string" && profile.name.trim() ? profile.name : "Administrador",
+      email: typeof profile?.email === "string" ? profile.email : "",
+      avatarUrl: typeof profile?.avatarUrl === "string" ? profile.avatarUrl : null,
+    },
+    { status: response.status },
+  );
+}
+
+function collectRoleCandidates(profile: BackendProfile | null) {
+  const candidates: unknown[] = [];
+
+  if (Array.isArray(profile?.roles)) {
+    candidates.push(...profile.roles);
+  }
+
+  if (profile?.role) {
+    candidates.push(profile.role);
+  }
+
+  if (Array.isArray(profile?.authorities)) {
+    for (const authority of profile.authorities) {
+      if (typeof authority === "string") {
+        candidates.push(authority.replace(/^ROLE_/, ""));
+      } else if (
+        authority &&
+        typeof authority === "object" &&
+        "authority" in authority &&
+        typeof authority.authority === "string"
+      ) {
+        candidates.push(authority.authority.replace(/^ROLE_/, ""));
+      }
+    }
+  }
+
+  return candidates;
 }

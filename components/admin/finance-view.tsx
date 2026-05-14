@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { formatMoney } from "@/lib/admin/format";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { ExchangeRatesPanel } from "@/components/admin/exchange-rates-panel";
 import {
   ArrowUpIcon,
   ChartIcon,
@@ -1702,6 +1703,8 @@ export function FinanceView() {
         </div>
       )}
 
+      <ExchangeRatesPanel />
+
       <MetricCards data={stats} isLoading={isLoading} />
 
       <RevenueBreakdown data={stats} isLoading={isLoading} />
@@ -1728,5 +1731,4 @@ export function FinanceView() {
     </div>
   );
 }
-
 

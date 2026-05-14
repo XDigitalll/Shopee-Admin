@@ -348,6 +348,33 @@ export type QuoteSubmissionPayload = {
   validityDate: string;
 };
 
+export type CurrencyCode = "USD" | "ZAR" | "MZN";
+
+export type ExchangeRateSource = "MANUAL" | "API" | "ADMIN_OVERRIDE";
+
+export type ExchangeRate = {
+  id: number;
+  baseCurrency: CurrencyCode;
+  targetCurrency: CurrencyCode;
+  rate: number;
+  source: ExchangeRateSource;
+  active: boolean;
+  createdAt: string;
+  createdBy: string | null;
+  validFrom: string;
+  validUntil: string | null;
+  notes: string | null;
+};
+
+export type ExchangeRateRequest = {
+  baseCurrency: Exclude<CurrencyCode, "MZN">;
+  targetCurrency: "MZN";
+  rate: number;
+  source?: ExchangeRateSource;
+  validFrom?: string;
+  notes?: string;
+};
+
 export type InternalOrderNote = {
   id: string;
   content: string;
@@ -648,6 +675,7 @@ export type AdminQuoteDetail = {
 
 export type AdminSessionProfile = {
   role: AdminRole | null;
+  roles?: AdminRole[];
   name: string;
   email: string;
   avatarUrl: string | null;

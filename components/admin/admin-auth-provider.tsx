@@ -33,6 +33,7 @@ type AdminAuthContextValue = {
 
 const emptyProfile: AdminSessionProfile = {
   role: null,
+  roles: [],
   name: "Administrador",
   email: "",
   avatarUrl: null,

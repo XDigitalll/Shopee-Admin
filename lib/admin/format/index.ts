@@ -36,6 +36,7 @@ export function humanizeRole(role: string | null | undefined) {
     CUSTOMER_SUPPORT: "Suporte",
     CRM_MANAGER: "CRM",
     ANALYST: "Analista",
+    USER: "Utilizador",
   };
 
   return role ? labels[role] ?? role : "Sem role";
