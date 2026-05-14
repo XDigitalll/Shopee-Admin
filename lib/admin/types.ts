@@ -850,6 +850,12 @@ export type AdminCustomer = {
   mustChangePassword: boolean;
   profileIncomplete: boolean;
   accountStatus: "GUEST" | "INCOMPLETO" | "VERIFICADO";
+  // Communication channel fields
+  communicationPhone: string | null;
+  communicationChannel: "WHATSAPP" | "TELEGRAM" | "PHONE" | "EMAIL" | null;
+  communicationVerified: boolean | null;
+  whatsappSameAsPrimary: boolean | null;
+  effectiveCommunicationPhone: string | null;
 };
 
 export type CustomerStats = {

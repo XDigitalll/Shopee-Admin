@@ -11,7 +11,6 @@ import {
 
 import {
   type AdminModule,
-  DEFAULT_ADMIN_ROLE,
   hasModuleAccess,
 } from "@/lib/admin/roles";
 import {
@@ -142,7 +141,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [profile]);
 
-  const effectiveRole = profile?.role ?? DEFAULT_ADMIN_ROLE;
+  const effectiveRole = profile?.role ?? null;
 
   const value = useMemo<AdminAuthContextValue>(
     () => ({

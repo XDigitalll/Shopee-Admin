@@ -2,6 +2,7 @@
 
 import { ADMIN_AUTH_CHANGE_EVENT } from "@/lib/admin/session";
 import { emitAdminDataChanged } from "@/lib/admin/realtime";
+import { getCsrfToken, XSRF_HEADER } from "@/lib/admin/csrf";
 
 type ApiOptions = RequestInit;
 
@@ -48,8 +49,13 @@ export async function refreshAdminSession(): Promise<boolean> {
 
   if (refreshPromise) return refreshPromise;
 
+  const refreshHeaders: Record<string, string> = {};
+  const csrfToken = getCsrfToken();
+  if (csrfToken) refreshHeaders[XSRF_HEADER] = csrfToken;
+
   refreshPromise = fetch("/api/admin/auth/refresh", {
     method: "POST",
+    headers: refreshHeaders,
     cache: "no-store",
   })
     .then((response) => {
@@ -77,6 +83,15 @@ async function executeRequest(path: string, options: ApiOptions = {}) {
   const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (options.body && !headers.has("Content-Type") && !isFormDataBody) {
     headers.set("Content-Type", "application/json");
+  }
+
+  // Attach CSRF token for all state-mutating requests
+  const method = String(options.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers.set(XSRF_HEADER, csrfToken);
+    }
   }
 
   return fetch(path, { ...options, headers, cache: "no-store" });

@@ -32,8 +32,6 @@ export const ADMIN_MODULES = [
 
 export type AdminModule = (typeof ADMIN_MODULES)[number];
 
-export const DEFAULT_ADMIN_ROLE: AdminRole = "ADMIN";
-
 export const ROLE_ACCESS: Record<AdminRole, AdminModule[]> = {
   SUPER_ADMIN: [
     "dashboard",
@@ -199,20 +197,77 @@ export function normalizeRole(role: unknown): AdminRole | null {
     return null;
   }
 
-  const normalized = role.trim().toUpperCase();
+  const raw = role.trim().toUpperCase();
+  const withoutPrefix = raw.replace(/^ROLE[\s:_-]*/, "");
+  const compact = withoutPrefix.replace(/[\s:_-]+/g, "_");
+  const aliasMap: Record<string, AdminRole> = {
+    SUPERADMIN: "SUPER_ADMIN",
+    SUPER_ADMIN: "SUPER_ADMIN",
+    ADMIN_SUPER: "SUPER_ADMIN",
+    ADMINISTRATOR_SUPER: "SUPER_ADMIN",
+    ADMINISTRADOR_SUPER: "SUPER_ADMIN",
+    ADMIN: "ADMIN",
+    FINANCE: "FINANCE_MANAGER",
+    FINANCEIRO: "FINANCE_MANAGER",
+    FINANCE_MANAGER: "FINANCE_MANAGER",
+    DELIVERY: "DELIVERY_MANAGER",
+    DELIVERY_MANAGER: "DELIVERY_MANAGER",
+    DELIVERY_DRIVER: "DELIVERY_DRIVER",
+    USER: "USER",
+  };
+
+  const normalized = aliasMap[compact] ?? compact;
   return ADMIN_ROLES.find((item) => item === normalized) ?? null;
 }
 
 export function getPrimaryRole(roles: unknown): AdminRole | null {
-  const normalizedRoles = Array.isArray(roles)
-    ? roles.map(normalizeRole).filter((role): role is AdminRole => Boolean(role))
-    : [normalizeRole(roles)].filter((role): role is AdminRole => Boolean(role));
+  const normalizedRoles = extractRoleCandidates(roles)
+    .map(normalizeRole)
+    .filter((role): role is AdminRole => Boolean(role));
 
   if (normalizedRoles.length === 0) {
     return null;
   }
 
   return ROLE_PRIORITY.find((role) => normalizedRoles.includes(role)) ?? normalizedRoles[0] ?? null;
+}
+
+export function extractRoleCandidates(value: unknown): unknown[] {
+  const candidates: unknown[] = [];
+
+  function visit(item: unknown, depth: number) {
+    if (item == null || depth > 4) return;
+
+    if (typeof item === "string") {
+      candidates.push(item);
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      item.forEach((entry) => visit(entry, depth + 1));
+      return;
+    }
+
+    if (typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      for (const key of ["role", "roles", "authority", "authorities", "name", "code"]) {
+        if (key in record) {
+          visit(record[key], depth + 1);
+        }
+      }
+    }
+  }
+
+  visit(value, 0);
+  return candidates;
+}
+
+export function hasRole(role: AdminRole | null, expected: AdminRole) {
+  return role === expected;
+}
+
+export function canAccessSuperAdmin(role: AdminRole | null) {
+  return hasRole(role, "SUPER_ADMIN");
 }
 
 export function hasModuleAccess(role: AdminRole | null, module: AdminModule) {
@@ -229,7 +284,7 @@ export function getModuleForPath(pathname: string) {
 
 export function getDefaultPathForRole(role: AdminRole | null) {
   if (!role) {
-    return "/admin";
+    return "/admin/unauthorized";
   }
 
   const firstModule = ROLE_ACCESS[role][0];

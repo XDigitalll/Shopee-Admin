@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_REFRESH_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
-import { getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
+import { forwardXsrfCookie } from "@/app/api/admin/_utils";
+import { decodeJwtPayload } from "@/lib/admin/jwt";
+import { extractRoleCandidates, getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 const isSecure = process.env.NODE_ENV === "production";
@@ -67,13 +69,17 @@ export async function POST(request: NextRequest) {
     ? ((await profileResponse.json().catch(() => null)) as BackendProfile | null)
     : null;
 
-  const roleCandidates = collectRoleCandidates(profile);
+  const tokenPayload = decodeJwtPayload(payload.token);
+  const roleCandidates = [
+    ...extractRoleCandidates(profile),
+    ...extractRoleCandidates(tokenPayload),
+  ];
   const role = getPrimaryRole(roleCandidates);
   const roles = roleCandidates
     .map(normalizeRole)
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-  return NextResponse.json(
+  const nextResponse = NextResponse.json(
     {
       role,
       roles,
@@ -83,33 +89,9 @@ export async function POST(request: NextRequest) {
     },
     { status: response.status },
   );
-}
 
-function collectRoleCandidates(profile: BackendProfile | null) {
-  const candidates: unknown[] = [];
-
-  if (Array.isArray(profile?.roles)) {
-    candidates.push(...profile.roles);
-  }
-
-  if (profile?.role) {
-    candidates.push(profile.role);
-  }
-
-  if (Array.isArray(profile?.authorities)) {
-    for (const authority of profile.authorities) {
-      if (typeof authority === "string") {
-        candidates.push(authority.replace(/^ROLE_/, ""));
-      } else if (
-        authority &&
-        typeof authority === "object" &&
-        "authority" in authority &&
-        typeof authority.authority === "string"
-      ) {
-        candidates.push(authority.authority.replace(/^ROLE_/, ""));
-      }
-    }
-  }
-
-  return candidates;
+  // Forward XSRF-TOKEN cookie from the login response so the browser has the
+  // token immediately after signing in (before any subsequent GET request).
+  forwardXsrfCookie(response, nextResponse);
+  return nextResponse;
 }

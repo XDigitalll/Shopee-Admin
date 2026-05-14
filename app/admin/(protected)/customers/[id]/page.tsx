@@ -708,6 +708,52 @@ export default function CustomerDetailPage() {
             )}
           </div>
 
+          {/* Communication channel */}
+          <div className="admin-card p-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Contacto de comunicação</p>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">Telefone comunicação</span>
+                <span className="font-semibold text-[var(--color-text-primary)]">
+                  {customer.effectiveCommunicationPhone ?? customer.phoneNumber ?? "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">Canal</span>
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                  style={{
+                    background: customer.communicationChannel === "WHATSAPP" ? "#EAF3DE"
+                      : customer.communicationChannel === "TELEGRAM" ? "#DBEAFE"
+                      : customer.communicationChannel === "PHONE" ? "#FEF3C7"
+                      : customer.communicationChannel === "EMAIL" ? "#EEEDFE"
+                      : "var(--color-background-secondary)",
+                    color: customer.communicationChannel === "WHATSAPP" ? "#173404"
+                      : customer.communicationChannel === "TELEGRAM" ? "#1E3A5F"
+                      : customer.communicationChannel === "PHONE" ? "#7B3C00"
+                      : customer.communicationChannel === "EMAIL" ? "#3C3489"
+                      : "var(--color-text-secondary)",
+                  }}
+                >
+                  {customer.communicationChannel ?? "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">Verificado</span>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${customer.communicationVerified ? "bg-[#EAF3DE] text-[#173404]" : "bg-[var(--color-background-secondary)] text-[var(--color-text-tertiary)]"}`}>
+                  {customer.communicationVerified ? <CheckIcon className="h-2.5 w-2.5" /> : <XIcon className="h-2.5 w-2.5" />}
+                  {customer.communicationVerified ? "Sim" : "Não"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">WhatsApp = Principal?</span>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${customer.whatsappSameAsPrimary !== false ? "bg-[#EAF3DE] text-[#173404]" : "bg-[#FEF3C7] text-[#7B3C00]"}`}>
+                  {customer.whatsappSameAsPrimary !== false ? <CheckIcon className="h-2.5 w-2.5" /> : <XIcon className="h-2.5 w-2.5" />}
+                  {customer.whatsappSameAsPrimary !== false ? "Sim" : "Não"}
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Internal notes */}
           <div className="admin-card p-5">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Notas internas</p>

@@ -59,6 +59,11 @@ function mapCustomer(item: Partial<AdminCustomer>): AdminCustomer {
     mustChangePassword: Boolean(item.mustChangePassword ?? false),
     profileIncomplete: Boolean(item.profileIncomplete ?? false),
     accountStatus: (item.accountStatus as AdminCustomer["accountStatus"]) ?? "VERIFICADO",
+    communicationPhone: item.communicationPhone ?? null,
+    communicationChannel: (item.communicationChannel as AdminCustomer["communicationChannel"]) ?? null,
+    communicationVerified: item.communicationVerified ?? null,
+    whatsappSameAsPrimary: item.whatsappSameAsPrimary ?? null,
+    effectiveCommunicationPhone: item.effectiveCommunicationPhone ?? null,
   };
 }
 
