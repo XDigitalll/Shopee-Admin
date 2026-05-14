@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_REFRESH_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
+import { forwardXsrfCookie } from "@/app/api/admin/_utils";
 import { decodeJwtPayload } from "@/lib/admin/jwt";
 import { extractRoleCandidates, getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
 
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
     .map(normalizeRole)
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-  return NextResponse.json(
+  const nextResponse = NextResponse.json(
     {
       role,
       roles,
@@ -88,4 +89,9 @@ export async function POST(request: NextRequest) {
     },
     { status: response.status },
   );
+
+  // Forward XSRF-TOKEN cookie from the login response so the browser has the
+  // token immediately after signing in (before any subsequent GET request).
+  forwardXsrfCookie(response, nextResponse);
+  return nextResponse;
 }

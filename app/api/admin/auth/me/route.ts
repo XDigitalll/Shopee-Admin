@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
+import { forwardXsrfCookie } from "@/app/api/admin/_utils";
 import { decodeJwtPayload } from "@/lib/admin/jwt";
 import { extractRoleCandidates, getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
 
@@ -57,7 +58,7 @@ export async function GET() {
     .map(normalizeRole)
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-  return NextResponse.json({
+  const nextResponse = NextResponse.json({
     ...profile,
     role,
     roles,
@@ -66,4 +67,7 @@ export async function GET() {
     avatarUrl: typeof profile?.avatarUrl === "string" ? profile.avatarUrl : null,
     expiresAt: getExpiresAtMs(token),
   });
+
+  forwardXsrfCookie(backendResponse, nextResponse);
+  return nextResponse;
 }
