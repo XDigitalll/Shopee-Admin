@@ -492,7 +492,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       setCancelDialogOpen(false);
       await refreshData();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "NÃ£o foi possÃ­vel cancelar este pedido.");
+      setError(actionError instanceof Error ? actionError.message : "Não foi possível cancelar este pedido.");
     } finally {
       setIsCancelling(false);
     }

@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 
 import { AdminConfirmDialog, AdminSectionSkeleton } from "@/components/admin/feedback-state";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney, humanizeOrderStatus } from "@/lib/admin/format";
 import type {
+  ExchangeRate,
   ExternalOrderDetail,
   ExternalOrderDraft,
   OrderHistoryEntry,
@@ -16,8 +18,9 @@ import type {
   QuoteSubmissionPayload,
 } from "@/lib/admin/types";
 
+type QuoteCurrency = "USD" | "ZAR";
+
 const QUOTE_STORAGE_KEYS = {
-  exchangeRate: "xdigital_quote_exchangeRate",
   currency: "xdigital_quote_currency",
   commissionPercentage: "xdigital_quote_commissionPercentage",
   returnRiskPercentage: "xdigital_quote_returnRiskPercentage",
@@ -61,6 +64,17 @@ function formatInputNumber(value: number) {
   return value === 0 ? "" : String(value);
 }
 
+function formatRate(value: number) {
+  return value.toLocaleString("pt-MZ", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
+function isQuoteCurrency(value: string): value is QuoteCurrency {
+  return value === "USD" || value === "ZAR";
+}
+
 const compactNumberInputClass =
   "admin-input h-11 max-w-[220px] rounded-2xl px-3 py-2 text-sm";
 
@@ -73,7 +87,6 @@ function persistQuoteDefaults(draft: ExternalOrderDraft) {
     return;
   }
 
-  window.localStorage.setItem(QUOTE_STORAGE_KEYS.exchangeRate, String(draft.exchangeRate));
   window.localStorage.setItem(QUOTE_STORAGE_KEYS.currency, draft.currency || "ZAR");
   window.localStorage.setItem(
     QUOTE_STORAGE_KEYS.commissionPercentage,
@@ -135,7 +148,7 @@ function buildDraft(
     );
 
   return withComputedTotals({
-    exchangeRate: readStoredNumber(QUOTE_STORAGE_KEYS.exchangeRate, 1),
+    exchangeRate: 0,
     baseAmount: Number(fallbackBaseAmount || 0),
     shippingFee: 0,
     currency: (typeof window !== "undefined" ? window.localStorage.getItem(QUOTE_STORAGE_KEYS.currency) : null) || "ZAR",
@@ -172,10 +185,7 @@ function normalizeDraft(
   return withComputedTotals({
     ...baseDraft,
     ...rawDraft,
-    exchangeRate: Number(
-      rawDraft.exchangeRate ||
-        readStoredNumber(QUOTE_STORAGE_KEYS.exchangeRate, baseDraft.exchangeRate)
-    ),
+    exchangeRate: Number(rawDraft.exchangeRate || baseDraft.exchangeRate),
     commissionPercentage: Number(
       rawDraft.commissionPercentage ||
         readStoredNumber(QUOTE_STORAGE_KEYS.commissionPercentage, baseDraft.commissionPercentage)
@@ -196,13 +206,20 @@ function normalizeDraft(
 
 export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const router = useRouter();
+  const { effectiveRole } = useAdminAuth();
   const [detail, setDetail] = useState<ExternalOrderDetail | null>(null);
   const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
   const [draft, setDraft] = useState<ExternalOrderDraft | null>(null);
+  const [activeRate, setActiveRate] = useState<ExchangeRate | null>(null);
+  const [activeRateError, setActiveRateError] = useState("");
+  const [isRateLoading, setIsRateLoading] = useState(false);
+  const [useManualExchangeRate, setUseManualExchangeRate] = useState(false);
   const [error, setError] = useState("");
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
   const [isRefusing, setIsRefusing] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const canUseManualExchangeRate =
+    effectiveRole === "SUPER_ADMIN" || effectiveRole === "FINANCE_MANAGER";
 
   async function refreshQuoteData() {
     const [detailPayload, historyPayload, defaultsPayload] = await Promise.all([
@@ -260,6 +277,64 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     };
   }, [orderId]);
 
+  useEffect(() => {
+    if (!draft?.currency || !isQuoteCurrency(draft.currency)) {
+      setActiveRate(null);
+      setActiveRateError("Moeda de cotacao invalida.");
+      return;
+    }
+
+    let cancelled = false;
+    const currency = draft.currency;
+
+    async function loadActiveRate() {
+      setIsRateLoading(true);
+      setActiveRateError("");
+
+      try {
+        const rate = await adminApiFetch<ExchangeRate>(
+          `/api/admin/exchange-rates/active?baseCurrency=${currency}&targetCurrency=MZN`
+        );
+
+        if (cancelled) return;
+        setActiveRate(rate);
+        setDraft((current) => {
+          if (!current || useManualExchangeRate || current.currency !== currency) {
+            return current;
+          }
+          return withComputedTotals({ ...current, exchangeRate: Number(rate.rate || 0) });
+        });
+      } catch {
+        if (cancelled) return;
+        setActiveRate(null);
+        setActiveRateError(
+          `Configure a taxa ${currency} → MZN em Finanças antes de enviar esta cotação.`
+        );
+        if (!useManualExchangeRate) {
+          setDraft((current) =>
+            current && current.currency === currency
+              ? withComputedTotals({ ...current, exchangeRate: 0 })
+              : current
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRateLoading(false);
+        }
+      }
+    }
+
+    void loadActiveRate();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft?.currency, useManualExchangeRate]);
+
+  useEffect(() => {
+    if (canUseManualExchangeRate) return;
+    setUseManualExchangeRate(false);
+  }, [canUseManualExchangeRate]);
+
   function updateDraft(next: Partial<ExternalOrderDraft>) {
     setDraft((current) => {
       if (!current) {
@@ -312,15 +387,28 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     if (!detail || !draft) return;
 
     const isUpdate = Boolean(detail.latestQuoteSentAt);
+    const currency = isQuoteCurrency(draft.currency) ? draft.currency : "ZAR";
+    const exchangeRateToUse = useManualExchangeRate
+      ? Number(draft.exchangeRate || 0)
+      : Number(activeRate?.rate || 0);
+
+    if (!useManualExchangeRate && !activeRate) {
+      setError(`Configure a taxa ${currency} → MZN em Finanças antes de enviar esta cotação.`);
+      return;
+    }
+
+    if (useManualExchangeRate && exchangeRateToUse <= 0) {
+      setError("Informe um câmbio manual maior que zero antes de enviar a cotação.");
+      return;
+    }
 
     try {
       persistQuoteDefaults(draft);
 
       const payload: QuoteSubmissionPayload = {
-        exchangeRate: Number(draft.exchangeRate || 0),
         baseAmount: Number(draft.baseAmount || 0),
         shippingFee: Number(draft.shippingFee || 0),
-        currency: draft.currency || "ZAR",
+        currency,
         commissionPercentage: Number(draft.commissionPercentage || 0),
         returnRiskPercentage: Number(draft.returnRiskPercentage || 0),
         operationalCostPercentage: Number(draft.operationalCostPercentage || 0),
@@ -329,6 +417,10 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         notes: draft.notes,
         validityDate: buildAutomaticValidityDate(),
       };
+
+      if (useManualExchangeRate) {
+        payload.exchangeRate = exchangeRateToUse;
+      }
 
       await adminApiFetch(`/api/admin/orders/${orderId}/quote`, {
         method: "POST",
@@ -386,6 +478,14 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
       />
     );
   }
+
+  const selectedCurrency = isQuoteCurrency(draft.currency) ? draft.currency : "ZAR";
+  const activeRateValue = Number(activeRate?.rate || 0);
+  const manualRateValue = Number(draft.exchangeRate || 0);
+  const canSendQuote =
+    !isPending &&
+    !isRateLoading &&
+    (useManualExchangeRate ? manualRateValue > 0 : activeRateValue > 0);
 
   return (
     <div className="space-y-6">
@@ -534,45 +634,91 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 Modelo de cotacao
               </h2>
               <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                Esta area segue o fluxo do painel antigo: valores predefinidos,
-                cambio, percentagens e preview automatico em MZN.
+                Os valores usam a taxa activa da area Financeira, percentagens
+                e preview automatico em MZN.
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                  Cambio da moeda base para MZN
-                </span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.0001"
-                  value={formatInputNumber(draft.exchangeRate)}
-                  onChange={(event) =>
-                    updateDraft({ exchangeRate: Number(event.target.value || 0) })
-                  }
-                  placeholder="Ex.: 3.95"
-                  className={compactNumberInputClass}
-                />
-                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                  Usa o cambio do dia da moeda de compra para metical.
-                </p>
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
                   Moeda base
                 </span>
                 <select
                   value={draft.currency}
-                  onChange={(event) => updateDraft({ currency: event.target.value })}
+                  onChange={(event) =>
+                    updateDraft({
+                      currency: event.target.value,
+                      exchangeRate: useManualExchangeRate ? draft.exchangeRate : 0,
+                    })
+                  }
                   className="admin-input"
                 >
                   <option value="ZAR">ZAR — Rand sul-africano</option>
                   <option value="USD">USD — Dólar americano</option>
                 </select>
               </label>
+
+              <div className="rounded-[22px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-4">
+                <p className="text-sm font-medium text-[var(--color-text-secondary)]">
+                  Taxa de cambio
+                </p>
+                {isRateLoading ? (
+                  <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">
+                    A carregar taxa ativa das Finanças...
+                  </p>
+                ) : activeRate ? (
+                  <>
+                    <p className="mt-2 font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">
+                      Taxa ativa das Finanças: {formatRate(activeRateValue)} MZN por 1 {selectedCurrency}
+                    </p>
+                    <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                      Esta taxa vem da área Financeira e fica guardada como snapshot nesta cotação.
+                    </p>
+                  </>
+                ) : (
+                  <div className="mt-2 rounded-2xl border border-[#F1D7A8] bg-[#FFF5D8] px-4 py-3 text-sm text-[#7A5712]">
+                    <p className="font-semibold">
+                      {activeRateError || `Configure a taxa ${selectedCurrency} → MZN em Finanças antes de enviar esta cotação.`}
+                    </p>
+                    <Link href="/admin/finance" className="mt-3 inline-flex rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#7A5712]">
+                      Ir para Finanças
+                    </Link>
+                  </div>
+                )}
+
+                {canUseManualExchangeRate ? (
+                  <div className="mt-4 space-y-3 border-t border-[var(--color-border)] pt-4">
+                    <label className="flex items-center gap-3 text-sm font-semibold text-[var(--color-text-primary)]">
+                      <input
+                        type="checkbox"
+                        checked={useManualExchangeRate}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setUseManualExchangeRate(checked);
+                          if (!checked) {
+                            updateDraft({ exchangeRate: activeRateValue });
+                          }
+                        }}
+                      />
+                      Usar câmbio manual
+                    </label>
+                    {useManualExchangeRate ? (
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.0001"
+                        value={formatInputNumber(draft.exchangeRate)}
+                        onChange={(event) =>
+                          updateDraft({ exchangeRate: Number(event.target.value || 0) })
+                        }
+                        placeholder="Ex.: 4.50"
+                        className={compactNumberInputClass}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
 
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
@@ -589,7 +735,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   className={compactNumberInputClass}
                 />
                 <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                  Equivale a {formatMoney(summary.productValue)} com o cambio atual.
+                  Equivale a {formatMoney(summary.productValue)} com a taxa ativa.
                 </p>
               </label>
 
@@ -608,7 +754,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   className={compactNumberInputClass}
                 />
                 <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                  Equivale a {formatMoney(summary.shippingValue)} com o cambio atual.
+                  Equivale a {formatMoney(summary.shippingValue)} com a taxa ativa.
                 </p>
               </label>
 
@@ -847,7 +993,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
             <div className="mt-6 flex flex-col gap-3">
               <button
                 type="button"
-                disabled={isPending}
+                disabled={!canSendQuote}
                 onClick={() =>
                   startTransition(async () => {
                     await sendQuote();

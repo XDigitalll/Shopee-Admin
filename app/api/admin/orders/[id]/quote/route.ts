@@ -20,10 +20,9 @@ type ExistingOrderResponse = {
 };
 
 function normalizePayload(payload: QuoteSubmissionPayload) {
-  return {
+  const normalized: Record<string, number | string> = {
     baseAmount: Number(payload.baseAmount || 0),
     shippingFee: Number(payload.shippingFee || 0),
-    exchangeRate: Number(payload.exchangeRate || 0),
     currency: payload.currency || "ZAR",
     commissionPercentage: Number(payload.commissionPercentage || 0),
     returnRiskPercentage: Number(payload.returnRiskPercentage || 0),
@@ -31,6 +30,12 @@ function normalizePayload(payload: QuoteSubmissionPayload) {
     urgentPercentage: 0,
     urgentAmount: 0,
   };
+
+  if (payload.exchangeRate != null) {
+    normalized.exchangeRate = Number(payload.exchangeRate || 0);
+  }
+
+  return normalized;
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {

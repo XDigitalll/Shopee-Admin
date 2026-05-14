@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -14,7 +14,7 @@ import type {
 } from "@/lib/admin/types";
 import { ImagePickerModal } from "@/components/admin/image-picker-modal";
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// Helpers 
 
 function slugify(text: string): string {
   return text
@@ -49,7 +49,7 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────
+// Constants 
 
 const ALL_SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 
@@ -78,7 +78,7 @@ const ACCEPTED_IMAGE_TYPES = [
 
 const ACCEPTED_IMAGE_INPUT = "image/*";
 
-// ── Local types ───────────────────────────────────────────────────────────
+// Local types 
 
 interface FormImage {
   id: string;
@@ -139,7 +139,7 @@ type ProductDraftSnapshot = {
   specs: SpecRow[];
 };
 
-// ── Props ─────────────────────────────────────────────────────────────────
+// Props 
 
 type VariantBuilderType =
   | "COLOR"
@@ -280,7 +280,7 @@ function readStoredProductDraft(): ProductDraftSnapshot | null {
   }
 }
 
-// ── Component ─────────────────────────────────────────────────────────────
+// Component 
 
 export function ProductFormView({ productId }: ProductFormViewProps) {
   const router = useRouter();
@@ -289,11 +289,11 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     !productId ? readStoredProductDraft() : null
   );
 
-  // ── Data loading ──────────────────────────────────────────────���───────
+  // Data loading 
   const [loading, setLoading] = useState(isEdit);
   const [categories, setCategories] = useState<AdminProductCategory[]>([]);
 
-  // ── Core fields ───────────────────────────────────────────────────────
+  // Core fields 
   const [name, setName] = useState(initialDraft?.name ?? "");
   const [description, setDescription] = useState(initialDraft?.description ?? "");
   const [finalPrice, setFinalPrice] = useState(initialDraft?.finalPrice ?? "");
@@ -305,28 +305,28 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [skuManual, setSkuManual] = useState(Boolean(initialDraft?.sku));
   const [slugManual, setSlugManual] = useState(Boolean(initialDraft?.slug));
 
-  // ── Status & visibility ───────────────────────────────────────────────
+  // Status & visibility 
   const [status, setStatus] = useState<"ACTIVE" | "INACTIVE" | "ARCHIVED">(initialDraft?.status ?? "ACTIVE");
   const [showOnHomepage, setShowOnHomepage] = useState(Boolean(initialDraft?.showOnHomepage));
   const [featured, setFeatured] = useState(Boolean(initialDraft?.featured));
   const [scheduledAt, setScheduledAt] = useState(initialDraft?.scheduledAt ?? "");
 
-  // ── Category ──────────────────────────────────────────────────────────
+  // Category 
   const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? "");
   const [subcategoryId, setSubcategoryId] = useState(initialDraft?.subcategoryId ?? "");
 
-  // ── Stock ─────────────────────────────────────────────────────────────
+  // Stock 
   const [stock, setStock] = useState(initialDraft?.stock ?? "0");
   const [minStock, setMinStock] = useState(initialDraft?.minStock ?? "5");
   const [manageStock, setManageStock] = useState(initialDraft?.manageStock ?? true);
   const [allowOutOfStock, setAllowOutOfStock] = useState(Boolean(initialDraft?.allowOutOfStock));
 
-  // ── SEO ───────────────────────────────────────────────────────────────
+  // SEO 
   const [seoTitle, setSeoTitle] = useState(initialDraft?.seoTitle ?? "");
   const [seoDescription, setSeoDescription] = useState(initialDraft?.seoDescription ?? "");
   const [slug, setSlug] = useState(initialDraft?.slug ?? "");
 
-  // ── Images ───────────────────────────────────────────────────────────
+  // Images 
   const [images, setImages] = useState<FormImage[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -334,7 +334,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Variants ─────────────────────────────────────────────────────────
+  // Variants 
   const [variantsEnabled, setVariantsEnabled] = useState(Boolean(initialDraft?.variantsEnabled));
   const [selectedSizes, setSelectedSizes] = useState<string[]>(initialDraft?.selectedSizes ?? []);
   const [selectedColors, setSelectedColors] = useState<ColorVariant[]>(initialDraft?.selectedColors ?? []);
@@ -342,10 +342,10 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [newColorName, setNewColorName] = useState("");
   const [newColorHex, setNewColorHex] = useState("#000000");
 
-  // ── Specs ─────────────────────────────────────────────────────────────
+  // Specs 
   const [specs, setSpecs] = useState<SpecRow[]>(initialDraft?.specs ?? []);
 
-  // ── Rich content ──────────────────────────────────────────────────────
+  // Rich content 
   const [shortDescription, setShortDescription] = useState("");
   const [deliveryInfo, setDeliveryInfo] = useState("");
   const [warrantyInfo, setWarrantyInfo] = useState("");
@@ -353,7 +353,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [usageGuide, setUsageGuide] = useState("");
   const [packageItems, setPackageItems] = useState<string[]>([]);
 
-  // ── Edit-mode live variant/video state ────────────────────────────────
+  // Edit-mode live variant/video state 
   const [editVariants, setEditVariants] = useState<AdminProductVariant[]>([]);
   const [editVideos, setEditVideos] = useState<AdminProductVideo[]>([]);
   const [variantSaving, setVariantSaving] = useState(false);
@@ -382,7 +382,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [newVideoTitle, setNewVideoTitle] = useState("");
   const [videoSaving, setVideoSaving] = useState(false);
 
-  // ── Inline variant edit state ─────────────────────────────────────────
+  // Inline variant edit state 
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
     attrs: Array<{ key: string; value: string }>;
@@ -399,7 +399,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const [galleryPickerOpen, setGalleryPickerOpen] = useState(false);
   const editImageInputRef = useRef<HTMLInputElement>(null);
 
-  // ── UI state ──────────────────────────────────────────────────────────
+  // UI state 
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -410,7 +410,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   const descRef = useRef<HTMLTextAreaElement>(null);
 
-  // ── Derived values ────────────────────────────────────────────────────
+  // Derived values 
   const fp = parseFloat(finalPrice) || 0;
   const op = parseFloat(originalPrice) || 0;
   const pp = parseFloat(purchasePrice) || 0;
@@ -510,7 +510,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     ]
   );
 
-  // ── Auto-derive slug & SKU from name ─────────────────────────────────
+  // Auto-derive slug & SKU from name 
   const handleNameChange = useCallback(
     (value: string) => {
       setName(value);
@@ -520,14 +520,14 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     [skuManual, slugManual]
   );
 
-  // ── Load categories ───────────────────────────────────────────────────
+  // Load categories 
   useEffect(() => {
     adminApiFetch<AdminProductCategory[]>("/api/admin/categories")
       .then(setCategories)
       .catch(() => {});
   }, []);
 
-  // ── Load existing product (edit mode) ────────────────────────────────
+  // Load existing product (edit mode) 
   useEffect(() => {
     if (!productId) return;
 
@@ -635,7 +635,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     return () => window.clearTimeout(timer);
   }, [draftToast]);
 
-  // ── Toolbar for description ───────────────────────────────────────────
+  // Toolbar for description 
   function insertMd(before: string, after = "") {
     const ta = descRef.current;
     if (!ta) return;
@@ -651,7 +651,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }, 0);
   }
 
-  // ── Image handlers ────────────────────────────────────────────────────
+  // Image handlers 
   const handleFilesSelected = useCallback(
     async (files: FileList | File[]) => {
       const arr = Array.from(files).filter(
@@ -817,7 +817,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
-  // ── Specs ─────────────────────────────────────────────────────────────
+  // Specs 
   function addSpec() {
     setSpecs((prev) => [...prev, { id: uid(), key: "", value: "" }]);
   }
@@ -830,7 +830,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     setSpecs((prev) => prev.filter((s) => s.id !== id));
   }
 
-  // ── Package items ─────────────────────────────────────────────────────
+  // Package items 
   function addPackageItem() {
     setPackageItems((prev) => [...prev, ""]);
   }
@@ -841,7 +841,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     setPackageItems((prev) => prev.filter((_, i) => i !== index));
   }
 
-  // ── Edit-mode variant helpers ─────────────────────────────────────────
+  // Edit-mode variant helpers 
   async function handleAddVariant() {
     if (!productId || !newVariantPrice) return;
     setVariantSaving(true);
@@ -1186,7 +1186,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
-  // ── Inline variant edit helpers ───────────────────────────────────────
+  // Inline variant edit helpers 
   function startEdit(v: AdminProductVariant) {
     const attrs = Object.entries(v.attributes || {}).map(([key, value]) => ({ key, value }));
     setEditForm({
@@ -1316,7 +1316,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
-  // ── Edit-mode video helpers ───────────────────────────────────────────
+  // Edit-mode video helpers 
   async function handleAddVideo() {
     if (!productId || !newVideoUrl.trim()) return;
     setVideoSaving(true);
@@ -1355,7 +1355,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
-  // ── Validation ────────────────────────────────────────────────────────
+  // Validation 
   function validate(): boolean {
     const errs: FormErrors = {};
     if (name.trim().length < 3) errs.name = "O nome deve ter pelo menos 3 caracteres.";
@@ -1366,7 +1366,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     return Object.keys(errs).length === 0;
   }
 
-  // ── Submit helpers ────────────────────────────────────────────────────
+  // Submit helpers 
   function buildPayload(asActive: boolean): CreateProductPayload {
     const profitMargin = fp - pp;
     const specsMap = specs.reduce<Record<string, string>>((acc, s) => {
@@ -1465,7 +1465,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────
+  // Render 
 
   if (loading) {
     return (
@@ -1521,7 +1521,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           </div>
         </div>
       </div>
-      {/* ── Page header ──────────────────────────────────────────────── */}
+      {/* Page header  */}
       <div className="sticky top-[68px] z-10 mb-6 flex items-center justify-between gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-5 py-3 shadow-sm">
         <div className="flex items-center gap-2 min-w-0">
           <Link
@@ -1569,9 +1569,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
         </div>
       </div>
 
-      {/* ── Two-column layout ─────────────────────────────────────────── */}
+      {/* Two-column layout  */}
       <div className="flex flex-col items-start gap-6 xl:flex-row">
-        {/* ── Left column ───────────────────────────────���───────────── */}
+        {/* Left column  */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">
           {/* Info card */}
           <div className="admin-card p-6 flex flex-col gap-5">
@@ -3016,7 +3016,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           )}
         </div>
 
-        {/* ── Right sidebar ───────────────────────────────────────────── */}
+        {/* Right sidebar  */}
         <div className="w-full shrink-0 flex flex-col gap-5 xl:sticky xl:top-[168px] xl:w-[320px]">
           {/* Status card */}
           <div className="admin-card p-5 flex flex-col gap-4">
@@ -3274,7 +3274,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   );
 }
 
-// ── Tiny sub-components ───────────────────────────────────────────────────
+// Tiny sub-components 
 
 function HeroStat({
   label,
@@ -3381,3 +3381,6 @@ function UploadIcon() {
     </svg>
   );
 }
+
+
+
