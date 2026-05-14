@@ -623,9 +623,7 @@ export default function CustomersPage() {
 
   async function handleExport() {
     try {
-      const res = await fetch("/api/admin/customers/export", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("admin_token") ?? ""}` },
-      });
+      const res = await fetch("/api/admin/customers/export");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

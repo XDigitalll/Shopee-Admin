@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { getStoredAdminToken } from "@/lib/admin/api-client";
-import { getProfileFromToken } from "@/lib/admin/jwt";
 import { getDefaultPathForRole, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
 
 export default function UnauthorizedPage() {
   const [role, setRole] = useState<AdminRole | null>(null);
 
   useEffect(() => {
-    const token = getStoredAdminToken();
-    setRole(getProfileFromToken(token).role);
+    fetch("/api/admin/auth/me", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { role?: AdminRole | null } | null) => {
+        if (data?.role) setRole(data.role);
+      })
+      .catch(() => {});
   }, []);
 
   const fallbackPath = getDefaultPathForRole(role);

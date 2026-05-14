@@ -9,26 +9,20 @@ import {
   type ReactNode,
 } from "react";
 
-import { decodeJwtPayload, getProfileFromToken, isJwtExpired } from "@/lib/admin/jwt";
 import {
   type AdminModule,
   DEFAULT_ADMIN_ROLE,
   hasModuleAccess,
 } from "@/lib/admin/roles";
 import {
-  adminApiFetch,
   clearAdminSession,
-  getStoredAdminRefreshToken,
-  getStoredAdminToken,
   refreshAdminSession,
 } from "@/lib/admin/api-client";
-import {
-  ADMIN_AUTH_CHANGE_EVENT,
-} from "@/lib/admin/session";
 import { type AdminSessionProfile } from "@/lib/admin/types";
 
+type ExtendedAdminProfile = AdminSessionProfile & { expiresAt: number | null };
+
 type AdminAuthContextValue = {
-  token: string | null;
   profile: AdminSessionProfile;
   effectiveRole: AdminSessionProfile["role"];
   isAuthenticated: boolean;
@@ -46,191 +40,128 @@ const emptyProfile: AdminSessionProfile = {
 
 export const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
 
+async function fetchMe(): Promise<ExtendedAdminProfile | null> {
+  try {
+    const res = await fetch("/api/admin/auth/me", { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json().catch(() => null)) as ExtendedAdminProfile | null;
+  } catch {
+    return null;
+  }
+}
+
 export function AdminAuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => getStoredAdminToken());
+  const [profile, setProfile] = useState<ExtendedAdminProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const lastRefreshAttemptRef = useRef(0);
-  const profile = useMemo(
-    () => (token ? getProfileFromToken(token) : emptyProfile),
-    [token]
-  );
-
-  function syncFromStorage() {
-    setToken(getStoredAdminToken());
-  }
-
-  useEffect(() => {
-    const handleAuthChange = () => {
-      syncFromStorage();
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (
-        event.key === null ||
-        event.key === "shopee_admin_token" ||
-        event.key === "shopee_admin_refresh_token"
-      ) {
-        syncFromStorage();
-      }
-    };
-
-    window.addEventListener(ADMIN_AUTH_CHANGE_EVENT, handleAuthChange);
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.removeEventListener(ADMIN_AUTH_CHANGE_EVENT, handleAuthChange);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function bootstrapSession() {
-      const currentToken = getStoredAdminToken();
-      const refreshToken = getStoredAdminRefreshToken();
+    async function bootstrap() {
+      let profileData = await fetchMe();
 
-      if (currentToken && !isJwtExpired(currentToken)) {
-        if (!cancelled) {
-          syncFromStorage();
-          setIsLoading(false);
+      if (!profileData) {
+        const refreshed = await refreshAdminSession();
+        if (refreshed) {
+          profileData = await fetchMe();
         }
-        return;
       }
 
-      if (!refreshToken) {
-        clearAdminSession();
-        if (!cancelled) {
-          syncFromStorage();
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      const refreshed = await refreshAdminSession();
       if (!cancelled) {
-        if (!refreshed) {
-          clearAdminSession();
-        }
-        syncFromStorage();
+        setProfile(profileData);
         setIsLoading(false);
       }
     }
 
-    void bootstrapSession();
+    void bootstrap();
     return () => {
       cancelled = true;
     };
   }, []);
 
   useEffect(() => {
-    if (!token || !getStoredAdminRefreshToken()) {
-      return;
-    }
+    if (!profile?.expiresAt) return;
 
-    const parsed = decodeJwtPayload(token);
-    if (!parsed?.exp) {
-      return;
-    }
-
-    const expiresAtMs = parsed.exp * 1000;
-    const timeoutMs = Math.max(expiresAtMs - Date.now() - 60_000, 0);
+    const timeoutMs = Math.max(profile.expiresAt - Date.now() - 60_000, 0);
 
     const timeoutId = window.setTimeout(async () => {
       const refreshed = await refreshAdminSession();
-      if (!refreshed) {
-        clearAdminSession();
+      if (refreshed) {
+        const profileData = await fetchMe();
+        setProfile(profileData);
+      } else {
+        setProfile(null);
         window.location.href = "/admin/login";
       }
     }, timeoutMs);
 
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [token]);
+    return () => window.clearTimeout(timeoutId);
+  }, [profile?.expiresAt]);
 
   useEffect(() => {
-    if (!getStoredAdminRefreshToken()) {
-      return;
-    }
+    if (!profile) return;
 
     const attemptRefresh = async () => {
-      const currentToken = getStoredAdminToken();
-      if (!currentToken) {
-        return;
-      }
+      const expiresAt = profile.expiresAt;
+      if (!expiresAt) return;
 
-      const parsed = decodeJwtPayload(currentToken);
-      if (!parsed?.exp) {
-        return;
-      }
-
-      const remainingMs = parsed.exp * 1000 - Date.now();
-      if (remainingMs > 5 * 60_000) {
-        return;
-      }
+      const remainingMs = expiresAt - Date.now();
+      if (remainingMs > 5 * 60_000) return;
 
       const now = Date.now();
-      if (now - lastRefreshAttemptRef.current < 30_000) {
-        return;
-      }
+      if (now - lastRefreshAttemptRef.current < 30_000) return;
 
       lastRefreshAttemptRef.current = now;
-      await refreshAdminSession();
+      const refreshed = await refreshAdminSession();
+      if (refreshed) {
+        const profileData = await fetchMe();
+        setProfile(profileData);
+      }
     };
 
-    const handlePointer = () => {
+    const handleActivity = () => {
       void attemptRefresh();
     };
 
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void attemptRefresh();
-      }
+      if (document.visibilityState === "visible") void attemptRefresh();
     };
 
-    window.addEventListener("focus", handlePointer);
-    window.addEventListener("pointerdown", handlePointer);
-    window.addEventListener("keydown", handlePointer);
+    window.addEventListener("focus", handleActivity);
+    window.addEventListener("pointerdown", handleActivity);
+    window.addEventListener("keydown", handleActivity);
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      window.removeEventListener("focus", handlePointer);
-      window.removeEventListener("pointerdown", handlePointer);
-      window.removeEventListener("keydown", handlePointer);
+      window.removeEventListener("focus", handleActivity);
+      window.removeEventListener("pointerdown", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [profile]);
 
-  const effectiveRole = profile.role ?? DEFAULT_ADMIN_ROLE;
+  const effectiveRole = profile?.role ?? DEFAULT_ADMIN_ROLE;
 
   const value = useMemo<AdminAuthContextValue>(
     () => ({
-      token,
-      profile,
+      profile: profile ?? emptyProfile,
       effectiveRole,
-      isAuthenticated: Boolean(token),
+      isAuthenticated: profile !== null,
       isLoading,
       hasAccess(module) {
         return hasModuleAccess(effectiveRole, module);
       },
       async logout() {
         try {
-          await adminApiFetch("/api/admin/auth/logout", {
-            method: "POST",
-            body: JSON.stringify({
-              refreshToken: getStoredAdminRefreshToken(),
-            }),
-            token,
-          });
-        } catch {
-        } finally {
-          clearAdminSession();
-          window.location.href = "/admin/login";
-        }
+          await fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
+        } catch {}
+        clearAdminSession();
+        setProfile(null);
+        window.location.href = "/admin/login";
       },
     }),
-    [effectiveRole, isLoading, profile, token]
+    [effectiveRole, isLoading, profile]
   );
 
   return (
