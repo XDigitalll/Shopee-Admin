@@ -276,7 +276,8 @@ function SubmissionDrawer({
   canDecide: boolean;
 }) {
   const proof = submission ? proofKind(submission) : "none";
-  const canProcess = submission && ["SUBMITTED", "UNDER_REVIEW", "FLAGGED"].includes(submission.status);
+  const canStartReview = submission !== null && (submission.status === "SUBMITTED" || submission.status === "FLAGGED");
+  const canDecideOnReview = submission !== null && submission.status === "UNDER_REVIEW";
 
   return (
     <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_0_80px_rgba(0,0,0,0.24)]">
@@ -383,19 +384,19 @@ function SubmissionDrawer({
                 <textarea value={note} onChange={(event) => setNote(event.target.value)} className="admin-input mt-2 min-h-24 w-full" placeholder="Motivo, referencia interna ou instrucao para o cliente." />
               </label>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <button type="button" onClick={() => onAction("review")} disabled={!canProcess || Boolean(busyAction)} className="admin-button-muted justify-center">
+                <button type="button" onClick={() => onAction("review")} disabled={!canStartReview || Boolean(busyAction)} className="admin-button-muted justify-center">
                   {busyAction === "review" ? "A iniciar..." : "Iniciar revisao"}
                 </button>
-                <button type="button" onClick={() => onAction("approve")} disabled={!canProcess || !canDecide || Boolean(busyAction)} className="admin-button-danger justify-center">
+                <button type="button" onClick={() => onAction("approve")} disabled={!canDecideOnReview || !canDecide || Boolean(busyAction)} className="admin-button-danger justify-center">
                   {busyAction === "approve" ? "A aprovar..." : "Aprovar pagamento"}
                 </button>
-                <button type="button" onClick={() => onAction("reject")} disabled={!canProcess || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center">
+                <button type="button" onClick={() => onAction("reject")} disabled={!canDecideOnReview || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center">
                   {busyAction === "reject" ? "A rejeitar..." : "Rejeitar"}
                 </button>
-                <button type="button" onClick={() => onAction("flag")} disabled={!canProcess || Boolean(busyAction)} className="admin-button-muted justify-center">
+                <button type="button" onClick={() => onAction("flag")} disabled={!canDecideOnReview || Boolean(busyAction)} className="admin-button-muted justify-center">
                   {busyAction === "flag" ? "A marcar..." : "Marcar suspeito"}
                 </button>
-                <button type="button" onClick={() => onAction("request-new-proof")} disabled={!canProcess || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center sm:col-span-2">
+                <button type="button" onClick={() => onAction("request-new-proof")} disabled={!canDecideOnReview || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center sm:col-span-2">
                   {busyAction === "request-new-proof" ? "A solicitar..." : "Pedir novo comprovativo"}
                 </button>
               </div>

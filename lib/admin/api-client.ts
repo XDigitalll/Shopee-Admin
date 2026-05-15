@@ -131,7 +131,19 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
     }
 
     if (response.status === 403) {
-      // Authenticated but insufficient role — this is a real permission error.
+      // CustomAccessDeniedHandler returns error:"CSRF invalido" for CSRF failures
+      // and error:"Acesso negado" for role denials. Only redirect for role denials.
+      const isCsrfError =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        payload.error === "CSRF invalido";
+      if (isCsrfError) {
+        throw new Error(
+          (payload as { message?: string }).message ??
+            "A validacao de seguranca expirou. Atualize a pagina e tente novamente."
+        );
+      }
       window.location.href = "/admin/unauthorized";
       throw new Error("A tua role nao permite este modulo.");
     }
