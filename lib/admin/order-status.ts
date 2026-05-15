@@ -23,6 +23,7 @@ export const ORDER_QUEUE_STATUSES = [
   "ANALYSIS",
   "PAYMENT",
   "EXECUTION",
+  "DELIVERY",
   "COMPLETED",
   "CANCELLED",
 ] as const;
@@ -87,12 +88,13 @@ export function resolveOrderQueueStatus(status: string | null | undefined): Excl
     case "PAYMENT_REJECTED":
       return "PAYMENT";
     case "PAID":
+      return "EXECUTION";
     case "ORDERED":
     case "SHIPPED":
     case "IN_TRANSIT":
     case "ARRIVED":
     case "OUT_FOR_DELIVERY":
-      return "EXECUTION";
+      return "DELIVERY";
     case "DELIVERED":
       return "COMPLETED";
     case "CANCELLED":

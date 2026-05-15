@@ -970,7 +970,7 @@ function filterDeliveryOrders(
 
   const content = orders.content.filter((item) => {
     if (item.type === "INTERNAL") {
-      return item.queueStatus === "EXECUTION" && item.deliveryMethod !== "STORE_PICKUP";
+      return item.queueStatus === "DELIVERY" && item.deliveryMethod !== "STORE_PICKUP";
     }
     // External orders only enter delivery after the order team marks them as arrived at the company.
     return item.type === "EXTERNAL" && (item.status === "ARRIVED" || item.status === "OUT_FOR_DELIVERY");
@@ -1187,7 +1187,7 @@ export function PaymentsQueueView() {
 export function DeliveryManagementView() {
   const { hasAccess } = useAdminAuth();
   const { filters, orders, isLoading, isRefreshing, error, setFilter, setSearch, setPage, refresh } =
-    useOrders({ status: "EXECUTION", size: 250 });
+    useOrders({ status: "DELIVERY", size: 250 });
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [shouldFocusAction, setShouldFocusAction] = useState(false);
 

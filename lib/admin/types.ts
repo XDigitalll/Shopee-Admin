@@ -39,6 +39,7 @@ export type OrdersFilterState = {
     | "ANALYSIS"
     | "PAYMENT"
     | "EXECUTION"
+    | "DELIVERY"
     | "COMPLETED"
     | "CANCELLED"
     | "UNDER_REVIEW"
