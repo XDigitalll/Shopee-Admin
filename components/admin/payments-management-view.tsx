@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminBanner, AdminCardListSkeleton, AdminFeedbackDock } from "@/components/admin/feedback-state";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizePaymentMethod } from "@/lib/admin/format";
@@ -29,6 +30,7 @@ const QUEUES: Array<{
   { key: "APPROVED", label: "Aprovados", empty: "Nenhum pagamento aprovado", needsAction: false },
   { key: "REJECTED", label: "Rejeitados", empty: "Nenhum pagamento rejeitado", needsAction: false },
   { key: "SUSPICIOUS", label: "Suspeitos", empty: "Nenhum pagamento suspeito", needsAction: true },
+  { key: "REQUEST_NEW_PROOF", label: "Novo comprovativo", empty: "Nenhum pedido de novo comprovativo", needsAction: false },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -37,6 +39,7 @@ const STATUS_LABELS: Record<string, string> = {
   APPROVED: "Aprovado",
   REJECTED: "Rejeitado",
   FLAGGED: "Suspeito",
+  REQUEST_NEW_PROOF: "Novo comprovativo",
 };
 
 const RISK_LABELS: Record<string, string> = {
@@ -83,6 +86,7 @@ function queueCount(stats: PaymentSubmissionQueueStats | null, queue: PaymentSub
   if (queue === "UNDER_REVIEW") return stats.underReview;
   if (queue === "APPROVED") return stats.approved;
   if (queue === "REJECTED") return stats.rejected;
+  if (queue === "REQUEST_NEW_PROOF") return Number(stats.requestNewProof ?? 0);
   return stats.suspicious;
 }
 
@@ -102,6 +106,7 @@ function statusBadge(status: string) {
     status === "APPROVED" ? "bg-[#EAF3DE] text-[#166534]"
       : status === "REJECTED" ? "bg-[#FCEBEB] text-[#B42318]"
       : status === "FLAGGED" ? "bg-[#FFF1F2] text-[#BE123C]"
+      : status === "REQUEST_NEW_PROOF" ? "bg-[#EFF6FF] text-[#1D4ED8]"
       : status === "UNDER_REVIEW" ? "bg-[#EEEDFE] text-[#3C3489]"
       : "bg-[#FAEEDA] text-[#9A5B00]";
   return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${className}`}>{STATUS_LABELS[status] ?? status}</span>;
@@ -168,6 +173,30 @@ function Info({ label, value }: { label: string; value: string | number | null |
   );
 }
 
+function HighlightNewPayment({ submission, onOpen }: { submission: PaymentSubmission | null; onOpen: () => void }) {
+  if (!submission) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full rounded-[28px] border border-[#F97316] bg-[#FFF7ED] p-5 text-left shadow-[0_18px_50px_rgba(249,115,22,0.18)] animate-pulse"
+    >
+      <p className="text-xs font-black uppercase tracking-[0.2em] text-[#C2410C]">Novo pagamento recebido</p>
+      <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="font-[family-name:var(--font-sora)] text-xl font-semibold text-[#431407]">
+            Novo comprovativo recebido de {submission.customerName || submission.payerName || "cliente"}
+          </h2>
+          <p className="mt-1 text-sm text-[#9A3412]">
+            Pedido {submission.orderCode || `#${submission.orderId}`} - {formatMoney(submission.amount ?? 0)} - {humanizePaymentMethod(submission.paymentMethod)}
+          </p>
+        </div>
+        <span className="rounded-full bg-[#E8431A] px-4 py-2 text-sm font-black text-white">Abrir revisão</span>
+      </div>
+    </button>
+  );
+}
+
 function SubmissionCard({
   item,
   selected,
@@ -196,7 +225,7 @@ function SubmissionCard({
             </p>
           </div>
           <p className="mt-1 truncate text-sm text-[var(--color-text-secondary)]">
-            {item.payerName || "Pagador sem nome"} {item.payerPhone ? `- ${item.payerPhone}` : ""}
+            {item.customerName || item.payerName || "Cliente sem nome"} {item.customerPhone ? `- ${item.customerPhone}` : item.payerPhone ? `- ${item.payerPhone}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -206,6 +235,12 @@ function SubmissionCard({
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <Info label="Cliente" value={item.customerName || item.payerName} />
+        <Info label="Telefone" value={item.customerPhone || item.payerPhone} />
+        <Info label="Email" value={item.customerEmail} />
+        <Info label="Cidade" value={item.customerCity} />
+        <Info label="Tipo" value={item.orderType === "EXTERNAL" ? "EXT" : item.orderType === "INTERNAL" ? "INT" : item.orderType} />
+        <Info label="Itens" value={item.itemCount ?? 0} />
         <Info label="Valor esperado" value={formatMoney(item.expectedAmount ?? 0)} />
         <Info label="Valor submetido" value={formatMoney(item.amount ?? 0)} />
         <Info label="Referencia" value={item.transactionReference || "Sem referencia"} />
@@ -270,6 +305,14 @@ function SubmissionDrawer({
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Info label="Pedido" value={submission.orderCode || `#${submission.orderId}`} />
+                <Info label="Tipo" value={submission.orderType === "EXTERNAL" ? "EXT" : submission.orderType === "INTERNAL" ? "INT" : submission.orderType} />
+                <Info label="Itens" value={submission.itemCount ?? 0} />
+                <Info label="Criado em" value={formatDateTime(submission.orderCreatedAt)} />
+                <Info label="Cliente" value={submission.customerName || submission.payerName} />
+                <Info label="Telefone principal" value={submission.customerPhone} />
+                <Info label="Telefone comunicacao" value={submission.customerCommunicationPhone} />
+                <Info label="Email" value={submission.customerEmail} />
+                <Info label="Cidade" value={submission.customerCity} />
                 <Info label="Valor esperado" value={formatMoney(submission.expectedAmount ?? 0)} />
                 <Info label="Valor enviado" value={formatMoney(submission.amount ?? 0)} />
                 <Info label="Diferenca" value={formatMoney(difference(submission))} />
@@ -302,6 +345,15 @@ function SubmissionDrawer({
                 ) : (
                   <div className="p-6 text-sm text-[var(--color-text-secondary)]">Nenhum comprovativo anexado.</div>
                 )}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+              <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Histórico do cliente</h3>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <Info label="Pedidos anteriores" value={submission.customerPreviousOrders ?? 0} />
+                <Info label="Pagamentos aprovados" value={submission.customerApprovedPayments ?? 0} />
+                <Info label="Risco acumulado" value={submission.customerRiskFlags ?? 0} />
               </div>
             </section>
 
@@ -378,14 +430,33 @@ export function PaymentsManagementView() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [newPayment, setNewPayment] = useState<PaymentSubmission | null>(null);
+  const previousSubmittedCountRef = useRef<number | null>(null);
 
   const canDecide = effectiveRole === "SUPER_ADMIN" || effectiveRole === "FINANCE_MANAGER";
 
-  async function load(queue = activeQueue) {
-    setIsLoading(true);
+  async function load(queue = activeQueue, options: { silent?: boolean } = {}) {
+    if (!options.silent) setIsLoading(true);
     setError("");
     try {
       const queueStats = await adminApiFetch<PaymentSubmissionQueueStats>("/api/admin/payment-submissions/queues");
+      const previousSubmitted = previousSubmittedCountRef.current;
+      if (previousSubmitted !== null && queueStats.submitted > previousSubmitted) {
+        const latest = await adminApiFetch<PaymentSubmissionsPage>("/api/admin/payment-submissions?queue=SUBMITTED&page=0&size=1");
+        const latestItem = pageFrom<PaymentSubmission>(latest).content[0] ?? null;
+        setNewPayment(latestItem);
+        setFeedback({
+          tone: "success",
+          message: `Novo comprovativo recebido de ${latestItem?.customerName || latestItem?.payerName || "cliente"}.`,
+        });
+        if (process.env.NODE_ENV !== "production") {
+          try {
+            const audio = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=");
+            void audio.play().catch(() => null);
+          } catch {}
+        }
+      }
+      previousSubmittedCountRef.current = queueStats.submitted;
       setStats(queueStats);
       if (queue === "AWAITING_SUBMISSION") {
         const list = await adminApiFetch<AwaitingPaymentSubmissionsPage>("/api/admin/payment-submissions/awaiting?page=0&size=50");
@@ -399,7 +470,7 @@ export function PaymentsManagementView() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Nao foi possivel carregar a fila financeira.");
     } finally {
-      setIsLoading(false);
+      if (!options.silent) setIsLoading(false);
     }
   }
 
@@ -409,6 +480,11 @@ export function PaymentsManagementView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQueue, hasAccess]);
+
+  useAdminLiveRefresh(
+    () => load(activeQueue, { silent: true }),
+    { enabled: hasAccess("payments"), intervalMs: 8_000, minIntervalMs: 4_000, runOnMount: false }
+  );
 
   async function openDetail(id: number) {
     setSelectedId(id);
@@ -427,6 +503,23 @@ export function PaymentsManagementView() {
 
   async function handleAction(action: "review" | "approve" | "reject" | "flag" | "request-new-proof") {
     if (!selected) return;
+    if ((action === "reject" || action === "request-new-proof") && !note.trim()) {
+      setFeedback({ tone: "error", message: action === "reject" ? "Indica o motivo da rejeição." : "Indica o motivo para pedir novo comprovativo." });
+      return;
+    }
+    const critical = action === "approve" || action === "reject" || action === "flag" || action === "request-new-proof";
+    if (critical) {
+      const ok = window.confirm(
+        action === "approve"
+          ? "Confirmar aprovação deste pagamento?"
+          : action === "reject"
+            ? "Confirmar rejeição deste pagamento?"
+            : action === "flag"
+              ? "Marcar este pagamento como suspeito?"
+              : "Pedir novo comprovativo ao cliente?"
+      );
+      if (!ok) return;
+    }
     setBusyAction(action);
     try {
       const updated = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${selected.id}/${action}`, {
@@ -498,6 +591,15 @@ export function PaymentsManagementView() {
       </section>
 
       {error ? <AdminBanner tone="error" message={error} /> : null}
+
+      <HighlightNewPayment
+        submission={newPayment}
+        onOpen={() => {
+          if (!newPayment?.id) return;
+          setNewPayment(null);
+          void openDetail(newPayment.id);
+        }}
+      />
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         {QUEUES.map((queue) => {

@@ -453,8 +453,8 @@ export type AdminPaymentReceiptResponse = {
   url: string | null;
 };
 
-export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED";
-export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS";
+export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED" | "REQUEST_NEW_PROOF";
+export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF";
 export type PaymentMethodType = "EMOLA" | "MPESA" | "BANK_TRANSFER" | "VISA_MANUAL";
 
 export type PaymentSubmissionQueueStats = {
@@ -464,6 +464,7 @@ export type PaymentSubmissionQueueStats = {
   approved: number;
   rejected: number;
   suspicious: number;
+  requestNewProof?: number;
 };
 
 export type PaymentAwaitingSubmission = {
@@ -481,7 +482,18 @@ export type PaymentSubmission = {
   orderId: number | null;
   orderCode: string | null;
   orderStatus: string | null;
+  orderType?: string | null;
+  itemCount?: number | null;
+  orderCreatedAt?: string | null;
   expectedAmount: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerCommunicationPhone?: string | null;
+  customerEmail?: string | null;
+  customerCity?: string | null;
+  customerPreviousOrders?: number | null;
+  customerApprovedPayments?: number | null;
+  customerRiskFlags?: number | null;
   paymentMethod: PaymentMethodType | string | null;
   payerName: string | null;
   payerPhone: string | null;

@@ -24,6 +24,13 @@ type BackendPaymentStats = {
   pendingValidationCount?: number | null;
 };
 
+type BackendPaymentSubmissionStats = {
+  submitted?: number | null;
+  underReview?: number | null;
+  suspicious?: number | null;
+  requestNewProof?: number | null;
+};
+
 function computeDelta(current: number, baseline: number) {
   if (!baseline) {
     return current > 0 ? 100 : 0;
@@ -33,13 +40,15 @@ function computeDelta(current: number, baseline: number) {
 }
 
 async function getOrderBadges(request: NextRequest) {
-  const [dashboardResponse, paymentStatsResponse] = await Promise.all([
+  const [dashboardResponse, paymentStatsResponse, paymentQueueResponse] = await Promise.all([
     fetchBackend(request, "/admin/dashboard"),
     fetchBackend(request, "/admin/payments/stats"),
+    fetchBackend(request, "/admin/payment-submissions/queues"),
   ]);
   await Promise.all([
     relayAuthFailure(dashboardResponse),
     relayAuthFailure(paymentStatsResponse),
+    relayAuthFailure(paymentQueueResponse),
   ]);
 
   if (!dashboardResponse.ok) {
@@ -50,6 +59,13 @@ async function getOrderBadges(request: NextRequest) {
   const paymentStatsPayload = paymentStatsResponse.ok
     ? await parseBackendJson<BackendPaymentStats>(paymentStatsResponse)
     : null;
+  const paymentQueuePayload = paymentQueueResponse.ok
+    ? await parseBackendJson<BackendPaymentSubmissionStats>(paymentQueueResponse)
+    : null;
+  const paymentQueueCount =
+    Number(paymentQueuePayload?.submitted ?? 0) +
+    Number(paymentQueuePayload?.underReview ?? 0) +
+    Number(paymentQueuePayload?.suspicious ?? 0);
 
   return {
     orders:
@@ -60,7 +76,7 @@ async function getOrderBadges(request: NextRequest) {
       Number(payload?.externalCreatedOrders ?? 0) +
       Number(payload?.externalUnderReviewOrders ?? 0) +
       Number(payload?.externalQuotedOrders ?? 0),
-    payments: Number(
+    payments: paymentQueueCount || Number(
       paymentStatsPayload?.pendingValidationCount ??
       payload?.internalPendingPaymentOrders ??
       0
