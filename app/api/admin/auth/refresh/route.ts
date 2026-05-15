@@ -43,8 +43,13 @@ export async function POST(request: NextRequest) {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    cookieStore.set(ADMIN_SESSION_COOKIE, "", adminCookieOpts(true, 0));
-    cookieStore.set(ADMIN_REFRESH_COOKIE, "", adminCookieOpts(true, 0));
+    const isAuthError = response.status === 401 || response.status === 403;
+    if (isAuthError) {
+      // Session truly invalid — clear both cookies so the client restarts auth.
+      cookieStore.set(ADMIN_SESSION_COOKIE, "", adminCookieOpts(true, 0));
+      cookieStore.set(ADMIN_REFRESH_COOKIE, "", adminCookieOpts(true, 0));
+    }
+    // On 5xx/network errors we preserve cookies so the client can retry later.
     return NextResponse.json(
       {
         message:
@@ -53,7 +58,9 @@ export async function POST(request: NextRequest) {
             "message" in payload &&
             typeof payload.message === "string" &&
             payload.message) ||
-          "Nao foi possivel renovar a sessao.",
+          (isAuthError
+            ? "A tua sessao expirou. Entra novamente."
+            : "Nao foi possivel renovar a sessao. Tenta mais tarde."),
       },
       { status: response.status }
     );

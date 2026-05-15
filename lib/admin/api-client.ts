@@ -66,10 +66,7 @@ export async function refreshAdminSession(): Promise<boolean> {
       clearAdminGetCache();
       return true;
     })
-    .catch(() => {
-      clearAdminSession();
-      return false;
-    })
+    .catch(() => false)
     .finally(() => {
       refreshPromise = null;
     });
@@ -127,14 +124,16 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
     const payload = await response.json().catch(() => null);
 
     if (response.status === 401 && path !== "/api/admin/auth/login") {
+      // Session expired — always goes to login, never to "unauthorized".
       clearAdminSession();
       window.location.href = "/admin/login";
-      throw new Error("Sessao expirada.");
+      throw new Error("A tua sessao expirou. Entra novamente.");
     }
 
     if (response.status === 403) {
+      // Authenticated but insufficient role — this is a real permission error.
       window.location.href = "/admin/unauthorized";
-      throw new Error("Sem permissao.");
+      throw new Error("A tua role nao permite este modulo.");
     }
 
     if (!response.ok) {

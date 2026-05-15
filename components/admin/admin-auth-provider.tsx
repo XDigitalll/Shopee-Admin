@@ -118,6 +118,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       if (refreshed) {
         const profileData = await fetchMe();
         setProfile(profileData);
+      } else if (remainingMs <= 0) {
+        // Token already expired AND refresh failed — session is definitively gone.
+        setProfile(null);
+        window.location.href = "/admin/login";
       }
     };
 

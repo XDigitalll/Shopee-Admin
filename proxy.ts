@@ -40,7 +40,11 @@ export function proxy(request: NextRequest) {
   }
 
   const role = getPrimaryRole(payload.roles);
-  if (!hasModuleAccess(role, routeModule)) {
+
+  // Only hard-block when we have a *confirmed* role that lacks access.
+  // If role is null (e.g. stale JWT without roles claim), let through so
+  // the client-side auth layer can fetch fresh data and decide correctly.
+  if (role !== null && !hasModuleAccess(role, routeModule)) {
     return NextResponse.redirect(new URL("/admin/unauthorized", request.url));
   }
 

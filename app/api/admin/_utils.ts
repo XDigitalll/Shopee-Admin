@@ -12,7 +12,8 @@ function getToken(request: NextRequest) {
     return header.slice("Bearer ".length);
   }
 
-  return request.cookies.get(ADMIN_SESSION_COOKIE)?.value ?? null;
+  const cookie = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
+  return cookie?.trim() || null;
 }
 
 export async function fetchBackend(
@@ -21,11 +22,19 @@ export async function fetchBackend(
   init: RequestInit = {}
 ) {
   const token = getToken(request);
-  const headers = new Headers(init.headers);
 
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+  // No token means the session cookie is absent or was cleared after a failed
+  // refresh. Return 401 directly so adminApiFetch can trigger a token refresh
+  // instead of sending an unauthenticated request that the backend returns as 403.
+  if (!token) {
+    return new Response(JSON.stringify({ message: "Sessao expirada. Entra novamente." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
+
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
 
   const contentType = request.headers.get("content-type");
   if (contentType && !headers.has("Content-Type")) {
