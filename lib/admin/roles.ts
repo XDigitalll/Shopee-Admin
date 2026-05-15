@@ -55,12 +55,10 @@ export const ROLE_ACCESS: Record<AdminRole, AdminModule[]> = {
     "delivery",
     "orders",
     "quotes",
-    "payments",
     "products",
     "categories",
     "banners",
     "customers",
-    "finance",
     "coupons",
   ],
   DELIVERY_DRIVER: ["delivery"],
@@ -242,6 +240,13 @@ export function getPrimaryRole(roles: unknown): AdminRole | null {
   return ROLE_PRIORITY.find((role) => normalizedRoles.includes(role)) ?? normalizedRoles[0] ?? null;
 }
 
+type RoleSubject = AdminRole | null | undefined | {
+  role?: unknown;
+  roles?: unknown;
+  authority?: unknown;
+  authorities?: unknown;
+};
+
 export function extractRoleCandidates(value: unknown): unknown[] {
   const candidates: unknown[] = [];
 
@@ -272,20 +277,53 @@ export function extractRoleCandidates(value: unknown): unknown[] {
   return candidates;
 }
 
-export function hasRole(role: AdminRole | null, expected: AdminRole) {
-  return role === expected;
+export function getNormalizedRoles(subject: RoleSubject): AdminRole[] {
+  const candidates = typeof subject === "string" || subject == null
+    ? [subject]
+    : [
+        subject.role,
+        subject.roles,
+        subject.authority,
+        subject.authorities,
+      ];
+
+  const roles = candidates
+    .flatMap(extractRoleCandidates)
+    .map(normalizeRole)
+    .filter((role): role is AdminRole => Boolean(role));
+
+  return Array.from(new Set(roles));
 }
 
-export function canAccessSuperAdmin(role: AdminRole | null) {
-  return hasRole(role, "SUPER_ADMIN");
+export function isSuperAdmin(subject: RoleSubject) {
+  return getNormalizedRoles(subject).includes("SUPER_ADMIN");
 }
 
-export function hasModuleAccess(role: AdminRole | null, module: AdminModule) {
-  if (!role) {
+export function hasRole(subject: RoleSubject, expected: AdminRole) {
+  const roles = getNormalizedRoles(subject);
+  return roles.includes("SUPER_ADMIN") || roles.includes(expected);
+}
+
+export function hasAnyRole(subject: RoleSubject, expectedRoles: readonly AdminRole[]) {
+  const roles = getNormalizedRoles(subject);
+  return roles.includes("SUPER_ADMIN") || expectedRoles.some((role) => roles.includes(role));
+}
+
+export function canAccessSuperAdmin(subject: RoleSubject) {
+  return isSuperAdmin(subject);
+}
+
+export function hasModuleAccess(subject: RoleSubject, module: AdminModule) {
+  const roles = getNormalizedRoles(subject);
+  if (roles.length === 0) {
     return false;
   }
 
-  return ROLE_ACCESS[role].includes(module);
+  if (roles.includes("SUPER_ADMIN")) {
+    return true;
+  }
+
+  return roles.some((role) => ROLE_ACCESS[role].includes(module));
 }
 
 export function getModuleForPath(pathname: string) {

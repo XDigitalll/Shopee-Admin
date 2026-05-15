@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { humanizeRole } from "@/lib/admin/format";
-import { canAccessSuperAdmin, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
+import { canAccessSuperAdmin, hasAnyRole, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
 import {
   BannerIcon,
   BoxIcon,
@@ -103,7 +103,7 @@ export function AdminSidebar({
   const { effectiveRole, hasAccess, logout, profile } = useAdminAuth();
 
   function renderNavItem(item: SidebarItem) {
-    if (item.roles && (!effectiveRole || !item.roles.includes(effectiveRole))) {
+    if (item.roles && !hasAnyRole(profile, item.roles)) {
       return null;
     }
 
@@ -171,7 +171,7 @@ export function AdminSidebar({
           </div>
         ))}
 
-        {canAccessSuperAdmin(effectiveRole) ? (
+        {canAccessSuperAdmin(profile) ? (
           <div className="mt-8 border-t border-white/8 pt-4">
             <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
               Super Admin

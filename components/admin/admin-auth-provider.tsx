@@ -12,6 +12,7 @@ import {
 import {
   type AdminModule,
   hasModuleAccess,
+  getPrimaryRole,
 } from "@/lib/admin/roles";
 import {
   clearAdminSession,
@@ -141,7 +142,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [profile]);
 
-  const effectiveRole = profile?.role ?? null;
+  const effectiveRole = profile?.role ?? getPrimaryRole(profile?.roles) ?? null;
 
   const value = useMemo<AdminAuthContextValue>(
     () => ({
@@ -150,7 +151,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: profile !== null,
       isLoading,
       hasAccess(module) {
-        return hasModuleAccess(effectiveRole, module);
+        return hasModuleAccess(profile ?? emptyProfile, module);
       },
       async logout() {
         try {
