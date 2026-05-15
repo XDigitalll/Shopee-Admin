@@ -10,15 +10,25 @@ type RouteContext = {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
+
+  let sendEmail = false;
+  try {
+    const body = await request.json().catch(() => null);
+    if (body && typeof body === "object" && "sendEmail" in body) {
+      sendEmail = Boolean(body.sendEmail);
+    }
+  } catch {
+    // ignore parse errors — sendEmail stays false
+  }
+
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
   const bytes = new Uint32Array(12);
   crypto.getRandomValues(bytes);
   const newPassword = Array.from(bytes, (value) => chars[value % chars.length]).join("");
+
   const response = await fetchBackend(request, `/super-admin/admins/${encodeURIComponent(id)}/password`, {
     method: "PUT",
-    body: JSON.stringify({
-      newPassword,
-    }),
+    body: JSON.stringify({ newPassword, sendEmail }),
   });
 
   await relayAuthFailure(response);
@@ -32,10 +42,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return new NextResponse(null, { status: 204 });
   }
 
-  const payload = await response.json().catch(() => null);
+  const payload = (await response.json().catch(() => null)) as {
+    emailSent?: boolean;
+    emailError?: string | null;
+    [key: string]: unknown;
+  } | null;
+
   return NextResponse.json({
     ...(payload && typeof payload === "object" ? payload : {}),
     generatedPassword: newPassword,
-    emailSent: false,
+    emailSent: payload?.emailSent ?? false,
+    emailError: payload?.emailError ?? null,
   });
 }
