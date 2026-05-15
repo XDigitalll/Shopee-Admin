@@ -539,7 +539,7 @@ export type AwaitingPaymentSubmissionsPage = {
 };
 
 export type CreateExternalOrderPayload = {
-  deliveryMethod: "DELIVERY" | "STORE_PICKUP";
+  deliveryMethod: "DELIVERY";
   sourceStore:
     | "SHEIN"
     | "AMAZON"
@@ -552,7 +552,8 @@ export type CreateExternalOrderPayload = {
     | "ALI_BABA"
     | "ZARA"
     | "ASOS"
-    | "EBAY";
+    | "EBAY"
+    | "OTHER";
   externalCartUrl: string;
   fullName: string;
   primaryPhoneNumber: string;

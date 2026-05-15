@@ -12,21 +12,22 @@ const STORE_OPTIONS: Array<{ value: CreateExternalOrderPayload["sourceStore"]; l
   { value: "SHEIN", label: "Shein" },
   { value: "AMAZON", label: "Amazon" },
   { value: "TEMU", label: "Temu" },
-  { value: "BASH", label: "Bash" },
-  { value: "MAKRO", label: "Makro" },
-  { value: "MR_PRICE", label: "Mr Price" },
-  { value: "BUFFALO", label: "Buffalo" },
   { value: "ALI_EXPRESS", label: "AliExpress" },
   { value: "ALI_BABA", label: "Alibaba" },
+  { value: "MR_PRICE", label: "Mr Price" },
+  { value: "MAKRO", label: "Makro" },
+  { value: "BASH", label: "Bash" },
+  { value: "BUFFALO", label: "Buffalo" },
   { value: "ZARA", label: "Zara" },
   { value: "ASOS", label: "ASOS" },
   { value: "EBAY", label: "eBay" },
+  { value: "OTHER", label: "Outras" },
 ];
 
 type ExternalOrderFormState = CreateExternalOrderPayload;
 
 const INITIAL_FORM: ExternalOrderFormState = {
-  deliveryMethod: "DELIVERY",
+  deliveryMethod: "DELIVERY" as const,
   sourceStore: "SHEIN",
   externalCartUrl: "",
   fullName: "",
@@ -165,50 +166,32 @@ export function ExternalOrderCreateView() {
               </h2>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                  Loja de origem
-                </span>
-                <select
-                  value={form.sourceStore}
-                  onChange={(event) => updateField("sourceStore", event.target.value as ExternalOrderFormState["sourceStore"])}
-                  className="admin-input"
-                >
-                  {STORE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                  Metodo de entrega
-                </span>
-                <select
-                  value={form.deliveryMethod}
-                  onChange={(event) =>
-                    updateField("deliveryMethod", event.target.value as ExternalOrderFormState["deliveryMethod"])
-                  }
-                  className="admin-input"
-                >
-                  <option value="DELIVERY">Entrega</option>
-                  <option value="STORE_PICKUP">Levantamento na loja</option>
-                </select>
-              </label>
-            </div>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
+                Loja de origem
+              </span>
+              <select
+                value={form.sourceStore}
+                onChange={(event) => updateField("sourceStore", event.target.value as ExternalOrderFormState["sourceStore"])}
+                className="admin-input"
+              >
+                {STORE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="mt-4 block">
               <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                Link do carrinho
+                Link ou descricao do produto
               </span>
               <input
                 value={form.externalCartUrl}
                 onChange={(event) => updateField("externalCartUrl", event.target.value)}
-                className="admin-input font-mono"
-                placeholder="https://..."
+                className="admin-input"
+                placeholder="Cole o link da loja ou descreva o produto que o cliente quer comprar"
               />
             </label>
 
@@ -371,16 +354,16 @@ export function ExternalOrderCreateView() {
                 <strong>{storeLabel}</strong>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[var(--color-text-secondary)]">Entrega</span>
-                <strong>{form.deliveryMethod === "DELIVERY" ? "Entrega" : "Levantamento"}</strong>
-              </div>
-              <div className="flex items-center justify-between">
                 <span className="text-[var(--color-text-secondary)]">Cliente</span>
                 <strong>{form.fullName || "Por preencher"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[var(--color-text-secondary)]">Telefone</span>
-                <strong>{form.primaryPhoneNumber || "Por preencher"}</strong>
+                <strong>
+                  {!form.primaryPhoneNumber || form.primaryPhoneNumber === "+258"
+                    ? "Por preencher"
+                    : form.primaryPhoneNumber}
+                </strong>
               </div>
             </div>
             <div className="my-4 h-px bg-[var(--color-border)]" />
