@@ -509,13 +509,14 @@ function SuspendModal({ admin, onClose, onConfirm }: { admin: ManagedAdmin; onCl
 }
 
 function AdminFormDrawer({
-  open, mode, form, saving, resettingPassword, showPassword, onClose, onTogglePassword, onChange, onGeneratePassword, onSubmit, onResetPassword,
+  open, mode, form, saving, resettingPassword, resetResult, showPassword, onClose, onTogglePassword, onChange, onGeneratePassword, onSubmit, onResetPassword,
 }: {
   open: boolean;
   mode: FormMode;
   form: FormState;
   saving: boolean;
   resettingPassword: boolean;
+  resetResult: { password: string | null; emailSent: boolean; emailError: string | null } | null;
   showPassword: boolean;
   onClose: () => void;
   onTogglePassword: () => void;
@@ -594,6 +595,24 @@ function AdminFormDrawer({
               <input type="checkbox" checked={form.active} onChange={(event) => onChange("active", event.target.checked)} className="h-4 w-4 accent-[#E8431A]" />
             </label>
           </section>
+          {mode === "edit" && resetResult ? (
+            <section className="rounded-[20px] border border-[#BBF7D0] bg-[#F0FFF4] p-4 text-sm text-[#166534]">
+              <p className="font-semibold">Senha redefinida com sucesso.</p>
+              {resetResult.password ? (
+                <div className="mt-3 rounded-[16px] border border-[#BBF7D0] bg-white/70 px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#166534]/70">Nova senha</p>
+                  <p className="mt-1 break-all font-[family-name:var(--font-sora)] text-base font-semibold text-[#14532D]">
+                    {resetResult.password}
+                  </p>
+                </div>
+              ) : null}
+              <p className="mt-2 text-xs leading-5">
+                {resetResult.emailSent
+                  ? "As credenciais foram enviadas por email."
+                  : resetResult.emailError || "Email nao enviado. Partilha a senha manualmente com o administrador."}
+              </p>
+            </section>
+          ) : null}
           {mode === "edit" && onResetPassword ? <button type="button" onClick={onResetPassword} disabled={resettingPassword} className="admin-button-muted w-full justify-center disabled:opacity-60">{resettingPassword ? "A redefinir..." : "Redefinir senha"}</button> : null}
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onSubmit} disabled={saving} className="flex-1 rounded-[18px] bg-[#E8431A] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">{saving ? "A guardar..." : mode === "create" ? "Criar administrador" : "Guardar alterações"}</button>
@@ -623,6 +642,7 @@ export function AdminManagementView() {
   const [drawerMode, setDrawerMode] = useState<FormMode>("create");
   const [saving, setSaving] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetResult, setResetResult] = useState<{ password: string | null; emailSent: boolean; emailError: string | null } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState<FormState>(getDefaultFormState());
   const [suspendTarget, setSuspendTarget] = useState<ManagedAdmin | null>(null);
@@ -692,6 +712,7 @@ export function AdminManagementView() {
   function openCreateDrawer() {
     setDrawerMode("create");
     setForm(getDefaultFormState());
+    setResetResult(null);
     setShowPassword(false);
     setDrawerOpen(true);
   }
@@ -699,6 +720,7 @@ export function AdminManagementView() {
   function openEditDrawer(admin: ManagedAdmin) {
     setDrawerMode("edit");
     setForm({ fullName: admin.name, firstName: admin.firstName, lastName: admin.lastName, email: admin.email, phone: admin.phone ?? "", password: "", role: admin.role ?? "ADMIN", active: admin.status === "ACTIVE", sendCredentials: true });
+    setResetResult(null);
     setShowPassword(false);
     setDrawerOpen(true);
   }
@@ -757,10 +779,13 @@ export function AdminManagementView() {
           : result?.emailError
             ? ` (${result.emailError})`
             : " Email nao enviado.";
+        setResetResult({ password: pwd, emailSent: sent, emailError: result?.emailError ?? null });
         showFeedback("success", `Nova senha: ${pwd}${emailNote}`);
       } else {
+        setResetResult({ password: null, emailSent: sent, emailError: result?.emailError ?? null });
         showFeedback("success", sent ? "Nova senha gerada e enviada por email." : "Nova senha gerada.");
       }
+      await refreshSelectedAdmin(selectedAdmin.id);
     } catch (error) {
       showFeedback("error", error instanceof Error ? error.message : "Nao foi possivel redefinir a senha.");
     } finally {
@@ -916,7 +941,7 @@ export function AdminManagementView() {
       </div>
 
       <PermissionMatrix />
-      <AdminFormDrawer open={drawerOpen} mode={drawerMode} form={form} saving={saving} resettingPassword={resettingPassword} showPassword={showPassword} onClose={() => setDrawerOpen(false)} onTogglePassword={() => setShowPassword((current) => !current)} onChange={updateForm} onGeneratePassword={() => updateForm("password", generateSecurePassword())} onSubmit={() => void submitForm()} onResetPassword={drawerMode === "edit" ? () => void handleResetPassword() : null} />
+      <AdminFormDrawer open={drawerOpen} mode={drawerMode} form={form} saving={saving} resettingPassword={resettingPassword} resetResult={resetResult} showPassword={showPassword} onClose={() => setDrawerOpen(false)} onTogglePassword={() => setShowPassword((current) => !current)} onChange={updateForm} onGeneratePassword={() => updateForm("password", generateSecurePassword())} onSubmit={() => void submitForm()} onResetPassword={drawerMode === "edit" ? () => void handleResetPassword() : null} />
       {suspendTarget ? <SuspendModal admin={suspendTarget} onClose={() => setSuspendTarget(null)} onConfirm={(payload) => void handleSuspend(payload)} /> : null}
     </div>
   );
