@@ -7,6 +7,7 @@ type JwtPayload = {
   name?: string;
   avatarUrl?: string | null;
   roles?: string[];
+  mustChangePassword?: boolean;
 };
 
 function decodeBase64Url(value: string) {
@@ -64,5 +65,6 @@ export function getProfileFromToken(token: string | null | undefined) {
     email: payload?.email ?? payload?.sub ?? "",
     name: payload?.name ?? payload?.email ?? payload?.sub ?? "Administrador",
     avatarUrl: payload?.avatarUrl ?? null,
+    mustChangePassword: Boolean(payload?.mustChangePassword),
   };
 }

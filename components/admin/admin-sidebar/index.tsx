@@ -1,10 +1,12 @@
 "use client";
 
 import type { ComponentType, SVGProps } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { adminApiFetch } from "@/lib/admin/api-client";
 import { humanizeRole } from "@/lib/admin/format";
 import { canAccessSuperAdmin, hasAnyRole, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
 import {
@@ -52,7 +54,7 @@ const sections = [
       {
         module: "delivery",
         label: "Entregas",
-        href: "/admin/delivery/pending",
+        href: "/admin/delivery",
         icon: BoxIcon,
         counterKey: "delivery",
         roles: ["DELIVERY_DRIVER", "DELIVERY_MANAGER", "ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"],
@@ -94,6 +96,139 @@ const superAdminSection = [
   { module: "audit", label: "Logs & Auditoria", href: "/admin/super-admin/audit", icon: LockIcon },
 ] satisfies SidebarItem[];
 
+function ChangePasswordModal({
+  open,
+  mustChangePassword,
+  onPasswordChanged,
+  onClose,
+}: {
+  open: boolean;
+  mustChangePassword: boolean;
+  onPasswordChanged: () => void;
+  onClose: () => void;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  if (!open) {
+    return null;
+  }
+
+  async function submitPasswordChange() {
+    if (!mustChangePassword && !currentPassword.trim()) {
+      setFeedback({ tone: "error", message: "Informe a senha atual." });
+      return;
+    }
+    if (newPassword.trim().length < 8) {
+      setFeedback({ tone: "error", message: "A nova senha deve ter pelo menos 8 caracteres." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setFeedback({ tone: "error", message: "As senhas novas nao coincidem." });
+      return;
+    }
+
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await adminApiFetch("/api/admin/profile/password", {
+        method: "PUT",
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setFeedback({ tone: "success", message: "Senha alterada com sucesso." });
+      onPasswordChanged();
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Nao foi possivel alterar a senha.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 px-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#111827] p-6 text-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#FF8066]">Perfil</p>
+        <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">
+          {mustChangePassword ? "Definir nova senha" : "Alterar senha"}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-white/60">
+          {mustChangePassword
+            ? "A tua senha foi redefinida pelo super admin. Escolhe uma senha privada para concluir."
+            : "Por seguranca, informa a senha atual antes de escolher uma nova."}
+        </p>
+        <div className="mt-5 space-y-3">
+          {!mustChangePassword ? (
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              className="admin-input w-full"
+              placeholder="Senha atual"
+            />
+          ) : null}
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            className="admin-input w-full"
+            placeholder="Nova senha"
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            className="admin-input w-full"
+            placeholder="Confirmar nova senha"
+          />
+        </div>
+        {feedback ? (
+          <div
+            className={`mt-4 rounded-[18px] px-4 py-3 text-sm font-medium ${
+              feedback.tone === "success"
+                ? "bg-[#EAF3DE] text-[#27500A]"
+                : "bg-[rgba(232,67,26,0.12)] text-[#FFB09F]"
+            }`}
+          >
+            {feedback.message}
+          </div>
+        ) : null}
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={() => void submitPasswordChange()}
+            disabled={saving}
+            className="flex-1 rounded-2xl bg-[#E8431A] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? "A guardar..." : "Guardar nova senha"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/75 hover:text-white"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdminSidebar({
   counters,
 }: {
@@ -101,6 +236,9 @@ export function AdminSidebar({
 }) {
   const pathname = usePathname();
   const { effectiveRole, hasAccess, logout, profile } = useAdminAuth();
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [temporaryPasswordCleared, setTemporaryPasswordCleared] = useState(false);
+  const mustChangePassword = Boolean(profile.mustChangePassword) && !temporaryPasswordCleared;
 
   function renderNavItem(item: SidebarItem) {
     if (item.roles && !hasAnyRole(profile, item.roles)) {
@@ -193,12 +331,25 @@ export function AdminSidebar({
         </div>
         <button
           type="button"
+          onClick={() => setPasswordModalOpen(true)}
+          className="mt-3 w-full rounded-2xl border border-white/10 px-3 py-2.5 text-sm font-medium text-white/75 transition hover:border-[rgba(232,67,26,0.4)] hover:text-white"
+        >
+          Alterar senha
+        </button>
+        <button
+          type="button"
           onClick={() => void logout()}
           className="mt-3 w-full rounded-2xl border border-white/10 px-3 py-2.5 text-sm font-medium text-white/75 transition hover:border-[rgba(232,67,26,0.4)] hover:text-white"
         >
           Terminar sessao
         </button>
       </div>
+      <ChangePasswordModal
+        open={passwordModalOpen}
+        mustChangePassword={mustChangePassword}
+        onPasswordChanged={() => setTemporaryPasswordCleared(true)}
+        onClose={() => setPasswordModalOpen(false)}
+      />
     </aside>
   );
 }

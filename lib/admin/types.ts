@@ -688,10 +688,11 @@ export type AdminQuoteDetail = {
 
 export type AdminSessionProfile = {
   role: AdminRole | null;
-  roles?: AdminRole[];
+  roles: AdminRole[];
   name: string;
   email: string;
   avatarUrl: string | null;
+  mustChangePassword: boolean;
 };
 
 // ── Product types ──────────────────────────────────────────────────────────

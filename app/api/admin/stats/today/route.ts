@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { fetchActiveDeliveryOrders, fetchPendingDeliveryOrders } from "@/app/api/admin/delivery/_shared";
 import { fetchBackend, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 import type { TodayStatsResponse } from "@/lib/admin/types";
 
@@ -67,6 +68,8 @@ async function getOrderBadges(request: NextRequest) {
     Number(paymentQueuePayload?.underReview ?? 0) +
     Number(paymentQueuePayload?.suspicious ?? 0);
 
+  const deliveryBadges = await getDeliveryOnlyBadges(request);
+
   return {
     orders:
       Number(payload?.internalUnderReviewOrders ?? 0) +
@@ -81,17 +84,17 @@ async function getOrderBadges(request: NextRequest) {
       payload?.internalPendingPaymentOrders ??
       0
     ),
-    delivery:
-      Number(payload?.internalDeliveryActiveOrders ?? 0) +
-      Number(payload?.externalDeliveryActiveOrders ?? 0),
+    delivery: deliveryBadges.delivery,
   };
 }
 
 async function getDeliveryOnlyBadges(request: NextRequest) {
-  const response = await fetchBackend(request, "/admin/delivery/active");
-  await relayAuthFailure(response);
+  const [pendingResult, activeResult] = await Promise.all([
+    fetchPendingDeliveryOrders(request),
+    fetchActiveDeliveryOrders(request),
+  ]);
 
-  if (!response.ok) {
+  if ("error" in pendingResult || "error" in activeResult) {
     return {
       orders: 0,
       quotes: 0,
@@ -100,18 +103,16 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
     };
   }
 
-  const payload = await parseBackendJson<unknown>(response);
-  const content = Array.isArray(payload)
-    ? payload
-    : payload && typeof payload === "object" && Array.isArray((payload as { content?: unknown[] }).content)
-      ? (payload as { content: unknown[] }).content
-      : [];
+  const deliveryIds = new Set([
+    ...pendingResult.map((order) => order.id),
+    ...activeResult.map((order) => order.id),
+  ]);
 
   return {
     orders: 0,
     quotes: 0,
     payments: 0,
-    delivery: content.length,
+    delivery: deliveryIds.size,
   };
 }
 

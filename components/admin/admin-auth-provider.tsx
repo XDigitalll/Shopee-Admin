@@ -37,6 +37,7 @@ const emptyProfile: AdminSessionProfile = {
   name: "Administrador",
   email: "",
   avatarUrl: null,
+  mustChangePassword: false,
 };
 
 export const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);

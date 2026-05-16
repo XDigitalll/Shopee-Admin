@@ -289,30 +289,30 @@ export function CouponsManagementView() {
       </div>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <form onSubmit={submit} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[24px] bg-white p-5 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
+          <form onSubmit={submit} className="admin-card max-h-[92vh] w-full max-w-3xl overflow-y-auto p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="font-[family-name:var(--font-sora)] text-xl font-semibold">{form.id ? "Editar cupão" : "Criar cupão"}</h2>
-              <button type="button" onClick={() => setModalOpen(false)} className="rounded-xl border px-3 py-2 text-sm font-bold">Fechar</button>
+              <h2 className="font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">{form.id ? "Editar cupão" : "Criar cupão"}</h2>
+              <button type="button" onClick={() => setModalOpen(false)} className="admin-button-muted px-4 py-2 text-sm">Fechar</button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Código"><input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} className="admin-input" /></Field>
-              <Field label="Nome"><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="admin-input" /></Field>
-              <Field label="Tipo"><select value={form.discountType} onChange={(e) => setForm({ ...form, discountType: e.target.value as DiscountType })} className="admin-input"><option value="PERCENTAGE">Percentagem</option><option value="FIXED_AMOUNT">Valor fixo</option></select></Field>
-              <Field label="Valor"><input required type="number" min="0" step="0.01" value={form.discountValue} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} className="admin-input" /></Field>
-              <Field label="Desconto máximo"><input type="number" min="0" step="0.01" value={form.maxDiscountAmount} onChange={(e) => setForm({ ...form, maxDiscountAmount: e.target.value })} className="admin-input" /></Field>
-              <Field label="Valor mínimo do pedido"><input type="number" min="0" step="0.01" value={form.minimumOrderAmount} onChange={(e) => setForm({ ...form, minimumOrderAmount: e.target.value })} className="admin-input" /></Field>
-              <Field label="Limite total"><input type="number" min="0" value={form.usageLimit} onChange={(e) => setForm({ ...form, usageLimit: e.target.value })} className="admin-input" /></Field>
-              <Field label="Limite por cliente"><input type="number" min="0" value={form.usageLimitPerUser} onChange={(e) => setForm({ ...form, usageLimitPerUser: e.target.value })} className="admin-input" /></Field>
-              <Field label="Início"><input type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} className="admin-input" /></Field>
-              <Field label="Expira em"><input type="datetime-local" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} className="admin-input" /></Field>
-              <Field label="Aplica-se a"><select value={form.appliesTo} onChange={(e) => setForm({ ...form, appliesTo: e.target.value as AppliesTo })} className="admin-input"><option value="ALL">Todos</option><option value="INTERNAL_PRODUCTS">Produtos internos</option><option value="EXTERNAL_ORDERS">Pedidos externos</option></select></Field>
-              <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] px-4 py-3 text-sm font-semibold"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />Ativo</label>
-              <Field label="Descrição"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="admin-input min-h-24 md:col-span-2" /></Field>
+              <Field label="Código do cupão"><input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} className="admin-input" placeholder="Ex: MAPUTO10" /></Field>
+              <Field label="Nome da campanha"><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="admin-input" placeholder="Ex: Promoção Maputo" /></Field>
+              <Field label="Tipo de desconto"><select value={form.discountType} onChange={(e) => setForm({ ...form, discountType: e.target.value as DiscountType })} className="admin-input"><option value="PERCENTAGE">Percentagem (%)</option><option value="FIXED_AMOUNT">Valor fixo (MZN)</option></select></Field>
+              <Field label={form.discountType === "PERCENTAGE" ? "Valor do desconto (%)" : "Valor do desconto (MZN)"}><input required type="number" min="0" step="0.01" value={form.discountValue} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} className="admin-input" placeholder={form.discountType === "PERCENTAGE" ? "Ex: 10" : "Ex: 500"} /></Field>
+              <Field label="Desconto máximo (MZN)"><input type="number" min="0" step="0.01" value={form.maxDiscountAmount} onChange={(e) => setForm({ ...form, maxDiscountAmount: e.target.value })} className="admin-input" placeholder="Ex: 1000" /></Field>
+              <Field label="Pedido mínimo (MZN)"><input type="number" min="0" step="0.01" value={form.minimumOrderAmount} onChange={(e) => setForm({ ...form, minimumOrderAmount: e.target.value })} className="admin-input" placeholder="Ex: 2500" /></Field>
+              <Field label="Usos totais"><input type="number" min="0" value={form.usageLimit} onChange={(e) => setForm({ ...form, usageLimit: e.target.value })} className="admin-input" placeholder="Ex: 100" /></Field>
+              <Field label="Usos por cliente"><input type="number" min="0" value={form.usageLimitPerUser} onChange={(e) => setForm({ ...form, usageLimitPerUser: e.target.value })} className="admin-input" placeholder="Ex: 1" /></Field>
+              <Field label="Começa em"><input type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} className="admin-input" /></Field>
+              <Field label="Termina em"><input type="datetime-local" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} className="admin-input" /></Field>
+              <Field label="Aplicar em"><select value={form.appliesTo} onChange={(e) => setForm({ ...form, appliesTo: e.target.value as AppliesTo })} className="admin-input"><option value="ALL">Todos os pedidos</option><option value="INTERNAL_PRODUCTS">Produtos internos</option><option value="EXTERNAL_ORDERS">Pedidos externos</option></select></Field>
+              <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-primary)]"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="h-4 w-4 accent-[var(--color-danger)]" />Ativo</label>
+              <Field label="Descrição interna"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="admin-input min-h-24 md:col-span-2" placeholder="Notas sobre a campanha" /></Field>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setModalOpen(false)} className="rounded-2xl border px-4 py-3 text-sm font-bold">Cancelar</button>
-              <button type="submit" disabled={saving} className="rounded-2xl bg-[var(--color-danger)] px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
+              <button type="button" onClick={() => setModalOpen(false)} className="admin-button-muted">Cancelar</button>
+              <button type="submit" disabled={saving} className="admin-button-danger disabled:opacity-60">
                 {saving ? "A guardar..." : "Guardar"}
               </button>
             </div>
