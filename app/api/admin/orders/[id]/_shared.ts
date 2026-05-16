@@ -278,7 +278,6 @@ function buildHistory(
     "CREATED",
     "UNDER_REVIEW",
     "QUOTED",
-    "APPROVED",
     "PENDING_PAYMENT",
     "PAID",
     "ORDERED",
@@ -287,10 +286,7 @@ function buildHistory(
     "OUT_FOR_DELIVERY",
     "DELIVERED",
   ];
-  const statusToFlow: Record<string, string> = {
-    SHIPPED: "OUT_FOR_DELIVERY",
-  };
-  const normalizedStatus = statusToFlow[status] ?? status;
+  const normalizedStatus = status;
   const currentIndex = flow.indexOf(normalizedStatus);
 
   const timeline = flow.map((step) => {
@@ -308,17 +304,16 @@ function buildHistory(
       CREATED: order.orderDate ?? null,
       UNDER_REVIEW: order.orderDate ?? null,
       QUOTED: quoteSentAt,
-      APPROVED: status === "APPROVED" ? order.orderDate ?? null : null,
       PENDING_PAYMENT: status === "PENDING_PAYMENT" ? order.orderDate ?? null : null,
       PAID: payment?.reviewedAt ?? payment?.paymentDate ?? payment?.submittedAt ?? null,
-      ORDERED: ["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED", "SHIPPED"].includes(status)
+      ORDERED: ["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(status)
         ? order.orderDate ?? null
         : null,
       IN_TRANSIT: ["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(status) && trackingCode
         ? new Date().toISOString()
         : null,
       ARRIVED: ["ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(status) ? new Date().toISOString() : null,
-      OUT_FOR_DELIVERY: ["OUT_FOR_DELIVERY", "DELIVERED", "SHIPPED"].includes(status)
+      OUT_FOR_DELIVERY: ["OUT_FOR_DELIVERY", "DELIVERED"].includes(status)
         ? new Date().toISOString()
         : null,
       DELIVERED: normalizedStatus === "DELIVERED" ? new Date().toISOString() : null,
@@ -333,21 +328,19 @@ function buildHistory(
             ? "Pedido recebido para revisão"
             : step === "QUOTED"
               ? "Cotação enviada"
-              : step === "APPROVED"
-                ? "Cliente aprova"
-                : step === "PENDING_PAYMENT"
-                  ? "Aguardando pagamento"
-                  : step === "PAID"
-                    ? "Pagamento confirmado"
-                    : step === "ORDERED"
-                      ? "Pedido encomendado"
-                      : step === "IN_TRANSIT"
-                        ? "Pedido em trânsito"
-                        : step === "ARRIVED"
-                          ? "Pedido chegou a nossa sede"
-                          : step === "OUT_FOR_DELIVERY"
-                            ? "Saiu para entrega"
-                            : "Pedido entregue",
+              : step === "PENDING_PAYMENT"
+                ? "Aguardando pagamento"
+                : step === "PAID"
+                  ? "Pagamento confirmado"
+                  : step === "ORDERED"
+                    ? "Pedido encomendado"
+                    : step === "IN_TRANSIT"
+                      ? "Pedido em trânsito"
+                      : step === "ARRIVED"
+                        ? "Pedido chegou a nossa sede"
+                        : step === "OUT_FOR_DELIVERY"
+                          ? "Saiu para entrega"
+                          : "Pedido entregue",
       date: dateMap[step],
       state,
       description:

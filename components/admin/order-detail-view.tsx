@@ -16,7 +16,6 @@ const STANDARD_STATUS_STEPS = [
   "CREATED",
   "UNDER_REVIEW",
   "QUOTED",
-  "APPROVED",
   "PENDING_PAYMENT",
   "PAID",
   "ORDERED",
@@ -30,7 +29,6 @@ const PICKUP_STATUS_STEPS = [
   "CREATED",
   "UNDER_REVIEW",
   "QUOTED",
-  "APPROVED",
   "PENDING_PAYMENT",
   "PAID",
   "ORDERED",
@@ -65,7 +63,6 @@ const STATUS_THEME: Record<string, string> = {
   PENDING_PAYMENT: "bg-[#FAEEDA] text-[#633806]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
-  SHIPPED: "bg-[#d1fae5] text-[#065f46]",
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
   OUT_FOR_DELIVERY: "bg-[#FDE68A] text-[#854D0E]",
@@ -75,7 +72,7 @@ const STATUS_THEME: Record<string, string> = {
 };
 
 function isPaymentValidated(status: string | null | undefined) {
-  return ["APPROVED", "PAID", "SUCCESS", "VALIDATED"].includes(String(status ?? ""));
+  return String(status ?? "") === "SUCCESS";
 }
 
 function isClosedOrderStatus(status: string | null | undefined) {
@@ -123,21 +120,14 @@ function normalizeTrackingStatus(detail: ExternalOrderDetail | null): TrackableS
   const status = detail?.status ?? "";
   if (!detail) return "";
 
-  if (isPickupOrder(detail) && ["SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+  if (isPickupOrder(detail) && ["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
     return "ORDERED";
   }
 
   if (isInternalDeliveryOrder(detail)) {
-    if (status === "SHIPPED") {
-      return "OUT_FOR_DELIVERY";
-    }
     if (status === "ORDERED" || status === "ARRIVED") {
       return "PAID";
     }
-  }
-
-  if (status === "SHIPPED") {
-    return "OUT_FOR_DELIVERY";
   }
 
   return status as TrackableStatus | "";
@@ -186,11 +176,6 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
   if (status === "UNDER_REVIEW" || (detail.type === "EXTERNAL" && status === "CREATED")) {
     return { label: "Analisar e cotar", href: `/admin/orders/${detail.id}/quote` };
   }
-  if (status === "APPROVED") {
-    return isSuperAdmin
-      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
-      : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
-  }
   if (status === "PENDING_PAYMENT") {
     return isSuperAdmin
       ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
@@ -202,7 +187,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
       return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
     }
 
-    if (["ORDERED", "SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
       if (cashOnDelivery && !paymentValidated) {
         return { label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" };
       }
@@ -252,10 +237,6 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
   if (status === "OUT_FOR_DELIVERY") {
     return { label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" };
   }
-  if (status === "SHIPPED") {
-    return { label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" };
-  }
-
   return null;
 }
 
@@ -269,11 +250,6 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
   if (detail.type === "EXTERNAL" && ["CREATED", "UNDER_REVIEW"].includes(status)) {
     actions.push({ label: "Analisar e cotar", href: `/admin/orders/${detail.id}/quote` });
   }
-  if (status === "APPROVED") {
-    actions.push(isSuperAdmin
-      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
-      : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" });
-  }
   if (status === "PENDING_PAYMENT") {
     actions.push(isSuperAdmin
       ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
@@ -284,7 +260,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
     if (status === "PAID") {
       actions.push({ label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" });
     }
-    if (["ORDERED", "SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
       if (cashOnDelivery && !paymentValidated) {
         actions.push({ label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" });
       } else {
@@ -338,9 +314,6 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
     }
     if (cashOnDelivery && !paymentValidated) {
       actions.push({ label: "Confirmar cobrança na entrega", action: "validate-payment" });
-    }
-    if (status === "SHIPPED") {
-      actions.push({ label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" });
     }
   }
 

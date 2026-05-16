@@ -17,7 +17,6 @@ const STATUS_THEME: Record<string, string> = {
   PENDING_PAYMENT: "bg-[#FAEEDA] text-[#633806]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
-  SHIPPED: "bg-[#d1fae5] text-[#065f46]",
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
   OUT_FOR_DELIVERY: "bg-[#FDE68A] text-[#854D0E]",
@@ -26,7 +25,7 @@ const STATUS_THEME: Record<string, string> = {
 };
 
 function isPaymentValidated(status: string | null | undefined) {
-  return ["APPROVED", "PAID", "VALIDATED"].includes(String(status ?? ""));
+  return String(status ?? "") === "SUCCESS";
 }
 
 export function OrderPaymentReviewView({ orderId }: { orderId: string }) {

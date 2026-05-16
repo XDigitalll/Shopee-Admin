@@ -906,7 +906,7 @@ export function DeliveryPendingView() {
       title={driverMode ? "Encomendas para pegar" : "Pedidos prontos para sair"}
       description={driverMode
         ? "Ve as encomendas disponiveis no escritorio, pega uma para ti, define a taxa e inicia a viagem."
-        : "Define o preco local, avisa o cliente, atribui o estafeta e so depois liberta a entrega para SHIPPED."}
+        : "Define o preco local, avisa o cliente, atribui o estafeta e so depois liberta a entrega para OUT_FOR_DELIVERY."}
       actions={<Link href="/admin/delivery/active" className="admin-button-muted">Ver entregas activas</Link>}
     >
       <AdminFeedbackDock feedback={feedback} onClose={() => setFeedback(null)} />

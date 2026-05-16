@@ -48,8 +48,7 @@ export type OrdersFilterState = {
     | "PAYMENT_SUBMITTED"
     | "PAYMENT_UNDER_REVIEW"
     | "PAYMENT_REJECTED"
-    | "PAID"
-    | "SHIPPED";
+    | "PAID";
   type: "ALL" | "EXTERNAL" | "INTERNAL";
   period: "ALL" | "TODAY" | "THIS_WEEK";
   search: string;

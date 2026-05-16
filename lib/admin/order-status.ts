@@ -9,7 +9,6 @@ export const RAW_ADMIN_ORDER_STATUSES = [
   "PAYMENT_REJECTED",
   "PAID",
   "ORDERED",
-  "SHIPPED",
   "IN_TRANSIT",
   "ARRIVED",
   "OUT_FOR_DELIVERY",
@@ -64,10 +63,6 @@ export function resolveUiOrderStatus(
     return "UNDER_REVIEW";
   }
 
-  if (status === "IN_TRANSIT" || status === "ARRIVED" || status === "OUT_FOR_DELIVERY") {
-    return "SHIPPED";
-  }
-
   if (isRawAdminOrderStatus(status)) {
     return status;
   }
@@ -90,7 +85,6 @@ export function resolveOrderQueueStatus(status: string | null | undefined): Excl
     case "PAID":
       return "EXECUTION";
     case "ORDERED":
-    case "SHIPPED":
     case "IN_TRANSIT":
     case "ARRIVED":
     case "OUT_FOR_DELIVERY":
@@ -123,7 +117,6 @@ export function resolveCustomerOrderStage(status: string | null | undefined): Cu
     case "ORDERED":
       return "PROCESSING";
     case "IN_TRANSIT":
-    case "SHIPPED":
       return "INTERNATIONAL_TRANSIT";
     case "ARRIVED":
       return "AT_HQ";

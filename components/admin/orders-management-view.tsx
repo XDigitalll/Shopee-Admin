@@ -63,7 +63,6 @@ const STATUS_THEME: Record<string, string> = {
   PAYMENT_REJECTED: "bg-[#FCEBEB] text-[#B42318]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
-  SHIPPED: "bg-[#d1fae5] text-[#065f46]",
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
   OUT_FOR_DELIVERY: "bg-[#FDE68A] text-[#854D0E]",
@@ -80,7 +79,7 @@ const TRACKING_STEPS = [
   "PAYMENT_REJECTED",
   "PAID",
   "ORDERED",
-  "SHIPPED",
+  "IN_TRANSIT",
   "DELIVERED",
 ] as const;
 
@@ -107,7 +106,6 @@ const DELIVERY_NEXT_ACTION: Record<
 > = {
   PAID: { label: "Marcar como encomendado", targetStatus: "ORDERED" },
   ORDERED: { label: "Marcar em trânsito", targetStatus: "IN_TRANSIT" },
-  SHIPPED: { label: "Confirmar entrega", targetStatus: "DELIVERED" },
   IN_TRANSIT: { label: "Marcar como chegado", targetStatus: "ARRIVED" },
   ARRIVED: { label: "Saiu para entrega", targetStatus: "OUT_FOR_DELIVERY" },
   OUT_FOR_DELIVERY: { label: "Confirmar entrega", targetStatus: "DELIVERED" },
@@ -115,7 +113,7 @@ const DELIVERY_NEXT_ACTION: Record<
 };
 
 function isPaymentValidated(status: string | null) {
-  return ["APPROVED", "PAID", "VALIDATED"].includes(String(status ?? ""));
+  return String(status ?? "") === "SUCCESS";
 }
 
 function isCashOnDelivery(order: AdminOrderListItem | null) {
@@ -159,27 +157,20 @@ function getDrawerTrackingStatus(order: AdminOrderListItem | null, mode: "orders
   }
 
   if (isPickupOrder(order)) {
-    if (["SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(order.status)) {
+    if (["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(order.status)) {
       return "ORDERED";
     }
     return order.status;
   }
 
   if (isInternalDeliveryOrder(order)) {
-    if (order.status === "SHIPPED") {
-      return "OUT_FOR_DELIVERY";
-    }
     if (order.status === "ORDERED" || order.status === "ARRIVED") {
       return "PAID";
     }
     return order.status;
   }
 
-  return mode === "delivery"
-    ? order.status === "SHIPPED"
-      ? "IN_TRANSIT"
-      : order.status
-    : order.uiStatus;
+  return mode === "delivery" ? order.status : order.uiStatus;
 }
 
 function getDrawerTrackingStepLabel(step: string, order: AdminOrderListItem | null) {
@@ -270,7 +261,7 @@ function OrdersDrawer({
         return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
       }
 
-      if (["ORDERED", "SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(orderItem.status)) {
+      if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(orderItem.status)) {
         if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus)) {
           return { label: "Confirmar cobrança e levantamento", action: "collect-and-close", targetStatus: "DELIVERED" };
         }
@@ -309,12 +300,7 @@ function OrdersDrawer({
     if (orderItem.uiStatus === "QUOTED") {
       return { label: "Ver cotacao enviada", href: `/admin/orders/${orderItem.id}/quote` };
     }
-    if (orderItem.uiStatus === "APPROVED") {
-      return effectiveRole === "SUPER_ADMIN"
-        ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${orderItem.id}` }
-        : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
-    }
-    if (["PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED"].includes(orderItem.uiStatus)) {
+    if (["APPROVED", "PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED"].includes(orderItem.uiStatus)) {
       return effectiveRole === "SUPER_ADMIN"
         ? { label: orderItem.uiStatus === "PAYMENT_REJECTED" ? "Ver submissao financeira" : "Ver em pagamentos", href: `/admin/payments?orderId=${orderItem.id}&queue=${paymentQueueForOrder(orderItem.uiStatus)}` }
         : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
@@ -330,16 +316,13 @@ function OrdersDrawer({
     if (orderItem.type === "EXTERNAL" && orderItem.status === "ORDERED") {
       return { label: "Marcar em transito", action: "mark-status", targetStatus: "IN_TRANSIT" };
     }
-    if (orderItem.type === "EXTERNAL" && (orderItem.status === "IN_TRANSIT" || orderItem.status === "SHIPPED")) {
+    if (orderItem.type === "EXTERNAL" && orderItem.status === "IN_TRANSIT") {
       return { label: "Marcar como chegado a sede", action: "mark-status", targetStatus: "ARRIVED" };
     }
     if (orderItem.type === "EXTERNAL" && orderItem.status === "ARRIVED") {
       return effectiveRole === "SUPER_ADMIN"
         ? { label: "Ver em entregas", href: "/admin/delivery" }
         : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
-    }
-    if (orderItem.uiStatus === "SHIPPED") {
-      return { label: "Actualizar rastreio", href: `/admin/orders/${orderItem.id}` };
     }
     if (orderItem.uiStatus === "DELIVERED") {
       return { label: "Ver recibo", href: `/admin/orders/${orderItem.id}` };

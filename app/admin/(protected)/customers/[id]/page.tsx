@@ -48,7 +48,7 @@ function isTopBuyer(c: AdminCustomer) { return c.orderCount >= 3; }
 const ORDER_STATUS_LABEL: Record<string, string> = {
   PENDING: "Criado", UNDER_REVIEW: "Em análise", QUOTED: "Cotado",
   APPROVED: "Aprovado", PENDING_PAYMENT: "Aguarda pag.", PAID: "Pago",
-  PROCESSING: "A processar", ORDERED: "Encomendado", SHIPPED: "Enviado",
+  PROCESSING: "A processar", ORDERED: "Encomendado",
   IN_TRANSIT: "Em trânsito", ARRIVED: "Chegou",
   OUT_FOR_DELIVERY: "A entregar", DELIVERED: "Entregue", CANCELLED: "Cancelado",
 };
@@ -56,7 +56,6 @@ const ORDER_STATUS_LABEL: Record<string, string> = {
 const ORDER_STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   PAID:       { bg: "#EAF3DE", text: "#173404" },
   DELIVERED:  { bg: "#EAF3DE", text: "#173404" },
-  SHIPPED:    { bg: "#DBEAFE", text: "#1E3A5F" },
   IN_TRANSIT: { bg: "#DBEAFE", text: "#1E3A5F" },
   CANCELLED:  { bg: "#FFF5F5", text: "#B42318" },
   PENDING:    { bg: "#F3F4F6", text: "#374151" },

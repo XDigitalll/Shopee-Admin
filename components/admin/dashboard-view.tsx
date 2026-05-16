@@ -38,7 +38,7 @@ function statusClass(status: string) {
   if (normalized === "UNDER_REVIEW") return "bg-[#FAEEDA] text-[#633806]";
   if (normalized === "QUOTED") return "bg-[#fef3c7] text-[#92400e]";
   if (normalized === "PAID") return "bg-[#EAF3DE] text-[#173404]";
-  if (["SHIPPED", "ORDERED", "IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(normalized)) {
+  if (["ORDERED", "IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(normalized)) {
     return "bg-[#d1fae5] text-[#065f46]";
   }
 

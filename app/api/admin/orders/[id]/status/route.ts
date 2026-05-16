@@ -26,7 +26,7 @@ function hasReachedTarget(currentStatus: string, targetStatus: string) {
 }
 
 const ALLOWED_TARGETS = ["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
-const ALLOWED_PROGRESSION = ["PAID", "ORDERED", "SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
+const ALLOWED_PROGRESSION = ["PAID", "ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
