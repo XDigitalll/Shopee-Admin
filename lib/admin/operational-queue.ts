@@ -26,7 +26,7 @@ const PRIORITY_WEIGHT: Record<OrderPriority, number> = {
 
 const CLOSED_STATUSES = new Set(["DELIVERED", "CANCELLED", "FAILED", "COMPLETED"]);
 const ORDERS_ACTION_STATUSES = new Set(["CREATED", "UNDER_REVIEW", "QUOTED", "APPROVED"]);
-const DELIVERY_ACTION_STATUSES = new Set(["PAID", "ORDERED", "SHIPPED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"]);
+const DELIVERY_ACTION_STATUSES = new Set(["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"]);
 const PAYMENT_ACTION_STATUSES = new Set(["PENDING", "PENDING_REVIEW", "SUBMITTED", "FAILED"]);
 const QUOTE_ACTION_STATUSES = new Set(["UNDER_REVIEW", "DRAFT", "REJECTED", "NEEDS_REVIEW"]);
 
@@ -123,7 +123,7 @@ export function isDeliveryActionRequired(order: DeliveryPendingOrder | DeliveryA
   }
 
   if ("assignedDriverId" in order) {
-    return !order.deliveryFee || !order.assignedDriverId || status === "ARRIVED" || status === "PAID";
+    return !order.deliveryFee || !order.assignedDriverId || status === "ORDERED" || status === "ARRIVED";
   }
 
   return status === "ORDERED" || status === "OUT_FOR_DELIVERY" || status === "IN_TRANSIT";

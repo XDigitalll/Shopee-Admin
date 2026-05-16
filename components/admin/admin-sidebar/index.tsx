@@ -52,7 +52,7 @@ const sections = [
       {
         module: "delivery",
         label: "Entregas",
-        href: "/admin/delivery/pending",
+        href: "/admin/delivery",
         icon: BoxIcon,
         counterKey: "delivery",
         roles: ["DELIVERY_DRIVER", "DELIVERY_MANAGER", "ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"],

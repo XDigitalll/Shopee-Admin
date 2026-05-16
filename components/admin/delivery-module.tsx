@@ -43,6 +43,7 @@ const ISSUE_OPTIONS = [
 ];
 
 const CLIENT_APP_URL = (process.env.NEXT_PUBLIC_CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
+const READY_FOR_DELIVERY_STATUSES = new Set(["ORDERED", "ARRIVED"]);
 
 type FeedbackState = {
   tone: "success" | "error" | "loading";
@@ -149,6 +150,10 @@ function buildCsv(rows: string[][]) {
   return rows
     .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
     .join("\n");
+}
+
+function isReadyForDeliveryStatus(status: string | null | undefined) {
+  return READY_FOR_DELIVERY_STATUSES.has(String(status ?? "").toUpperCase());
 }
 
 function exportCsv(filename: string, rows: string[][]) {
@@ -389,7 +394,11 @@ export function DeliveryDashboardView() {
         adminApiFetch<DeliveryPendingOrder[]>("/api/admin/delivery/pending"),
         adminApiFetch<DeliveryActiveOrder[]>("/api/admin/delivery/active"),
       ]);
-      setStats(statsPayload);
+      setStats({
+        ...statsPayload,
+        awaitingAtOffice: pendingPayload.length,
+        activeNow: activePayload.length,
+      });
       setPending(pendingPayload);
       setActive(activePayload);
       setError("");
@@ -761,10 +770,10 @@ export function DeliveryPendingView() {
   }
 
   async function defineFee(order: DeliveryPendingOrder) {
-    if (order.status !== "PAID" && order.status !== "ARRIVED") {
+    if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
-        message: `${order.number} ainda nao esta pronto para entrega. Aguarda pagamento ou chegada ao escritorio.`,
+        message: `${order.number} ainda nao esta pronto para entrega. Aguarda o estado ORDERED ou ARRIVED.`,
       });
       return;
     }
@@ -803,7 +812,7 @@ export function DeliveryPendingView() {
   }
 
   async function assignDriver(order: DeliveryPendingOrder) {
-    if (order.status !== "PAID" && order.status !== "ARRIVED") {
+    if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
         message: `${order.number} ainda nao esta pronto para atribuir estafeta.`,
@@ -837,7 +846,7 @@ export function DeliveryPendingView() {
   }
 
   async function claimDelivery(order: DeliveryPendingOrder) {
-    if (order.status !== "PAID" && order.status !== "ARRIVED") {
+    if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
         message: `${order.number} ainda nao esta pronto para ser pego no escritorio.`,
@@ -864,10 +873,10 @@ export function DeliveryPendingView() {
   }
 
   async function startDelivery(order: DeliveryPendingOrder) {
-    if (order.status !== "PAID" && order.status !== "ARRIVED") {
+    if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
-        message: `${order.number} ainda nao esta pronto para sair. Primeiro confirma pagamento ou chegada ao escritorio.`,
+        message: `${order.number} ainda nao esta pronto para sair. Primeiro confirma ORDERED ou chegada ao escritorio.`,
       });
       return;
     }
@@ -926,14 +935,14 @@ export function DeliveryPendingView() {
               driverId: "",
             };
             const isRetry = (order.deliveryAttempt ?? 1) > 1;
-            const isReadyForDelivery = order.status === "PAID" || order.status === "ARRIVED";
+            const isReadyForDelivery = isReadyForDeliveryStatus(order.status);
             const hasFee = Number(order.deliveryFee ?? Number(form.deliveryFee || 0)) > 0;
             const feeAlreadyNotified = Boolean(order.deliveryFeeSetAt) && !isRetry;
             const hasDriver = Boolean(order.assignedDriverId);
             const canStart = isReadyForDelivery && hasFee && hasDriver;
             const hasSelectedDriver = Boolean(form.driverId?.trim());
             const startBlockReason = !isReadyForDelivery
-              ? "Este pedido ainda nao esta pago ou recebido no escritorio para entrega local."
+              ? "Este pedido ainda nao esta em ORDERED ou ARRIVED para entrega local."
               : driverMode && !hasDriver
                 ? "Pega a encomenda primeiro para ela ficar atribuida a ti."
               : !hasFee
@@ -1253,7 +1262,7 @@ export function DeliveryActiveView() {
   }
 
   async function startAssignedTrip(order: DeliveryActiveOrder) {
-    if (order.status !== "PAID" && order.status !== "ARRIVED") {
+    if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
         message: `${order.number} ainda nao esta pronto para iniciar viagem.`,

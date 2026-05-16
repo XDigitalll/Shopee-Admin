@@ -88,6 +88,9 @@ type BackendOrder = {
   lastIssueType?: string | null;
 };
 
+const PENDING_DELIVERY_STATUSES = new Set(["ORDERED", "ARRIVED"]);
+const ACTIVE_DELIVERY_STATUSES = new Set(["OUT_FOR_DELIVERY"]);
+
 type BackendDriver = {
   id?: string | number | null;
   name?: string | null;
@@ -278,7 +281,7 @@ function mapActiveOrder(raw: BackendOrder): DeliveryActiveOrder {
     items: readItems(raw),
     totalAmount: readNullableNumber(raw.totalAmount),
     estimatedDeliveryHours: readNullableNumber(raw.estimatedDeliveryTime) ?? meta.estimatedDeliveryHours,
-    status: readString(raw.status) || "SHIPPED",
+    status: readString(raw.status) || "OUT_FOR_DELIVERY",
     urgent: readBoolean(raw.urgent, false),
     deliveryAttempt: readNullableNumber(raw.deliveryAttempt),
   };
@@ -418,8 +421,8 @@ export async function fetchDeliveryStats(request: NextRequest): Promise<Delivery
   const problemOrders = orders.filter((order) => getDeliveryMeta(readNumber(order.id, 0)).issues.length > 0).length;
 
   return {
-    awaitingAtOffice: orders.filter((order) => ["ORDERED", "ARRIVED"].includes(readString(order.status))).length,
-    activeNow: orders.filter((order) => ["SHIPPED", "OUT_FOR_DELIVERY", "IN_TRANSIT"].includes(readString(order.status))).length,
+    awaitingAtOffice: orders.filter((order) => PENDING_DELIVERY_STATUSES.has(readString(order.status))).length,
+    activeNow: orders.filter((order) => ACTIVE_DELIVERY_STATUSES.has(readString(order.status))).length,
     deliveredToday,
     successRate: completed + problemOrders > 0 ? Number(((completed / (completed + problemOrders)) * 100).toFixed(1)) : 100,
   };
@@ -433,13 +436,13 @@ export async function fetchPendingDeliveryOrders(request: NextRequest): Promise<
     const payload = await parseBackendJson<BackendPage<BackendOrder> | BackendOrder[]>(response);
     const list = Array.isArray(payload) ? payload : payload?.content ?? [];
     return list
-      .filter((order) => ["PAID", "ARRIVED"].includes(readString(order.status)))
+      .filter((order) => PENDING_DELIVERY_STATUSES.has(readString(order.status)))
       .map(mapPendingOrder);
   }
 
   const orders = await fetchOrdersFallback(request);
   return orders
-    .filter((order) => ["PAID", "ARRIVED"].includes(readString(order.status)))
+    .filter((order) => PENDING_DELIVERY_STATUSES.has(readString(order.status)))
     .map(mapPendingOrder);
 }
 
@@ -456,7 +459,7 @@ export async function fetchActiveDeliveryOrders(request: NextRequest): Promise<D
 
   const orders = await fetchOrdersFallback(request);
   const fallbackOrders = orders
-    .filter((order) => ["SHIPPED", "OUT_FOR_DELIVERY", "IN_TRANSIT"].includes(readString(order.status)))
+    .filter((order) => ACTIVE_DELIVERY_STATUSES.has(readString(order.status)))
     .map(mapActiveOrder);
   return mergeActiveOrders(fallbackOrders, snapshots.map((item) => mapActiveOrder(item as BackendOrder)));
 }
