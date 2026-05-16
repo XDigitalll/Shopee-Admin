@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
       name: typeof profile?.name === "string" && profile.name.trim() ? profile.name : "Administrador",
       email: typeof profile?.email === "string" ? profile.email : "",
       avatarUrl: typeof profile?.avatarUrl === "string" ? profile.avatarUrl : null,
+      mustChangePassword: Boolean(profile?.mustChangePassword ?? tokenPayload?.mustChangePassword),
     },
     { status: response.status },
   );
