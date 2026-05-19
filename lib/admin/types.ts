@@ -232,10 +232,13 @@ export type ExternalOrderLineItem = {
   details: string;
   quantity: number;
   originalPriceUsd: number;
+  subtotal?: number | null;
   imageUrl?: string | null;
   productId?: number | null;
   productDescription?: string | null;
   variantLabel?: string | null;
+  variantSku?: string | null;
+  variantAttributes?: Record<string, string> | null;
   categoryName?: string | null;
   stockLabel?: string | null;
 };
@@ -410,6 +413,23 @@ export type AdminPaymentMethodFilter =
 
 export type AdminPaymentPeriodFilter = "ALL" | "TODAY" | "7D" | "30D";
 
+export type AdminPaymentOrderItem = {
+  productId: number | null;
+  productName: string | null;
+  productImageUrl: string | null;
+  variantId: number | null;
+  variantLabel: string | null;
+  variantSku: string | null;
+  variantAttributes: Record<string, string> | null;
+  quantity: number | null;
+  unitPrice: number | null;
+  subtotal: number | null;
+  productLink?: string | null;
+  requestScreenshotUrl?: string | null;
+  externalVariant?: string | null;
+  finalAmountMzn?: number | null;
+};
+
 export type AdminPaymentListItem = {
   id: number;
   status: "PENDING" | "VALIDATED" | "REJECTED" | "CANCELLED";
@@ -430,6 +450,7 @@ export type AdminPaymentListItem = {
   payerPhone: string | null;
   notes: string | null;
   adminNote: string | null;
+  orderItems?: AdminPaymentOrderItem[];
 };
 
 export type AdminPaymentsPageResponse = {
@@ -511,6 +532,7 @@ export type PaymentSubmission = {
   riskFlags: string[];
   matchedTransactionId: string | null;
   metadata: Record<string, unknown> | null;
+  orderItems?: AdminPaymentOrderItem[];
   orderHistory?: Array<{
     id?: number;
     action?: string | null;

@@ -68,8 +68,8 @@ export const ROLE_ACCESS: Record<AdminRole, AdminModule[]> = {
   ORDER_MANAGER: ["orders", "quotes"],
   CATALOG_MANAGER: ["products", "categories", "banners"],
   FINANCE_MANAGER: ["payments", "finance", "coupons"],
-  CUSTOMER_SUPPORT: ["customers"],
-  CRM_MANAGER: ["customers"],
+  CUSTOMER_SUPPORT: ["orders", "customers"],
+  CRM_MANAGER: ["customers", "coupons"],
   ANALYST: ["dashboard"],
   USER: [],
 };

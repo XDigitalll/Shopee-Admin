@@ -17,6 +17,10 @@ function emitAuthChange() {
   window.dispatchEvent(new Event(ADMIN_AUTH_CHANGE_EVENT));
 }
 
+function apiError(message: string, status?: number) {
+  return Object.assign(new Error(message), { status });
+}
+
 function clearAdminGetCache() {
   inFlightGetRequests.clear();
   resolvedGetCache.clear();
@@ -139,13 +143,21 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
         "error" in payload &&
         payload.error === "CSRF invalido";
       if (isCsrfError) {
-        throw new Error(
-          (payload as { message?: string }).message ??
-            "A validacao de seguranca expirou. Atualize a pagina e tente novamente."
-        );
+          throw apiError(
+            (payload as { message?: string }).message ??
+              "A validacao de seguranca expirou. Atualize a pagina e tente novamente.",
+            response.status
+          );
       }
-      window.location.href = "/admin/unauthorized";
-      throw new Error("A tua role nao permite este modulo.");
+      const message =
+        payload &&
+        typeof payload === "object" &&
+        "message" in payload &&
+        typeof payload.message === "string" &&
+        payload.message
+          ? payload.message
+          : "Sem permissao para esta acao.";
+      throw apiError(message, response.status);
     }
 
     if (!response.ok) {
@@ -156,7 +168,7 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
           typeof payload.message === "string" &&
           payload.message) ||
         "Nao foi possivel concluir a operacao.";
-      throw new Error(message);
+      throw apiError(message, response.status);
     }
 
     return payload as T;

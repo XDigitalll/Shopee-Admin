@@ -6,20 +6,23 @@ export async function PUT(request: NextRequest) {
   const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const currentPassword = typeof payload?.currentPassword === "string" ? payload.currentPassword : "";
   const newPassword = typeof payload?.newPassword === "string" ? payload.newPassword : "";
+  const confirmPassword = typeof payload?.confirmPassword === "string" ? payload.confirmPassword : newPassword;
+  const firstAccess = payload?.firstAccess === true;
 
-  const response = currentPassword.trim()
+  const response = !firstAccess
     ? await fetchBackend(request, "/users/me/password", {
         method: "PUT",
         body: JSON.stringify({
           currentPassword,
           newPassword,
+          confirmPassword,
         }),
       })
-    : await fetchBackend(request, "/auth/force-change-password", {
+    : await fetchBackend(request, "/auth/complete-first-password", {
         method: "POST",
         body: JSON.stringify({
           newPassword,
-          confirmPassword: newPassword,
+          confirmPassword,
         }),
       });
 

@@ -77,6 +77,7 @@ function mapItem(item: Partial<AdminPaymentListItem>): AdminPaymentListItem {
     payerPhone: item.payerPhone ?? null,
     notes: item.notes ?? null,
     adminNote: item.adminNote ?? null,
+    orderItems: item.orderItems ?? [],
   };
 }
 
@@ -155,6 +156,7 @@ function mapTransactionItem(item: BackendTransaction): AdminPaymentListItem {
     payerPhone: null,
     notes: null,
     adminNote: null,
+    orderItems: [],
   };
 }
 
@@ -233,6 +235,7 @@ function mapOrderPaymentItem(order: BackendOrder): AdminPaymentListItem | null {
     payerPhone: payment.payerPhone ?? null,
     notes: payment.notes ?? null,
     adminNote: payment.adminNote ?? null,
+    orderItems: [],
   };
 }
 

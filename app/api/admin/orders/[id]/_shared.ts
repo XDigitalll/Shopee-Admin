@@ -32,6 +32,14 @@ type BackendOrderItem = {
   quantity?: number | null;
   price?: number | null;
   subtotal?: number | null;
+  variantId?: number | null;
+  variantSku?: string | null;
+  variantName?: string | null;
+  variantLabel?: string | null;
+  selectedVariantLabel?: string | null;
+  variantAttributesSnapshot?: string | null;
+  variantAttributesJson?: string | null;
+  variantAttributes?: Record<string, string> | null;
 };
 
 type BackendProductVariant = {
@@ -87,6 +95,7 @@ type BackendOrderDetail = {
   baseAmount?: number | null;
   commissionAmount?: number | null;
   deliveryFee?: number | null;
+  discountAmount?: number | null;
   activeQuote?: {
     quotedAt?: string | null;
     finalAmountMzn?: number | null;
@@ -184,6 +193,53 @@ function parseSummaryItems(summary: string, suggestedBaseAmount: number): Extern
   });
 }
 
+function isExternalOrder(order: BackendOrderDetail) {
+  const type = String(order.type ?? "").toUpperCase();
+  return type === "EXTERNAL" || type === "INTERNATIONAL";
+}
+
+function parseVariantAttributes(item: BackendOrderItem) {
+  if (item.variantAttributes && typeof item.variantAttributes === "object") {
+    return item.variantAttributes;
+  }
+
+  if (item.variantAttributesJson) {
+    try {
+      const parsed = JSON.parse(item.variantAttributesJson);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, string>;
+      }
+    } catch {
+      // Older rows can still have only the semicolon snapshot.
+    }
+  }
+
+  const attributes: Record<string, string> = {};
+  for (const part of (item.variantAttributesSnapshot ?? "").split(";")) {
+    const [key, value] = part.split("=");
+    if (key?.trim() && value?.trim()) {
+      attributes[key.trim()] = value.trim();
+    }
+  }
+  return Object.keys(attributes).length ? attributes : null;
+}
+
+function formatVariantLabel(item: BackendOrderItem) {
+  const attributes = parseVariantAttributes(item);
+  const fromAttributes = attributes
+    ? Object.entries(attributes)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(" | ")
+    : null;
+
+  return item.selectedVariantLabel
+    || fromAttributes
+    || item.variantLabel
+    || item.variantName
+    || item.variantSku
+    || null;
+}
+
 function mapExternalItems(
   items: BackendOrderItem[] | null | undefined,
   fallbackSummary: string,
@@ -198,6 +254,10 @@ function mapExternalItems(
       details: `Quantidade ${item.quantity ?? 1} · preço original ${(Number(item.price ?? 0)).toFixed(2)}`,
       quantity: Number(item.quantity ?? 1),
       originalPriceUsd: Number(item.price ?? 0),
+      subtotal: Number(item.subtotal ?? Number(item.price ?? 0) * Number(item.quantity ?? 1)),
+      variantLabel: formatVariantLabel(item),
+      variantSku: item.variantSku ?? null,
+      variantAttributes: parseVariantAttributes(item),
     }));
   }
 
@@ -248,7 +308,7 @@ function enrichExternalItems(
       productCode: item.productCode ?? product.code ?? null,
       imageUrl: product.primaryThumbnailUrl ?? product.primaryImageUrl ?? null,
       productDescription: product.description ?? null,
-      variantLabel: pickVariantLabel(product),
+      variantLabel: item.variantLabel ?? null,
       categoryName: product.category?.name ?? product.subCategory ?? null,
       stockLabel:
         typeof product.stock === "number"
@@ -256,7 +316,7 @@ function enrichExternalItems(
           : null,
       details:
         [
-          pickVariantLabel(product),
+          item.variantLabel,
           product.category?.name ?? product.subCategory ?? null,
           item.details,
         ]
@@ -403,6 +463,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     ? await parseBackendJson<AuditLogItem[]>(timelineResponse)
     : [];
   const order = orderPayload?.content?.[0];
+  const externalOrder = order ? isExternalOrder(order) : false;
 
   if (!order) {
     return { error: jsonError("Pedido não encontrado.", 404) };
@@ -428,9 +489,11 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     : [];
 
   // Use productPrice from active quote (ZAR) to avoid re-multiplying by exchange rate on re-quote
-  const suggestedBaseAmount = order.activeQuote?.productPrice != null
+  const suggestedBaseAmount = externalOrder && order.activeQuote?.productPrice != null
     ? Number(order.activeQuote.productPrice)
-    : Number(order.suggestedBaseAmount ?? 0);
+    : externalOrder
+      ? Number(order.suggestedBaseAmount ?? 0)
+      : Number((order.items ?? []).reduce((sum, item) => sum + Number(item.subtotal ?? 0), 0));
   const rawExternalItems = mapExternalItems(order.items, order.externalCartUrl ?? "", suggestedBaseAmount);
   const productIds = Array.from(
     new Set(
@@ -486,22 +549,22 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     customerEmail: order.customerEmail ?? "",
     customerPhone: order.primaryPhoneNumber ?? "Sem telefone",
     customerVerified: Boolean(order.customerEmail || order.primaryPhoneNumber),
-    type: order.type ?? "EXTERNAL",
+    type: externalOrder ? "EXTERNAL" : "INTERNAL",
     status: effectiveOrderStatus,
     deliveryMethod: order.deliveryMethod ?? null,
     urgentRequest: Boolean(order.urgent),
-    externalCartUrl: order.externalCartUrl ?? "",
-    requestInputType: order.requestInputType ?? null,
-    productDetails: order.productDetails ?? "",
-    requestedQuantity: Number(order.requestedQuantity ?? 1),
-    requestScreenshotUrl: order.requestScreenshotUrl ?? "",
-    sourceStore: order.sourceStore || "Loja externa",
+    externalCartUrl: externalOrder ? order.externalCartUrl ?? "" : "",
+    requestInputType: externalOrder ? order.requestInputType ?? null : null,
+    productDetails: externalOrder ? order.productDetails ?? "" : "",
+    requestedQuantity: externalOrder ? Number(order.requestedQuantity ?? 1) : 0,
+    requestScreenshotUrl: externalOrder ? order.requestScreenshotUrl ?? "" : "",
+    sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
     totalAmount: Number(order.totalAmount ?? 0),
     suggestedBaseAmount,
     externalItems,
-    latestQuoteSentAt: historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null,
-    quoteDraft: getQuoteDraft(id) ?? (order.activeQuote?.productPrice != null
+    latestQuoteSentAt: externalOrder ? historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null : null,
+    quoteDraft: externalOrder ? getQuoteDraft(id) ?? (order.activeQuote?.productPrice != null
       ? {
           baseAmount: Number(order.activeQuote.productPrice),
           shippingFee: Number(order.activeQuote.shippingFee ?? 0),
@@ -516,7 +579,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
           notes: "",
           validityDate: "",
         }
-      : null),
+      : null) : null,
     recentCustomerOrders: (recentOrdersPayload.content ?? [])
       .filter((item) => item.id !== order.id)
       .slice(0, 3)
@@ -535,8 +598,18 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     deliveryReference: order.deliveryReference ?? "",
     googleMapsLink: order.googleMapsLink ?? "",
     customerNotes: order.customerNotes ?? "",
-    itemSubtotal: Number(order.baseAmount ?? suggestedBaseAmount),
+    itemSubtotal: externalOrder ? Number(order.baseAmount ?? suggestedBaseAmount) : suggestedBaseAmount,
     additionalCosts: (() => {
+      if (!externalOrder) {
+        return {
+          freight: 0,
+          customs: 0,
+          urgent: 0,
+          localDelivery: Number(order.deliveryFee ?? 0),
+          commission: 0,
+          discount: Number(order.discountAmount ?? 0),
+        };
+      }
       const commission = Number(order.commissionAmount ?? 0);
       const exchangeRate = Number(order.activeQuote?.exchangeRate ?? 1);
       const saShipping = order.activeQuote?.shippingFee != null
@@ -557,8 +630,8 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
         discount: 0,
       };
     })(),
-    quoteExchangeRate: order.activeQuote?.exchangeRate != null ? Number(order.activeQuote.exchangeRate) : null,
-    quoteCurrency: order.activeQuote?.currency || null,
+    quoteExchangeRate: externalOrder && order.activeQuote?.exchangeRate != null ? Number(order.activeQuote.exchangeRate) : null,
+    quoteCurrency: externalOrder ? order.activeQuote?.currency || null : null,
     trackingCode,
     trackingCarrier: trackingMeta.carrier,
     estimatedDelivery: trackingMeta.estimatedDelivery || null,

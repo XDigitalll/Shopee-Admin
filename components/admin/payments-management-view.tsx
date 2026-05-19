@@ -9,7 +9,9 @@ import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizePaymentMethod } from "@/lib/admin/format";
+import { canManageFinance } from "@/lib/admin/permissions";
 import type {
+  AdminPaymentOrderItem,
   AwaitingPaymentSubmissionsPage,
   PaymentAwaitingSubmission,
   PaymentSubmission,
@@ -133,6 +135,88 @@ function proofKind(submission: PaymentSubmission) {
   if (type.includes("pdf") || url.endsWith(".pdf")) return "pdf";
   if (type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(url)) return "image";
   return submission.proofUrl ? "file" : "none";
+}
+
+function variantText(item: AdminPaymentOrderItem) {
+  if (item.variantLabel) return item.variantLabel;
+  const entries = Object.entries(item.variantAttributes ?? {});
+  if (entries.length) return entries.map(([key, value]) => `${key}: ${value}`).join(" | ");
+  if (item.variantSku) return item.variantSku;
+  return "Sem variante selecionada";
+}
+
+function OrderItemsSummary({ submission }: { submission: PaymentSubmission }) {
+  const items = submission.orderItems ?? [];
+  const externalOrder = submission.orderType === "EXTERNAL";
+
+  return (
+    <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+      <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Produtos deste pagamento</h3>
+      <div className="mt-4 space-y-3">
+        {items.length ? items.map((item, index) => (
+          externalOrder ? (
+            <article key={`${item.productId ?? "external"}-${index}`} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+              <div className="flex gap-4">
+                {item.requestScreenshotUrl ? (
+                  <a href={item.requestScreenshotUrl} target="_blank" rel="noreferrer" className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.requestScreenshotUrl} alt="Screenshot do pedido externo" className="h-full w-full object-cover" />
+                  </a>
+                ) : (
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] text-center text-xs font-semibold text-[var(--color-text-muted)]">
+                    Sem imagem
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black text-[var(--color-text-primary)]">{item.productName || "Pedido externo"}</p>
+                  {item.productLink ? (
+                    <a href={item.productLink} target="_blank" rel="noreferrer" className="mt-1 block truncate text-sm font-semibold text-[var(--color-danger)]">
+                      Abrir produto
+                    </a>
+                  ) : null}
+                  <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                    Variante informada: {item.externalVariant || variantText(item)}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Info label="Qtd" value={item.quantity ?? 1} />
+                    <Info label="Valor cotado" value={formatMoney(item.finalAmountMzn ?? item.subtotal ?? 0)} />
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : (
+            <article key={`${item.productId ?? "internal"}-${index}`} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+              <div className="flex gap-4">
+                {item.productImageUrl ? (
+                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.productImageUrl} alt={item.productName || "Produto"} className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] text-center text-xs font-semibold text-[var(--color-text-muted)]">
+                    Sem imagem
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-[var(--color-text-primary)]">{item.productName || "Produto"}</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Variante: {variantText(item)}</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <Info label="Qtd" value={item.quantity ?? 0} />
+                    <Info label="Preco" value={formatMoney(item.unitPrice ?? 0)} />
+                    <Info label="Subtotal" value={formatMoney(item.subtotal ?? 0)} />
+                  </div>
+                </div>
+              </div>
+            </article>
+          )
+        )) : (
+          <p className="rounded-2xl bg-[var(--color-background-tertiary)] p-4 text-sm text-[var(--color-text-secondary)]">
+            Nenhum item associado ao pagamento.
+          </p>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function ActionDot({ visible }: { visible: boolean }) {
@@ -326,6 +410,8 @@ function SubmissionDrawer({
               </div>
             </section>
 
+            <OrderItemsSummary submission={submission} />
+
             <section className="rounded-[24px] border border-[var(--color-border)] p-5">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Comprovativo</h3>
@@ -412,7 +498,7 @@ function SubmissionDrawer({
 }
 
 export function PaymentsManagementView() {
-  const { hasAccess, effectiveRole } = useAdminAuth();
+  const { hasAccess, profile } = useAdminAuth();
   const searchParams = useSearchParams();
   const initialQueue = (searchParams.get("queue") || "SUBMITTED") as PaymentSubmissionQueue;
   const initialSearch = searchParams.get("orderId") || "";
@@ -434,7 +520,7 @@ export function PaymentsManagementView() {
   const [newPayment, setNewPayment] = useState<PaymentSubmission | null>(null);
   const previousSubmittedCountRef = useRef<number | null>(null);
 
-  const canDecide = effectiveRole === "SUPER_ADMIN" || effectiveRole === "FINANCE_MANAGER";
+  const canDecide = canManageFinance(profile);
 
   async function load(queue = activeQueue, options: { silent?: boolean } = {}) {
     if (!options.silent) setIsLoading(true);

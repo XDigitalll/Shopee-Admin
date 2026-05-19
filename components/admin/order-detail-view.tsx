@@ -99,10 +99,11 @@ function buildTotals(detail: ExternalOrderDetail) {
   const subtotal = detail.itemSubtotal;
   const freight = detail.additionalCosts.freight;
   const customs = detail.additionalCosts.customs;
+  const localDelivery = detail.additionalCosts.localDelivery;
   const commission = detail.additionalCosts.commission;
   const discount = detail.additionalCosts.discount;
-  const total = detail.totalAmount > 0 ? detail.totalAmount : subtotal + freight + customs + commission - discount;
-  return { subtotal, freight, customs, commission, discount, total };
+  const total = detail.totalAmount > 0 ? detail.totalAmount : subtotal + freight + customs + localDelivery + commission - discount;
+  return { subtotal, freight, customs, localDelivery, commission, discount, total };
 }
 
 function formatOrderItemMoney(detail: ExternalOrderDetail, amount: number) {
@@ -503,6 +504,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
   const pickupOrder = isPickupOrder(detail);
   const cashOnPickup = isCashOnPickup(detail);
+  const externalOrder = detail.type === "EXTERNAL";
 
   return (
     <div className="space-y-6">
@@ -583,6 +585,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                     </span>
                   </div>
                 </div>
+                {externalOrder ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                   <div className="rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Detalhes</p>
@@ -595,6 +598,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                     <p className="mt-2 text-2xl font-semibold text-[var(--color-text-primary)]">{detail.requestedQuantity || 1}</p>
                   </div>
                 </div>
+                ) : null}
                 {detail.requestScreenshotUrl ? (
                   <a href={detail.requestScreenshotUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-primary)]">
                     Abrir screenshot do produto
@@ -606,7 +610,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               </Link>
             </div>
 
-            {detail.type === "EXTERNAL" ? (
+            {externalOrder ? (
               <div className="mt-5 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Pedido enviado pelo cliente</p>
@@ -630,8 +634,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
           <section className="admin-card p-6">
             <div className="mb-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Itens do pedido</p>
-              <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">Resumo de produtos</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                {externalOrder ? "Cotacao internacional" : "Produtos comprados"}
+              </p>
+              <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">
+                {externalOrder ? "Itens importados" : "Resumo de produtos locais"}
+              </h2>
             </div>
 
             <div className="overflow-x-auto">
@@ -693,7 +701,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                         {formatOrderItemMoney(detail, item.originalPriceUsd)}
                       </td>
                       <td className="px-4 py-4 font-[family-name:var(--font-sora)] font-semibold">
-                        {formatOrderItemMoney(detail, item.originalPriceUsd * item.quantity)}
+                        {formatOrderItemMoney(detail, item.subtotal ?? item.originalPriceUsd * item.quantity)}
                       </td>
                     </tr>
                   ))}
@@ -704,11 +712,18 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             <div className="mt-5 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between"><span>Subtotal dos itens</span><strong>{formatMoney(totals.subtotal)}</strong></div>
+                {externalOrder ? (
                 <div className="flex items-center justify-between"><span>Frete internacional</span><strong>{formatMoney(totals.freight)}</strong></div>
-                {totals.customs > 0 ? (
+                ) : null}
+                {externalOrder ? <>
+                {externalOrder && totals.customs > 0 ? (
                   <div className="flex items-center justify-between"><span>Reservas e taxas</span><strong>{formatMoney(totals.customs)}</strong></div>
                 ) : null}
                 <div className="flex items-center justify-between"><span>Comissão XDigital</span><strong>{formatMoney(totals.commission)}</strong></div>
+                </> : null}
+                {!externalOrder && totals.localDelivery > 0 ? (
+                  <div className="flex items-center justify-between"><span>Entrega</span><strong>{formatMoney(totals.localDelivery)}</strong></div>
+                ) : null}
                 {totals.discount > 0 ? (
                   <div className="flex items-center justify-between"><span>Desconto</span><strong>- {formatMoney(totals.discount)}</strong></div>
                 ) : null}

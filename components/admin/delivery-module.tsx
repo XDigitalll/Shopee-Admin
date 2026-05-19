@@ -18,6 +18,7 @@ import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, formatRelativePercent, humanizeRole } from "@/lib/admin/format";
 import { isDeliveryActionRequired } from "@/lib/admin/operational-queue";
+import { canManageDelivery } from "@/lib/admin/permissions";
 import type {
   DeliveryActiveOrder,
   DeliveryDriver,
@@ -184,12 +185,11 @@ function DeliveryPageFrame({
   actions?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { effectiveRole } = useAdminAuth();
+  const { effectiveRole, profile } = useAdminAuth();
   const deliveryTabs = effectiveRole === "DELIVERY_DRIVER"
     ? DELIVERY_TABS.filter((tab) => tab.href === "/admin/delivery/pending" || tab.href === "/admin/delivery/active" || tab.href === "/admin/delivery/history")
     : DELIVERY_TABS;
-  const canManageDrivers = effectiveRole != null &&
-    ["DELIVERY_MANAGER", "ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(effectiveRole);
+  const canManageDrivers = canManageDelivery(profile);
 
   return (
     <div className="space-y-6">
