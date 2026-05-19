@@ -6,11 +6,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { AdminStateCard } from "@/components/admin/feedback-state";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { getDefaultPathForRole, getModuleForPath } from "@/lib/admin/roles";
+import { hasRoutePermission } from "@/lib/admin/permissions";
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { effectiveRole, hasAccess, isAuthenticated, isLoading } = useAdminAuth();
+  const { effectiveRole, hasAccess, isAuthenticated, isLoading, profile } = useAdminAuth();
 
   useEffect(() => {
     if (isLoading) {
@@ -28,10 +29,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (routeModule && !hasAccess(routeModule)) {
+    if (!hasRoutePermission(profile, pathname)) {
       router.replace("/admin/unauthorized");
     }
-  }, [effectiveRole, hasAccess, isAuthenticated, isLoading, pathname, router]);
+  }, [effectiveRole, hasAccess, isAuthenticated, isLoading, pathname, profile, router]);
 
   if (isLoading) {
     return (

@@ -11,9 +11,9 @@ import {
 
 import {
   type AdminModule,
-  hasModuleAccess,
   getPrimaryRole,
 } from "@/lib/admin/roles";
+import { hasPermission } from "@/lib/admin/permissions";
 import {
   clearAdminSession,
   refreshAdminSession,
@@ -71,6 +71,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!cancelled) {
+        console.log("[RBAC] user.roles", profileData?.roles ?? []);
         setProfile(profileData);
         setIsLoading(false);
       }
@@ -156,7 +157,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: profile !== null,
       isLoading,
       hasAccess(module) {
-        return hasModuleAccess(profile ?? emptyProfile, module);
+        return hasPermission(profile ?? emptyProfile, module);
       },
       async logout() {
         try {

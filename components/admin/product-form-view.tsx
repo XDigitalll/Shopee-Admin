@@ -678,10 +678,10 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
         try {
           const fd = new FormData();
           arr.forEach((f) => fd.append("files", f));
-          const updated = await fetch(`/api/admin/products/${productId}/images`, {
+          const updated = await adminApiFetch<AdminProduct>(`/api/admin/products/${productId}/images`, {
             method: "POST",
             body: fd,
-          }).then((r) => r.json()) as AdminProduct;
+          });
           const gallery: FormImage[] = (updated.gallery ?? []).map((img) => ({
             id: String(img.id),
             url: img.originalUrl,
@@ -1271,14 +1271,11 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       if (editForm.imageFile) {
         const fd = new FormData();
         fd.append("file", editForm.imageFile);
-        const imgRes = await fetch(
+        const imgData = await adminApiFetch<AdminProductVariant>(
           `/api/admin/products/${productId}/variants/${editingVariantId}/image`,
           { method: "POST", body: fd }
         );
-        if (imgRes.ok) {
-          const imgData = (await imgRes.json()) as AdminProductVariant;
-          uploadedUrl = imgData.mainImageUrl ?? null;
-        }
+        uploadedUrl = imgData.mainImageUrl ?? null;
       }
 
       const attributes = editForm.attrs
@@ -1402,7 +1399,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     if (fileImages.length > 0) {
       const fd = new FormData();
       fileImages.forEach((i) => fd.append("files", i.file!));
-      await fetch(`/api/admin/products/${newProductId}/images`, {
+      await adminApiFetch<AdminProduct>(`/api/admin/products/${newProductId}/images`, {
         method: "POST",
         body: fd,
       });
