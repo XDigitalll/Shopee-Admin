@@ -451,6 +451,7 @@ export type AdminPaymentListItem = {
   notes: string | null;
   adminNote: string | null;
   orderItems?: AdminPaymentOrderItem[];
+  allowedActions?: PaymentAllowedActions;
 };
 
 export type AdminPaymentsPageResponse = {
@@ -477,6 +478,15 @@ export type AdminPaymentReceiptResponse = {
 export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED" | "REQUEST_NEW_PROOF";
 export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF";
 export type PaymentMethodType = "EMOLA" | "MPESA" | "BANK_TRANSFER" | "VISA_MANUAL";
+
+export type PaymentAllowedActions = {
+  canStartReview: boolean;
+  canReopenReview?: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canMarkSuspect: boolean;
+  canRequestNewProof: boolean;
+};
 
 export type PaymentSubmissionQueueStats = {
   awaitingSubmission: number;
@@ -533,6 +543,7 @@ export type PaymentSubmission = {
   matchedTransactionId: string | null;
   metadata: Record<string, unknown> | null;
   orderItems?: AdminPaymentOrderItem[];
+  allowedActions?: PaymentAllowedActions;
   orderHistory?: Array<{
     id?: number;
     action?: string | null;
