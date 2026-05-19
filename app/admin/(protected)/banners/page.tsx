@@ -160,12 +160,10 @@ export default function BannersPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/admin/banners", {
+      const data = await adminApiFetch<{ url?: string; message?: string }>("/api/admin/banners", {
         method: "POST",
         body: fd,
       });
-      const data = await res.json() as { url?: string; message?: string };
-      if (!res.ok) throw new Error(data.message || "Erro ao carregar imagem.");
       setForm((f) => ({ ...f, imageUrl: data.url ?? "" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar imagem.");

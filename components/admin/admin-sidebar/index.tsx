@@ -8,7 +8,8 @@ import { usePathname } from "next/navigation";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { humanizeRole } from "@/lib/admin/format";
-import { canAccessSuperAdmin, hasAnyRole, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
+import { canAccessSuperAdmin, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
+import { canPerform, hasPermission } from "@/lib/admin/permissions";
 import {
   BannerIcon,
   BoxIcon,
@@ -57,14 +58,14 @@ const sections = [
         href: "/admin/delivery",
         icon: BoxIcon,
         counterKey: "delivery",
-        roles: ["DELIVERY_DRIVER", "DELIVERY_MANAGER", "ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"],
+        roles: ["DELIVERY_DRIVER", "DELIVERY_MANAGER", "ADMIN", "SUPER_ADMIN"],
       },
       {
         module: "delivery",
         label: "Gerir estafetas",
         href: "/admin/delivery/drivers",
         icon: UsersIcon,
-        roles: ["ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"],
+        roles: ["DELIVERY_MANAGER", "ADMIN", "SUPER_ADMIN"],
         indent: true,
       },
       { module: "orders", label: "Pedidos", href: "/admin/orders", icon: OrdersIcon, counterKey: "orders" },
@@ -235,13 +236,13 @@ export function AdminSidebar({
   counters: SidebarCounters;
 }) {
   const pathname = usePathname();
-  const { effectiveRole, hasAccess, logout, profile } = useAdminAuth();
+  const { effectiveRole, logout, profile } = useAdminAuth();
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [temporaryPasswordCleared, setTemporaryPasswordCleared] = useState(false);
   const mustChangePassword = Boolean(profile.mustChangePassword) && !temporaryPasswordCleared;
 
   function renderNavItem(item: SidebarItem) {
-    if (item.roles && !hasAnyRole(profile, item.roles)) {
+    if (item.roles && !canPerform(profile, item.roles)) {
       return null;
     }
 
@@ -249,7 +250,7 @@ export function AdminSidebar({
       item.href === "/admin"
         ? pathname === "/admin"
         : pathname === item.href || pathname.startsWith(`${item.href}/`);
-    const allowed = hasAccess(item.module);
+    const allowed = hasPermission(profile, item.module);
     if (!allowed) {
       return null;
     }
