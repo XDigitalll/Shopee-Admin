@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { AdminBanner, AdminCardListSkeleton, AdminFeedbackDock } from "@/components/admin/feedback-state";
+import { ActionError, AdminBanner, AdminCardListSkeleton, AdminFeedbackDock, AdminSpinner, ProcessingOverlay } from "@/components/admin/feedback-state";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizePaymentMethod } from "@/lib/admin/format";
@@ -331,7 +332,7 @@ function ReviewActionButton({
         title={disabled ? reason : label}
         className={`${tone === "danger" ? "admin-button-danger" : "admin-button-muted"} w-full justify-center disabled:cursor-not-allowed disabled:opacity-45`}
       >
-        {isBusy ? loadingLabel : label}
+        {isBusy ? <AdminSpinner label={loadingLabel} /> : label}
       </button>
       {disabled ? <p className="mt-1 text-xs text-[var(--color-text-muted)]">{reason}</p> : null}
     </div>
@@ -429,6 +430,7 @@ function SubmissionDrawer({
   onClose,
   onAction,
   busyAction,
+  actionError,
   canDecide,
 }: {
   submission: PaymentSubmission | null;
@@ -438,6 +440,7 @@ function SubmissionDrawer({
   onClose: () => void;
   onAction: (action: "review" | "approve" | "reject" | "flag" | "request-new-proof") => void;
   busyAction: string | null;
+  actionError: string;
   canDecide: boolean;
 }) {
   const proof = submission ? proofKind(submission) : "none";
@@ -450,26 +453,33 @@ function SubmissionDrawer({
   const canReject = allowed.canReject && canDecide;
   const canMarkSuspect = allowed.canMarkSuspect;
   const canRequestNewProof = allowed.canRequestNewProof && canDecide;
+  const isProcessing = Boolean(busyAction);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isProcessing) {
         onClose();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [isProcessing, onClose]);
 
   return (
     <div className="fixed inset-0 z-40">
       <button
         type="button"
         aria-label="Fechar detalhe de pagamento"
-        onClick={onClose}
+        onClick={() => {
+          if (!isProcessing) {
+            onClose();
+          }
+        }}
+        disabled={isProcessing}
         className="absolute inset-0 bg-black/35"
       />
       <aside className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_0_80px_rgba(0,0,0,0.24)]">
+      <ProcessingOverlay visible={isProcessing} />
       <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-danger)]">Analise financeira</p>
@@ -477,7 +487,7 @@ function SubmissionDrawer({
             {submission ? `Submissao #${submission.id}` : "Detalhe"}
           </h2>
         </div>
-        <button type="button" onClick={onClose} className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">
+        <button type="button" onClick={onClose} disabled={isProcessing} className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50">
           Fechar
         </button>
       </div>
@@ -578,6 +588,9 @@ function SubmissionDrawer({
                 <textarea value={note} onChange={(event) => setNote(event.target.value)} className="admin-input mt-2 min-h-24 w-full" placeholder="Motivo, referencia interna ou instrucao para o cliente." />
               </label>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <ActionError message={actionError} />
+                </div>
                 <ReviewActionButton
                   label={reviewLabel}
                   loadingLabel={reviewLoadingLabel}
@@ -657,10 +670,14 @@ export function PaymentsManagementView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [paymentInlineError, setPaymentInlineError] = useState("");
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [newPayment, setNewPayment] = useState<PaymentSubmission | null>(null);
   const previousSubmittedCountRef = useRef<number | null>(null);
+  const paymentAction = useAsyncAction({
+    onError: (message) => setFeedback({ tone: "error", message }),
+  });
 
   const canDecide = canManageFinance(profile);
 
@@ -726,7 +743,10 @@ export function PaymentsManagementView() {
 
   useEffect(() => {
     if (hasAccess("payments")) {
-      void load(activeQueue);
+      const timer = window.setTimeout(() => {
+        void load(activeQueue);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQueue, hasAccess]);
@@ -737,6 +757,7 @@ export function PaymentsManagementView() {
   );
 
   async function openDetail(id: number) {
+    if (busyAction) return;
     setSelectedId(id);
     setIsDetailLoading(true);
     setNote("");
@@ -753,7 +774,9 @@ export function PaymentsManagementView() {
 
   async function handleAction(action: "review" | "approve" | "reject" | "flag" | "request-new-proof") {
     if (!selected) return;
+    setPaymentInlineError("");
     if ((action === "reject" || action === "request-new-proof") && !note.trim()) {
+      setPaymentInlineError(action === "reject" ? "Indica o motivo da rejeicao." : "Indica o motivo para pedir novo comprovativo.");
       setFeedback({ tone: "error", message: action === "reject" ? "Indica o motivo da rejeição." : "Indica o motivo para pedir novo comprovativo." });
       return;
     }
@@ -771,7 +794,7 @@ export function PaymentsManagementView() {
       if (!ok) return;
     }
     setBusyAction(action);
-    try {
+    await paymentAction.run(async () => {
       const updated = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${selected.id}/${action}`, {
         method: "POST",
         body: JSON.stringify({ note: note.trim() || null }),
@@ -795,11 +818,8 @@ export function PaymentsManagementView() {
         setSelected(null);
       }
       await load(activeQueue, { silent: true });
-    } catch (actionError) {
-      setFeedback({ tone: "error", message: actionError instanceof Error ? actionError.message : "Nao foi possivel processar a acao." });
-    } finally {
-      setBusyAction(null);
-    }
+    });
+    setBusyAction(null);
   }
 
   const filteredSubmissions = useMemo(() => {
@@ -926,6 +946,7 @@ export function PaymentsManagementView() {
           }}
           onAction={handleAction}
           busyAction={busyAction}
+          actionError={paymentInlineError || paymentAction.error}
           canDecide={canDecide}
         />
       ) : null}

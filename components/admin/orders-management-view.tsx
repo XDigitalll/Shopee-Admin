@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AttentionDot } from "@/components/admin/attention-dot";
-import { AdminBanner, AdminListLoadingOverlay, AdminSpinner, AdminStateCard, AdminTableSkeleton } from "@/components/admin/feedback-state";
+import { ActionError, AdminBanner, AdminListLoadingOverlay, AdminSpinner, AdminStateCard, AdminTableSkeleton, ProcessingOverlay } from "@/components/admin/feedback-state";
+import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useOrders } from "@/hooks/useOrders";
 import { adminApiFetch } from "@/lib/admin/api-client";
@@ -145,12 +146,6 @@ function getOperationalStatus(order: AdminOrderListItem | null) {
   return String(order?.orderStatus || order?.fulfillmentStatus || order?.status || "");
 }
 
-function getActionErrorMessage(error: unknown) {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Nao foi possivel concluir a operacao.";
-}
-
 function paymentQueueForOrder(status: string) {
   if (status === "PAYMENT_UNDER_REVIEW") return "UNDER_REVIEW";
   if (status === "PAYMENT_REJECTED") return "REJECTED";
@@ -282,7 +277,10 @@ function OrdersDrawer({
   onFeedback: (feedback: ActionFeedback) => void;
 }) {
   const { effectiveRole } = useAdminAuth();
-  const [isPending, startTransition] = useTransition();
+  const actionRunner = useAsyncAction({
+    onError: (message) => onFeedback({ message, tone: "error" }),
+  });
+  const isPending = actionRunner.isRunning;
   const actionRegionRef = useRef<HTMLDivElement | null>(null);
   const trackingSteps = getDrawerTrackingSteps(order, mode);
   const paymentValidated = isPaymentValidated(order?.paymentStatus ?? null);
@@ -398,103 +396,84 @@ function OrdersDrawer({
   async function handleOrderAdvance(targetStatus: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED") {
     if (!order) return;
 
-    startTransition(async () => {
-      try {
-        await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
-          method: "PUT",
-          body: JSON.stringify({ status: targetStatus }),
-        });
-        onActionComplete();
-      } catch (error) {
-        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
-      }
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status: targetStatus }),
+      });
+      onActionComplete();
     });
   }
 
   async function handlePaymentValidation() {
     if (!order) return;
 
-    startTransition(async () => {
-      try {
-        await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
-          method: "PUT",
-        });
-        onActionComplete();
-      } catch (error) {
-        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
-      }
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
+        method: "PUT",
+      });
+      onActionComplete();
     });
   }
 
   async function handleMarkReadyForDelivery() {
     if (!order) return;
 
-    startTransition(async () => {
-      try {
-        await adminApiFetch(`/api/admin/orders/${order.id}/mark-ready-for-delivery`, {
-          method: "PATCH",
-        });
-        onFeedback({ message: "Pedido marcado como pronto para entrega.", tone: "success" });
-        onActionComplete();
-      } catch (error) {
-        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
-      }
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/mark-ready-for-delivery`, {
+        method: "PATCH",
+      });
+      onFeedback({ message: "Pedido marcado como pronto para entrega.", tone: "success" });
+      onActionComplete();
     });
   }
 
   async function handleCollectAndClose(targetStatus: "DELIVERED") {
     if (!order) return;
 
-    startTransition(async () => {
-      try {
-        await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
-          method: "PUT",
-        });
-        await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
-          method: "PUT",
-          body: JSON.stringify({ status: targetStatus }),
-        });
-        onActionComplete();
-      } catch (error) {
-        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
-      }
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
+        method: "PUT",
+      });
+      await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status: targetStatus }),
+      });
+      onActionComplete();
     });
   }
 
   async function handleHandoff(targetQueue: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION") {
     if (!order) return;
 
-    startTransition(async () => {
-      try {
-        await adminApiFetch(`/api/admin/orders/${order.id}/handoff`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            targetQueue,
-            note: "Encaminhado pela fila de pedidos",
-          }),
-        });
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/handoff`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          targetQueue,
+          note: "Encaminhado pela fila de pedidos",
+        }),
+      });
 
-        onFeedback({
-          message:
-            targetQueue === "PAYMENTS"
-              ? "Pedido enviado para a equipa de pagamentos."
-              : targetQueue === "DELIVERY"
-                ? "Pedido enviado para a equipa de delivery."
-                : targetQueue === "QUOTES"
-                  ? "Pedido enviado para a equipa de cotacoes."
-                  : "Pedido enviado para a equipa de execucao.",
-          tone: "success",
-        });
-        onActionComplete();
-      } catch (error) {
-        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
-      }
+      onFeedback({
+        message:
+          targetQueue === "PAYMENTS"
+            ? "Pedido enviado para a equipa de pagamentos."
+            : targetQueue === "DELIVERY"
+              ? "Pedido enviado para a equipa de delivery."
+              : targetQueue === "QUOTES"
+                ? "Pedido enviado para a equipa de cotacoes."
+                : "Pedido enviado para a equipa de execucao.",
+        tone: "success",
+      });
+      onActionComplete();
     });
   }
 
   return (
     <aside className="sticky top-[132px] w-full shrink-0 self-start xl:w-[320px]">
-      <div className="admin-card p-5">
+      <div className="admin-card relative p-5">
+        <ProcessingOverlay visible={isPending} />
         {order ? (
           <>
             <div className="mb-5 flex items-start justify-between gap-3">
@@ -509,6 +488,7 @@ function OrdersDrawer({
               <button
                 type="button"
                 onClick={onClose}
+                disabled={isPending}
                 className="rounded-full border border-[var(--color-border)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
               >
                 ×
@@ -603,9 +583,20 @@ function OrdersDrawer({
             </div>
 
             <div ref={actionRegionRef} className="mt-6 flex flex-col gap-3">
+              <ActionError message={actionRunner.error} />
               {action ? (
                 "href" in action ? (
-                  <Link href={action.href} data-auto-focus-action="true" className="admin-button-danger justify-center">
+                  <Link
+                    href={action.href}
+                    data-auto-focus-action="true"
+                    aria-disabled={isPending}
+                    onClick={(event) => {
+                      if (isPending) {
+                        event.preventDefault();
+                      }
+                    }}
+                    className={`admin-button-danger justify-center ${isPending ? "pointer-events-none opacity-60" : ""}`}
+                  >
                     {action.label}
                   </Link>
                 ) : (
@@ -640,7 +631,7 @@ function OrdersDrawer({
                     disabled={isPending}
                     className="admin-button-danger justify-center"
                   >
-                    {isPending ? "A processar..." : action.label}
+                    {isPending ? <AdminSpinner label="A processar..." /> : action.label}
                   </button>
                 )
               ) : null}
@@ -652,11 +643,21 @@ function OrdersDrawer({
                   disabled={isPending}
                   className="admin-button-muted justify-center"
                 >
-                  {isPending ? "A processar..." : "Confirmar cobrança na entrega"}
+                  {isPending ? <AdminSpinner label="A processar..." /> : "Confirmar cobrança na entrega"}
                 </button>
               ) : null}
 
-              <Link href={`/admin/orders/${order.id}`} data-auto-focus-action={!action ? "true" : undefined} className="admin-button-muted justify-center">
+              <Link
+                href={`/admin/orders/${order.id}`}
+                data-auto-focus-action={!action ? "true" : undefined}
+                aria-disabled={isPending}
+                onClick={(event) => {
+                  if (isPending) {
+                    event.preventDefault();
+                  }
+                }}
+                className={`admin-button-muted justify-center ${isPending ? "pointer-events-none opacity-60" : ""}`}
+              >
                 Ver detalhes completos
               </Link>
             </div>
