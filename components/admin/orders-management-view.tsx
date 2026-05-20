@@ -18,10 +18,15 @@ type DrawerAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "mark-status" | "validate-payment" | "collect-and-close" | "handoff";
+      action: "mark-status" | "mark-ready-for-delivery" | "validate-payment" | "collect-and-close" | "handoff";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
       targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION";
     };
+
+type ActionFeedback = {
+  message: string;
+  tone: "success" | "error";
+};
 
 const STATUS_CARDS = [
   { key: "ALL", label: "Tudo", subtitle: "Panorama completo da operacao" },
@@ -62,10 +67,17 @@ const STATUS_THEME: Record<string, string> = {
   PAYMENT_UNDER_REVIEW: "bg-[#EEEDFE] text-[#3C3489]",
   PAYMENT_REJECTED: "bg-[#FCEBEB] text-[#B42318]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
+  READY_FOR_FULFILLMENT: "bg-[#FFF2D6] text-[#8A5A00]",
+  PICKING: "bg-[#E6F7EE] text-[#0E5B3A]",
+  PREPARING: "bg-[#E6F7EE] text-[#0E5B3A]",
+  READY_FOR_DELIVERY: "bg-[#E0F2FE] text-[#0C4A6E]",
+  TO_PURCHASE: "bg-[#FFF2D6] text-[#8A5A00]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
+  PURCHASED: "bg-[#E1F5EE] text-[#085041]",
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
   OUT_FOR_DELIVERY: "bg-[#FDE68A] text-[#854D0E]",
+  DELIVERY_FAILED: "bg-[#FCEBEB] text-[#B42318]",
   DELIVERED: "bg-[#EAF3DE] text-[#27500A]",
   CANCELLED: "bg-[#FCEBEB] text-[#791F1F]",
 };
@@ -90,7 +102,8 @@ const DELIVERY_TRACKING_STEPS = [
 ] as const;
 
 const INTERNAL_DELIVERY_TRACKING_STEPS = [
-  "PAID",
+  "READY_FOR_FULFILLMENT",
+  "READY_FOR_DELIVERY",
   "OUT_FOR_DELIVERY",
   "DELIVERED",
 ] as const;
@@ -128,6 +141,16 @@ function isInternalDeliveryOrder(order: AdminOrderListItem | null) {
   return order?.type === "INTERNAL" && order?.deliveryMethod !== "STORE_PICKUP";
 }
 
+function getOperationalStatus(order: AdminOrderListItem | null) {
+  return String(order?.orderStatus || order?.fulfillmentStatus || order?.status || "");
+}
+
+function getActionErrorMessage(error: unknown) {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Nao foi possivel concluir a operacao.";
+}
+
 function paymentQueueForOrder(status: string) {
   if (status === "PAYMENT_UNDER_REVIEW") return "UNDER_REVIEW";
   if (status === "PAYMENT_REJECTED") return "REJECTED";
@@ -156,21 +179,23 @@ function getDrawerTrackingStatus(order: AdminOrderListItem | null, mode: "orders
     return "";
   }
 
+  const status = getOperationalStatus(order);
+
   if (isPickupOrder(order)) {
-    if (["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(order.status)) {
+    if (["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
       return "ORDERED";
     }
-    return order.status;
+    return status;
   }
 
   if (isInternalDeliveryOrder(order)) {
-    if (order.status === "ORDERED" || order.status === "ARRIVED") {
-      return "PAID";
+    if (status === "ORDERED" || status === "ARRIVED") {
+      return "READY_FOR_DELIVERY";
     }
-    return order.status;
+    return status;
   }
 
-  return mode === "delivery" ? order.status : order.uiStatus;
+  return mode === "delivery" ? status : order.uiStatus;
 }
 
 function getDrawerTrackingStepLabel(step: string, order: AdminOrderListItem | null) {
@@ -206,6 +231,20 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function OperationalStatusBadge({ order }: { order: AdminOrderListItem }) {
+  const status = getOperationalStatus(order);
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+        STATUS_THEME[status] ?? "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
+      }`}
+    >
+      {order.operationalStatusLabel || order.nextActionLabel || humanizeOrderStatus(status)}
+    </span>
+  );
+}
+
 function QueueBadge({ queueStatus }: { queueStatus: Exclude<OrderQueueStatus, "ALL"> }) {
   return <StatusBadge status={queueStatus} />;
 }
@@ -232,7 +271,6 @@ function OrdersDrawer({
   shouldFocusAction,
   onActionFocused,
   mode,
-  operationalContext,
   onFeedback,
 }: {
   order: AdminOrderListItem | null;
@@ -241,8 +279,7 @@ function OrdersDrawer({
   shouldFocusAction: boolean;
   onActionFocused: () => void;
   mode: "orders" | "delivery";
-  operationalContext: OperationalContext;
-  onFeedback: (message: string) => void;
+  onFeedback: (feedback: ActionFeedback) => void;
 }) {
   const { effectiveRole } = useAdminAuth();
   const [isPending, startTransition] = useTransition();
@@ -256,12 +293,14 @@ function OrdersDrawer({
   function primaryAction(orderItem: AdminOrderListItem | null): DrawerAction | null {
     if (!orderItem) return null;
 
+    const status = getOperationalStatus(orderItem);
+
     if (isPickupOrder(orderItem)) {
-      if (orderItem.status === "PAID") {
+      if (status === "PAID") {
         return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
       }
 
-      if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(orderItem.status)) {
+      if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
         if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus)) {
           return { label: "Confirmar cobrança e levantamento", action: "collect-and-close", targetStatus: "DELIVERED" };
         }
@@ -269,7 +308,7 @@ function OrdersDrawer({
         return { label: "Confirmar levantamento", action: "mark-status", targetStatus: "DELIVERED" };
       }
 
-      if (orderItem.status === "DELIVERED") {
+      if (status === "DELIVERED") {
         return { label: "Ver detalhes completos", href: `/admin/orders/${orderItem.id}` };
       }
 
@@ -281,14 +320,11 @@ function OrdersDrawer({
         return null;
       }
 
-      if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus) && orderItem.status === "OUT_FOR_DELIVERY") {
+      if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus) && status === "OUT_FOR_DELIVERY") {
         return { label: "Confirmar cobrança e entrega", action: "collect-and-close", targetStatus: "DELIVERED" };
       }
 
-      const deliveryAction =
-        isInternalDeliveryOrder(orderItem) && orderItem.status === "PAID"
-          ? { label: "Saiu para entrega", targetStatus: "OUT_FOR_DELIVERY" as const }
-          : DELIVERY_NEXT_ACTION[orderItem.status] ?? null;
+      const deliveryAction = DELIVERY_NEXT_ACTION[status] ?? null;
       return deliveryAction
         ? { label: deliveryAction.label, action: "mark-status", targetStatus: deliveryAction.targetStatus }
         : null;
@@ -305,24 +341,31 @@ function OrdersDrawer({
         ? { label: orderItem.uiStatus === "PAYMENT_REJECTED" ? "Ver submissao financeira" : "Ver em pagamentos", href: `/admin/payments?orderId=${orderItem.id}&queue=${paymentQueueForOrder(orderItem.uiStatus)}` }
         : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
     }
-    if (isInternalDeliveryOrder(orderItem) && orderItem.uiStatus === "PAID") {
-      return effectiveRole === "SUPER_ADMIN"
-        ? { label: "Ver em entregas", href: "/admin/delivery" }
-        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
+    if (isInternalDeliveryOrder(orderItem) && status === "READY_FOR_FULFILLMENT") {
+      return { label: "Preparar produto", action: "mark-ready-for-delivery" };
+    }
+    if (isInternalDeliveryOrder(orderItem) && ["PICKING", "PREPARING"].includes(status)) {
+      return { label: "Mandar para entrega", action: "mark-ready-for-delivery" };
+    }
+    if (isInternalDeliveryOrder(orderItem) && status === "READY_FOR_DELIVERY") {
+      return { label: "Ver em entregas", href: "/admin/delivery/pending" };
     }
     if (orderItem.uiStatus === "PAID") {
       return { label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" };
     }
-    if (orderItem.type === "EXTERNAL" && orderItem.status === "ORDERED") {
+    if (orderItem.type === "EXTERNAL" && status === "ORDERED") {
       return { label: "Marcar em transito", action: "mark-status", targetStatus: "IN_TRANSIT" };
     }
-    if (orderItem.type === "EXTERNAL" && orderItem.status === "IN_TRANSIT") {
+    if (orderItem.type === "EXTERNAL" && status === "IN_TRANSIT") {
       return { label: "Marcar como chegado a sede", action: "mark-status", targetStatus: "ARRIVED" };
     }
-    if (orderItem.type === "EXTERNAL" && orderItem.status === "ARRIVED") {
+    if (orderItem.type === "EXTERNAL" && status === "ARRIVED") {
       return effectiveRole === "SUPER_ADMIN"
-        ? { label: "Ver em entregas", href: "/admin/delivery" }
+        ? { label: "Mandar para entrega", action: "handoff", targetQueue: "DELIVERY" }
         : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
+    }
+    if (orderItem.type === "EXTERNAL" && status === "READY_FOR_DELIVERY") {
+      return { label: "Ver em entregas", href: "/admin/delivery/pending" };
     }
     if (orderItem.uiStatus === "DELIVERED") {
       return { label: "Ver recibo", href: `/admin/orders/${orderItem.id}` };
@@ -356,11 +399,15 @@ function OrdersDrawer({
     if (!order) return;
 
     startTransition(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: targetStatus }),
-      });
-      onActionComplete();
+      try {
+        await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
+          method: "PUT",
+          body: JSON.stringify({ status: targetStatus }),
+        });
+        onActionComplete();
+      } catch (error) {
+        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
+      }
     });
   }
 
@@ -368,10 +415,30 @@ function OrdersDrawer({
     if (!order) return;
 
     startTransition(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
-        method: "PUT",
-      });
-      onActionComplete();
+      try {
+        await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
+          method: "PUT",
+        });
+        onActionComplete();
+      } catch (error) {
+        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
+      }
+    });
+  }
+
+  async function handleMarkReadyForDelivery() {
+    if (!order) return;
+
+    startTransition(async () => {
+      try {
+        await adminApiFetch(`/api/admin/orders/${order.id}/mark-ready-for-delivery`, {
+          method: "PATCH",
+        });
+        onFeedback({ message: "Pedido marcado como pronto para entrega.", tone: "success" });
+        onActionComplete();
+      } catch (error) {
+        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
+      }
     });
   }
 
@@ -379,14 +446,18 @@ function OrdersDrawer({
     if (!order) return;
 
     startTransition(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
-        method: "PUT",
-      });
-      await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: targetStatus }),
-      });
-      onActionComplete();
+      try {
+        await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
+          method: "PUT",
+        });
+        await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
+          method: "PUT",
+          body: JSON.stringify({ status: targetStatus }),
+        });
+        onActionComplete();
+      } catch (error) {
+        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
+      }
     });
   }
 
@@ -394,24 +465,30 @@ function OrdersDrawer({
     if (!order) return;
 
     startTransition(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/handoff`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          targetQueue,
-          note: "Encaminhado pela fila de pedidos",
-        }),
-      });
+      try {
+        await adminApiFetch(`/api/admin/orders/${order.id}/handoff`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            targetQueue,
+            note: "Encaminhado pela fila de pedidos",
+          }),
+        });
 
-      onFeedback(
-        targetQueue === "PAYMENTS"
-          ? "Pedido enviado para a equipa de pagamentos."
-          : targetQueue === "DELIVERY"
-            ? "Pedido enviado para a equipa de delivery."
-            : targetQueue === "QUOTES"
-              ? "Pedido enviado para a equipa de cotacoes."
-              : "Pedido enviado para a equipa de execucao."
-      );
-      onActionComplete();
+        onFeedback({
+          message:
+            targetQueue === "PAYMENTS"
+              ? "Pedido enviado para a equipa de pagamentos."
+              : targetQueue === "DELIVERY"
+                ? "Pedido enviado para a equipa de delivery."
+                : targetQueue === "QUOTES"
+                  ? "Pedido enviado para a equipa de cotacoes."
+                  : "Pedido enviado para a equipa de execucao.",
+          tone: "success",
+        });
+        onActionComplete();
+      } catch (error) {
+        onFeedback({ message: getActionErrorMessage(error), tone: "error" });
+      }
     });
   }
 
@@ -445,7 +522,8 @@ function OrdersDrawer({
                 ["Loja de origem", order.sourceStore],
                 ["Valor", formatMoney(order.totalAmount)],
                 ["Fila", humanizeOrderStatus(order.queueStatus)],
-                ["Estado do cliente", humanizeOrderStatus(mode === "delivery" ? order.status : order.customerStage)],
+                ["Status operacional", order.operationalStatusLabel || humanizeOrderStatus(getOperationalStatus(order))],
+                ["Estado do cliente", order.customerStatusLabel || humanizeOrderStatus(order.customerStage)],
                 ["Data", formatDate(order.createdAt)],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-3">
@@ -550,6 +628,11 @@ function OrdersDrawer({
                         return;
                       }
 
+                      if (action.action === "mark-ready-for-delivery") {
+                        void handleMarkReadyForDelivery();
+                        return;
+                      }
+
                       if (action.targetStatus) {
                         void handleOrderAdvance(action.targetStatus);
                       }
@@ -562,7 +645,7 @@ function OrdersDrawer({
                 )
               ) : null}
 
-              {mode === "delivery" && cashOnDelivery && !paymentValidated && order.status !== "OUT_FOR_DELIVERY" && !isPickupOrder(order) ? (
+              {mode === "delivery" && cashOnDelivery && !paymentValidated && getOperationalStatus(order) !== "OUT_FOR_DELIVERY" && !isPickupOrder(order) ? (
                 <button
                   type="button"
                   onClick={() => void handlePaymentValidation()}
@@ -644,7 +727,7 @@ function SharedOrdersView({
   operationalContext,
 }: SharedViewProps) {
   const { hasAccess } = useAdminAuth();
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
   const sortedOrders = useMemo(
     () => orders
       ? { ...orders, content: sortOperationalQueue(orders.content, operationalContext) }
@@ -685,7 +768,7 @@ function SharedOrdersView({
       {error ? <AdminBanner message={error} tone="error" /> : null}
 
       {notice ? <AdminBanner message={notice} tone="success" /> : null}
-      {feedback ? <AdminBanner message={feedback} tone="success" /> : null}
+      {feedback ? <AdminBanner message={feedback.message} tone={feedback.tone} /> : null}
 
       {showStatusCards ? (
         <section className="grid gap-4 xl:grid-cols-5">
@@ -791,7 +874,7 @@ function SharedOrdersView({
             <table className="min-w-full">
               <thead className="bg-[var(--color-background-tertiary)] text-left text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
                 <tr>
-                  {["Numero do pedido", "Cliente", "Tipo", "Valor em MZN", "Estado do cliente", "Fila", "Prioridade", "Data", "Accao"].map((heading) => (
+                  {["Numero do pedido", "Cliente", "Tipo", "Valor em MZN", "Status operacional", "Fila", "Proxima acao", "Prioridade", "Data", "Accao"].map((heading) => (
                     <th key={heading} className="px-6 py-4 font-medium">
                       {heading}
                     </th>
@@ -830,8 +913,20 @@ function SharedOrdersView({
                     <td className="px-6 py-4 font-[family-name:var(--font-sora)] text-base font-semibold">
                       {formatMoney(order.totalAmount)}
                     </td>
-                    <td className="px-6 py-4"><StatusBadge status={drawerMode === "delivery" ? order.status : order.customerStage} /></td>
+                    <td className="px-6 py-4"><OperationalStatusBadge order={order} /></td>
                     <td className="px-6 py-4"><QueueBadge queueStatus={order.queueStatus} /></td>
+                    <td className="px-6 py-4">
+                      <span
+                        title={order.actionReason || order.nextActionLabel || "Sem acao pendente"}
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
+                          order.actionRequired
+                            ? "bg-[#FFF1D6] text-[#9A5B00]"
+                            : "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
+                        }`}
+                      >
+                        {order.nextActionLabel || "Sem acao"}
+                      </span>
+                    </td>
                     <td className="px-6 py-4"><PriorityBadge priority={order.priority} label={order.priorityLabel} /></td>
                     <td className="px-6 py-4 text-sm text-[var(--color-text-secondary)]">{formatDate(order.createdAt)}</td>
                     <td className="px-6 py-4 text-sm font-medium text-[var(--color-danger)]">Ver →</td>
@@ -840,7 +935,7 @@ function SharedOrdersView({
                 })}
                 {!sortedOrders?.content.length && !isLoading ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-8">
+                    <td colSpan={10} className="px-6 py-8">
                       <AdminStateCard
                         title="Sem pedidos nesta vista"
                         message="Ajuste os filtros ou pesquise outro cliente, loja ou periodo para continuar."
@@ -851,7 +946,7 @@ function SharedOrdersView({
                 ) : null}
                 {isLoading && !sortedOrders?.content.length ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-8">
+                    <td colSpan={10} className="px-6 py-8">
                       <div className="space-y-4">
                         <AdminStateCard
                           title="A carregar pedidos"
@@ -904,7 +999,6 @@ function SharedOrdersView({
           shouldFocusAction={shouldFocusAction}
           onActionFocused={onActionFocused}
           mode={drawerMode}
-          operationalContext={operationalContext}
           onFeedback={setFeedback}
         />
       </div>
@@ -952,11 +1046,13 @@ function filterDeliveryOrders(
   }
 
   const content = orders.content.filter((item) => {
+    const status = getOperationalStatus(item);
+
     if (item.type === "INTERNAL") {
       return item.queueStatus === "DELIVERY" && item.deliveryMethod !== "STORE_PICKUP";
     }
     // External orders only enter delivery after the order team marks them as arrived at the company.
-    return item.type === "EXTERNAL" && (item.status === "ARRIVED" || item.status === "OUT_FOR_DELIVERY");
+    return item.type === "EXTERNAL" && (status === "ARRIVED" || status === "OUT_FOR_DELIVERY");
   });
 
   return {

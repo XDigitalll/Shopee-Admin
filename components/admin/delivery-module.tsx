@@ -44,7 +44,7 @@ const ISSUE_OPTIONS = [
 ];
 
 const CLIENT_APP_URL = (process.env.NEXT_PUBLIC_CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
-const READY_FOR_DELIVERY_STATUSES = new Set(["ORDERED", "ARRIVED"]);
+const READY_FOR_DELIVERY_STATUSES = new Set(["READY_FOR_DELIVERY", "DELIVERY_FAILED"]);
 
 type FeedbackState = {
   tone: "success" | "error" | "loading";
@@ -773,7 +773,7 @@ export function DeliveryPendingView() {
     if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
-        message: `${order.number} ainda nao esta pronto para entrega. Aguarda o estado ORDERED ou ARRIVED.`,
+        message: `${order.number} ainda nao esta pronto para entrega. Aguarda o estado READY_FOR_DELIVERY.`,
       });
       return;
     }
@@ -876,7 +876,7 @@ export function DeliveryPendingView() {
     if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
         tone: "error",
-        message: `${order.number} ainda nao esta pronto para sair. Primeiro confirma ORDERED ou chegada ao escritorio.`,
+        message: `${order.number} ainda nao esta pronto para sair. Primeiro confirma que esta pronto para entrega.`,
       });
       return;
     }
@@ -923,7 +923,7 @@ export function DeliveryPendingView() {
       {orders.length === 0 ? (
         <AdminStateCard
           title={driverMode ? "Sem encomendas disponiveis" : "Sem pedidos no escritorio"}
-          message={driverMode ? "Nao ha encomendas no escritorio para pegar neste momento." : "Nao ha encomendas ORDERED/ARRIVED a aguardar taxa ou saida local."}
+          message={driverMode ? "Nao ha encomendas no escritorio para pegar neste momento." : "Nao ha encomendas prontas para entrega a aguardar taxa ou saida local."}
         />
       ) : (
         <div className="space-y-4">
@@ -942,7 +942,7 @@ export function DeliveryPendingView() {
             const canStart = isReadyForDelivery && hasFee && hasDriver;
             const hasSelectedDriver = Boolean(form.driverId?.trim());
             const startBlockReason = !isReadyForDelivery
-              ? "Este pedido ainda nao esta em ORDERED ou ARRIVED para entrega local."
+              ? "Este pedido ainda nao esta pronto para entrega local."
               : driverMode && !hasDriver
                 ? "Pega a encomenda primeiro para ela ficar atribuida a ti."
               : !hasFee

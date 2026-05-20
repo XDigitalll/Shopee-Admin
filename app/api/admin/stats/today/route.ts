@@ -32,6 +32,14 @@ type BackendPaymentSubmissionStats = {
   requestNewProof?: number | null;
 };
 
+type WorkQueueSummary = {
+  orders?: number | null;
+  externalQuotes?: number | null;
+  payments?: number | null;
+  delivery?: number | null;
+  customers?: number | null;
+};
+
 function computeDelta(current: number, baseline: number) {
   if (!baseline) {
     return current > 0 ? 100 : 0;
@@ -41,6 +49,18 @@ function computeDelta(current: number, baseline: number) {
 }
 
 async function getOrderBadges(request: NextRequest) {
+  const workQueueResponse = await fetchBackend(request, "/admin/work-queue/summary");
+  await relayAuthFailure(workQueueResponse);
+  if (workQueueResponse.ok) {
+    const queue = await parseBackendJson<WorkQueueSummary>(workQueueResponse);
+    return {
+      orders: Number(queue.orders ?? 0),
+      quotes: Number(queue.externalQuotes ?? 0),
+      payments: Number(queue.payments ?? 0),
+      delivery: Number(queue.delivery ?? 0),
+    };
+  }
+
   const [dashboardResponse, paymentStatsResponse, paymentQueueResponse] = await Promise.all([
     fetchBackend(request, "/admin/dashboard"),
     fetchBackend(request, "/admin/payments/stats"),

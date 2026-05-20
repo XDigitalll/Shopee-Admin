@@ -66,6 +66,10 @@ export type AdminOrderListItem = {
   type: "EXTERNAL" | "INTERNAL";
   totalAmount: number;
   status: string;
+  orderStatus?: string | null;
+  operationalStatusLabel?: string | null;
+  customerStatusLabel?: string | null;
+  fulfillmentStatus?: string | null;
   uiStatus: RawAdminOrderStatus;
   queueStatus: Exclude<OrderQueueStatus, "ALL">;
   customerStage: CustomerOrderStage;
@@ -78,6 +82,10 @@ export type AdminOrderListItem = {
   paymentStatus: string | null;
   paymentMethod: string | null;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
+  actionRequired?: boolean;
+  actionModule?: string | null;
+  actionReason?: string | null;
+  nextActionLabel?: string | null;
 };
 
 export type OrdersPageResponse = {

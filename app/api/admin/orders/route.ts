@@ -38,6 +38,10 @@ type BackendOrder = {
   deliveryMethod?: "DELIVERY" | "STORE_PICKUP" | null;
   totalAmount?: number;
   status?: string;
+  orderStatus?: string | null;
+  operationalStatusLabel?: string | null;
+  customerStatusLabel?: string | null;
+  fulfillmentStatus?: string | null;
   orderDate?: string;
   externalCartUrl?: string | null;
   sourceStore?: string | null;
@@ -48,6 +52,15 @@ type BackendOrder = {
     status?: string | null;
     method?: string | null;
   } | null;
+  actionRequired?: {
+    required?: boolean;
+    module?: string | null;
+    reason?: string | null;
+    nextActionLabel?: string | null;
+  } | null;
+  actionModule?: string | null;
+  actionReason?: string | null;
+  nextActionLabel?: string | null;
 };
 
 function getOrderNumber(order: Pick<BackendOrder, "id" | "code" | "orderCode">) {
@@ -64,7 +77,8 @@ function getInitials(name: string) {
 }
 
 function mapPriority(order: BackendOrder) {
-  const uiStatus = resolveUiOrderStatus(order.status, order.type ?? "INTERNAL");
+  const operationalStatus = order.orderStatus ?? order.status;
+  const uiStatus = resolveUiOrderStatus(operationalStatus, order.type ?? "INTERNAL");
   const createdAt = new Date(order.orderDate ?? 0).getTime();
   const hoursOpen = Number.isFinite(createdAt) ? (Date.now() - createdAt) / 36e5 : 0;
 
@@ -82,7 +96,8 @@ function mapPriority(order: BackendOrder) {
 function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
   const customer = order.customerFullName || order.customerEmail || "Cliente nao identificado";
   const priority = mapPriority(order);
-  const rawStatus = order.payment?.status === "FAILED" ? "FAILED" : order.status ?? "UNDER_REVIEW";
+  const operationalStatus = order.orderStatus ?? order.status ?? "UNDER_REVIEW";
+  const rawStatus = order.payment?.status === "FAILED" ? "FAILED" : operationalStatus;
 
   return {
     id: order.id,
@@ -92,9 +107,13 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     customerInitials: getInitials(customer),
     type: order.type ?? "INTERNAL",
     totalAmount: Number(order.totalAmount ?? 0),
-    status: rawStatus,
+    status: operationalStatus,
+    orderStatus: operationalStatus,
+    operationalStatusLabel: order.operationalStatusLabel ?? null,
+    customerStatusLabel: order.customerStatusLabel ?? null,
+    fulfillmentStatus: order.fulfillmentStatus ?? order.orderStatus ?? order.status ?? null,
     uiStatus: resolveUiOrderStatus(rawStatus, order.type ?? "INTERNAL"),
-    queueStatus: resolveOrderQueueStatus(rawStatus),
+    queueStatus: resolveOrderQueueStatus(operationalStatus),
     customerStage: resolveCustomerOrderStage(rawStatus),
     priority: priority.priority,
     priorityLabel: priority.priorityLabel,
@@ -105,6 +124,10 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     paymentStatus: order.payment?.status ?? null,
     paymentMethod: order.payment?.method ?? null,
     deliveryMethod: order.deliveryMethod ?? null,
+    actionRequired: Boolean(order.actionRequired?.required ?? false),
+    actionModule: order.actionModule ?? order.actionRequired?.module ?? null,
+    actionReason: order.actionReason ?? order.actionRequired?.reason ?? null,
+    nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
   };
 }
 

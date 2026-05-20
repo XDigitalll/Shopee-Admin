@@ -88,7 +88,7 @@ type BackendOrder = {
   lastIssueType?: string | null;
 };
 
-const PENDING_DELIVERY_STATUSES = new Set(["ORDERED", "ARRIVED"]);
+const PENDING_DELIVERY_STATUSES = new Set(["READY_FOR_DELIVERY", "DELIVERY_FAILED"]);
 const ACTIVE_DELIVERY_STATUSES = new Set(["OUT_FOR_DELIVERY"]);
 
 type BackendDriver = {
