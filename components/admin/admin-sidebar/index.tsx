@@ -87,7 +87,7 @@ const sections = [
     items: [
       { module: "customers", label: "Clientes", href: "/admin/customers", icon: UsersIcon },
       { module: "finance", label: "Finanças", href: "/admin/finance", icon: ChartIcon },
-      { module: "coupons", label: "Cupões", href: "/admin/coupons", icon: WalletIcon, roles: ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"] },
+      { module: "coupons", label: "Cupões", href: "/admin/coupons", icon: WalletIcon, roles: ["FINANCE_MANAGER", "CRM_MANAGER", "ADMIN", "SUPER_ADMIN"] },
     ] satisfies SidebarItem[],
   },
 ];
@@ -138,8 +138,10 @@ function ChangePasswordModal({
       await adminApiFetch("/api/admin/profile/password", {
         method: "PUT",
         body: JSON.stringify({
+          firstAccess: mustChangePassword,
           currentPassword,
           newPassword,
+          confirmPassword,
         }),
       });
       setCurrentPassword("");

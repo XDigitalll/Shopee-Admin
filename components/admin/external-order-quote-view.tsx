@@ -9,6 +9,7 @@ import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney, humanizeOrderStatus } from "@/lib/admin/format";
+import { canManageFinance, canManageOrders } from "@/lib/admin/permissions";
 import type {
   ExchangeRate,
   ExternalOrderDetail,
@@ -39,6 +40,12 @@ type QuoteSummary = {
   margin: number;
   lowMargin: boolean;
 };
+
+function getErrorStatus(error: unknown) {
+  return error && typeof error === "object" && "status" in error
+    ? Number((error as { status?: unknown }).status)
+    : null;
+}
 
 function getStatusTheme(status: string) {
   return status === "EXTERNAL"
@@ -206,7 +213,7 @@ function normalizeDraft(
 
 export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const router = useRouter();
-  const { effectiveRole } = useAdminAuth();
+  const { profile } = useAdminAuth();
   const [detail, setDetail] = useState<ExternalOrderDetail | null>(null);
   const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
   const [draft, setDraft] = useState<ExternalOrderDraft | null>(null);
@@ -218,8 +225,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
   const [isRefusing, setIsRefusing] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const canUseManualExchangeRate =
-    effectiveRole === "SUPER_ADMIN" || effectiveRole === "FINANCE_MANAGER";
+  const canSubmitQuote = canManageOrders(profile);
+  const canUseManualExchangeRate = canManageFinance(profile);
 
   async function refreshQuoteData() {
     const [detailPayload, historyPayload, defaultsPayload] = await Promise.all([
@@ -304,12 +311,12 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
           }
           return withComputedTotals({ ...current, exchangeRate: Number(rate.rate || 0) });
         });
-      } catch {
+      } catch (rateError) {
         if (cancelled) return;
         setActiveRate(null);
-        setActiveRateError(
-          `Configure a taxa ${currency} → MZN em Finanças antes de enviar esta cotação.`
-        );
+        setActiveRateError(getErrorStatus(rateError) === 403
+          ? "Sem permissao para consultar taxa de cambio."
+          : `Configure a taxa ${currency} → MZN em Finanças antes de enviar esta cotação.`);
         if (!useManualExchangeRate) {
           setDraft((current) =>
             current && current.currency === currency
@@ -518,13 +525,15 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 Ver cliente
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setRefuseDialogOpen(true)}
-              className="rounded-full px-4 py-3 text-sm font-semibold text-[var(--color-danger)]"
-            >
-              Recusar pedido
-            </button>
+            {canSubmitQuote ? (
+              <button
+                type="button"
+                onClick={() => setRefuseDialogOpen(true)}
+                className="rounded-full px-4 py-3 text-sm font-semibold text-[var(--color-danger)]"
+              >
+                Recusar pedido
+              </button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -681,9 +690,9 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                     <p className="font-semibold">
                       {activeRateError || `Configure a taxa ${selectedCurrency} → MZN em Finanças antes de enviar esta cotação.`}
                     </p>
-                    <Link href="/admin/finance" className="mt-3 inline-flex rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#7A5712]">
+                    {canUseManualExchangeRate ? <Link href="/admin/finance" className="mt-3 inline-flex rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#7A5712]">
                       Ir para Finanças
-                    </Link>
+                    </Link> : null}
                   </div>
                 )}
 
@@ -993,7 +1002,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
             <div className="mt-6 flex flex-col gap-3">
               <button
                 type="button"
-                disabled={!canSendQuote}
+                disabled={!canSubmitQuote || !canSendQuote}
                 onClick={() =>
                   startTransition(async () => {
                     await sendQuote();
@@ -1009,22 +1018,26 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               </button>
               <button
                 type="button"
+                disabled={!canSubmitQuote}
                 onClick={() =>
                   startTransition(async () => {
                     await saveDraft();
                   })
                 }
-                className="admin-button-muted justify-center"
+                className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Guardar rascunho
               </button>
-              <button
-                type="button"
-                onClick={() => setRefuseDialogOpen(true)}
-                className="text-sm font-semibold text-[var(--color-danger)]"
-              >
-                Recusar pedido
-              </button>
+              {canSubmitQuote ? (
+                <button
+                  type="button"
+                  onClick={() => setRefuseDialogOpen(true)}
+                  className="text-sm font-semibold text-[var(--color-danger)]"
+                >
+                  Recusar pedido
+                </button>
+              ) : null}
+              {!canSubmitQuote ? <p className="text-xs text-[var(--color-text-secondary)]">Sem permissao para enviar ou alterar cotacoes.</p> : null}
             </div>
 
             <div className="mt-8 border-t border-[var(--color-border)] pt-5">

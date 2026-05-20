@@ -2,7 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
-import { AdminBanner, AdminSpinner } from "@/components/admin/feedback-state";
+import { ActionError, AdminSpinner, ProcessingOverlay } from "@/components/admin/feedback-state";
+import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { getDefaultPathForRole, type AdminRole } from "@/lib/admin/roles";
 
@@ -13,15 +14,12 @@ type LoginResponse = {
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const loginAction = useAsyncAction();
+  const isLoading = loginAction.isRunning;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setIsLoading(true);
-    setError("");
-
-    try {
+    await loginAction.run(async () => {
       const payload = await adminApiFetch<LoginResponse>("/api/admin/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
@@ -31,15 +29,13 @@ export default function AdminLoginPage() {
       // AdminAuthProvider bootstraps from /api/admin/auth/me with the new session.
       const defaultPath = getDefaultPathForRole(payload.role);
       window.location.replace(defaultPath);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Não foi possível autenticar.");
-      setIsLoading(false);
-    }
+    });
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#ffefe8,transparent_38%),var(--color-background)] p-6">
-      <div className="admin-card w-full max-w-md p-8">
+      <div className="admin-card relative w-full max-w-md p-8">
+        <ProcessingOverlay visible={isLoading} title="A entrar..." message="Nao feches esta janela." />
         <div className="mb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-danger)]">
             Shopee X Digital
@@ -52,7 +48,8 @@ export default function AdminLoginPage() {
           </p>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit} aria-busy={isLoading}>
+          <fieldset disabled={isLoading} className="space-y-4 disabled:opacity-70">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Email</span>
             <input
@@ -75,11 +72,12 @@ export default function AdminLoginPage() {
             />
           </label>
 
-          {error ? <AdminBanner message={error} tone="error" /> : null}
+          <ActionError message={loginAction.error} />
 
           <button type="submit" className="admin-button-danger w-full justify-center" disabled={isLoading}>
-            {isLoading ? <AdminSpinner label="A autenticar..." /> : "Entrar"}
+            {isLoading ? <AdminSpinner label="A entrar..." /> : "Entrar"}
           </button>
+          </fieldset>
         </form>
       </div>
     </main>

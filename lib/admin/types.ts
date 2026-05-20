@@ -66,6 +66,10 @@ export type AdminOrderListItem = {
   type: "EXTERNAL" | "INTERNAL";
   totalAmount: number;
   status: string;
+  orderStatus?: string | null;
+  operationalStatusLabel?: string | null;
+  customerStatusLabel?: string | null;
+  fulfillmentStatus?: string | null;
   uiStatus: RawAdminOrderStatus;
   queueStatus: Exclude<OrderQueueStatus, "ALL">;
   customerStage: CustomerOrderStage;
@@ -78,6 +82,10 @@ export type AdminOrderListItem = {
   paymentStatus: string | null;
   paymentMethod: string | null;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
+  actionRequired?: boolean;
+  actionModule?: string | null;
+  actionReason?: string | null;
+  nextActionLabel?: string | null;
 };
 
 export type OrdersPageResponse = {
@@ -232,10 +240,13 @@ export type ExternalOrderLineItem = {
   details: string;
   quantity: number;
   originalPriceUsd: number;
+  subtotal?: number | null;
   imageUrl?: string | null;
   productId?: number | null;
   productDescription?: string | null;
   variantLabel?: string | null;
+  variantSku?: string | null;
+  variantAttributes?: Record<string, string> | null;
   categoryName?: string | null;
   stockLabel?: string | null;
 };
@@ -410,6 +421,23 @@ export type AdminPaymentMethodFilter =
 
 export type AdminPaymentPeriodFilter = "ALL" | "TODAY" | "7D" | "30D";
 
+export type AdminPaymentOrderItem = {
+  productId: number | null;
+  productName: string | null;
+  productImageUrl: string | null;
+  variantId: number | null;
+  variantLabel: string | null;
+  variantSku: string | null;
+  variantAttributes: Record<string, string> | null;
+  quantity: number | null;
+  unitPrice: number | null;
+  subtotal: number | null;
+  productLink?: string | null;
+  requestScreenshotUrl?: string | null;
+  externalVariant?: string | null;
+  finalAmountMzn?: number | null;
+};
+
 export type AdminPaymentListItem = {
   id: number;
   status: "PENDING" | "VALIDATED" | "REJECTED" | "CANCELLED";
@@ -430,6 +458,8 @@ export type AdminPaymentListItem = {
   payerPhone: string | null;
   notes: string | null;
   adminNote: string | null;
+  orderItems?: AdminPaymentOrderItem[];
+  allowedActions?: PaymentAllowedActions;
 };
 
 export type AdminPaymentsPageResponse = {
@@ -456,6 +486,15 @@ export type AdminPaymentReceiptResponse = {
 export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED" | "REQUEST_NEW_PROOF";
 export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF";
 export type PaymentMethodType = "EMOLA" | "MPESA" | "BANK_TRANSFER" | "VISA_MANUAL";
+
+export type PaymentAllowedActions = {
+  canStartReview: boolean;
+  canReopenReview?: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canMarkSuspect: boolean;
+  canRequestNewProof: boolean;
+};
 
 export type PaymentSubmissionQueueStats = {
   awaitingSubmission: number;
@@ -511,6 +550,8 @@ export type PaymentSubmission = {
   riskFlags: string[];
   matchedTransactionId: string | null;
   metadata: Record<string, unknown> | null;
+  orderItems?: AdminPaymentOrderItem[];
+  allowedActions?: PaymentAllowedActions;
   orderHistory?: Array<{
     id?: number;
     action?: string | null;

@@ -50,6 +50,53 @@ export function AdminBanner({
   return <div className={`rounded-[24px] border px-5 py-4 text-sm ${toneClasses(tone)}`}>{message}</div>;
 }
 
+export function ActionError({ message }: { message?: string | null }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div
+      className="rounded-2xl border border-[rgba(232,67,26,0.22)] bg-[rgba(232,67,26,0.08)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--color-danger)]"
+      role="alert"
+      aria-live="assertive"
+    >
+      {message}
+    </div>
+  );
+}
+
+export function ProcessingOverlay({
+  visible,
+  title = "A processar...",
+  message = "Nao feches esta janela.",
+}: {
+  visible: boolean;
+  title?: string;
+  message?: string;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <div
+      className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-[rgba(15,23,42,0.52)] px-4 backdrop-blur-[2px]"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="flex w-full max-w-xs flex-col items-center rounded-[24px] border border-[rgba(232,67,26,0.22)] bg-[var(--color-background-secondary)] px-6 py-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
+        <AdminLoadingPulse />
+        <p className="mt-4 font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">
+          {title}
+        </p>
+        <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{message}</p>
+      </div>
+    </div>
+  );
+}
+
 export function AdminStateCard({
   title,
   message,

@@ -4,12 +4,15 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { AdminBanner, AdminCardListSkeleton, AdminFeedbackDock } from "@/components/admin/feedback-state";
+import { ActionError, AdminBanner, AdminCardListSkeleton, AdminFeedbackDock, AdminSpinner, ProcessingOverlay } from "@/components/admin/feedback-state";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizePaymentMethod } from "@/lib/admin/format";
+import { canManageFinance } from "@/lib/admin/permissions";
 import type {
+  AdminPaymentOrderItem,
   AwaitingPaymentSubmissionsPage,
   PaymentAwaitingSubmission,
   PaymentSubmission,
@@ -28,8 +31,7 @@ const QUEUES: Array<{
   { key: "SUBMITTED", label: "Submetidos", empty: "Nenhum pagamento submetido", needsAction: true },
   { key: "UNDER_REVIEW", label: "Em revisao", empty: "Nenhum pagamento em revisao", needsAction: true },
   { key: "APPROVED", label: "Aprovados", empty: "Nenhum pagamento aprovado", needsAction: false },
-  { key: "REJECTED", label: "Rejeitados", empty: "Nenhum pagamento rejeitado", needsAction: false },
-  { key: "SUSPICIOUS", label: "Suspeitos", empty: "Nenhum pagamento suspeito", needsAction: true },
+  { key: "REJECTED", label: "Rejeitados/Suspeitos", empty: "Nenhum pagamento rejeitado ou suspeito", needsAction: true },
   { key: "REQUEST_NEW_PROOF", label: "Novo comprovativo", empty: "Nenhum pedido de novo comprovativo", needsAction: false },
 ];
 
@@ -85,7 +87,7 @@ function queueCount(stats: PaymentSubmissionQueueStats | null, queue: PaymentSub
   if (queue === "SUBMITTED") return stats.submitted;
   if (queue === "UNDER_REVIEW") return stats.underReview;
   if (queue === "APPROVED") return stats.approved;
-  if (queue === "REJECTED") return stats.rejected;
+  if (queue === "REJECTED") return stats.rejected + stats.suspicious;
   if (queue === "REQUEST_NEW_PROOF") return Number(stats.requestNewProof ?? 0);
   return stats.suspicious;
 }
@@ -135,6 +137,134 @@ function proofKind(submission: PaymentSubmission) {
   return submission.proofUrl ? "file" : "none";
 }
 
+const EMPTY_ALLOWED_ACTIONS = {
+  canStartReview: false,
+  canReopenReview: false,
+  canApprove: false,
+  canReject: false,
+  canMarkSuspect: false,
+  canRequestNewProof: false,
+};
+
+function allowedActionsFor(submission: PaymentSubmission | null) {
+  if (!submission) return EMPTY_ALLOWED_ACTIONS;
+  if (submission.allowedActions) return submission.allowedActions;
+  return {
+    canStartReview: submission.status === "SUBMITTED",
+    canReopenReview: submission.status === "FLAGGED",
+    canApprove: submission.status === "UNDER_REVIEW",
+    canReject: submission.status === "UNDER_REVIEW" || submission.status === "FLAGGED",
+    canMarkSuspect: submission.status === "UNDER_REVIEW",
+    canRequestNewProof: ["UNDER_REVIEW", "REJECTED", "FLAGGED"].includes(submission.status),
+  };
+}
+
+function stateHint(submission: PaymentSubmission | null) {
+  if (!submission) return "";
+  if (submission.status === "SUBMITTED") return "Inicia a revisão para liberar as decisões financeiras.";
+  if (submission.status === "UNDER_REVIEW") return "Pagamento em revisão. As ações de decisão estão disponíveis.";
+  if (submission.status === "APPROVED") return "Pagamento aprovado. Não é possível alterar esta submissão.";
+  if (submission.status === "REJECTED") return "Pagamento rejeitado. Só é possível pedir novo comprovativo quando permitido.";
+  if (submission.status === "FLAGGED") return "Pagamento suspeito. Aprovação fica bloqueada; rejeita ou pede novo comprovativo.";
+  if (submission.status === "REQUEST_NEW_PROOF") return "Aguardando novo comprovativo do cliente.";
+  return "";
+}
+
+function disabledReason(action: keyof ReturnType<typeof allowedActionsFor>, submission: PaymentSubmission | null, canDecide: boolean) {
+  if (!submission) return "Seleciona uma submissão.";
+  if (!canDecide && action !== "canStartReview" && action !== "canReopenReview" && action !== "canMarkSuspect") {
+    return "A decisão final exige perfil financeiro.";
+  }
+  if (submission.status === "SUBMITTED" && action !== "canStartReview") return "É preciso iniciar revisão primeiro.";
+  if (submission.status === "UNDER_REVIEW" && (action === "canStartReview" || action === "canReopenReview")) return "Este pagamento já está em revisão.";
+  if (submission.status === "APPROVED") return "Pagamento aprovado não pode ser alterado.";
+  if (submission.status === "REQUEST_NEW_PROOF") return "Aguardando novo comprovativo do cliente.";
+  if (submission.status === "FLAGGED" && action === "canApprove") return "Pagamento suspeito precisa ser reaberto para revisão antes de aprovar.";
+  return "Ação indisponível neste estado.";
+}
+
+function variantText(item: AdminPaymentOrderItem) {
+  if (item.variantLabel) return item.variantLabel;
+  const entries = Object.entries(item.variantAttributes ?? {});
+  if (entries.length) return entries.map(([key, value]) => `${key}: ${value}`).join(" | ");
+  if (item.variantSku) return item.variantSku;
+  return "Sem variante selecionada";
+}
+
+function OrderItemsSummary({ submission }: { submission: PaymentSubmission }) {
+  const items = submission.orderItems ?? [];
+  const externalOrder = submission.orderType === "EXTERNAL";
+
+  return (
+    <section className="rounded-[24px] border border-[var(--color-border)] p-5">
+      <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold">Produtos deste pagamento</h3>
+      <div className="mt-4 space-y-3">
+        {items.length ? items.map((item, index) => (
+          externalOrder ? (
+            <article key={`${item.productId ?? "external"}-${index}`} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+              <div className="flex gap-4">
+                {item.requestScreenshotUrl ? (
+                  <a href={item.requestScreenshotUrl} target="_blank" rel="noreferrer" className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.requestScreenshotUrl} alt="Screenshot do pedido externo" className="h-full w-full object-cover" />
+                  </a>
+                ) : (
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] text-center text-xs font-semibold text-[var(--color-text-muted)]">
+                    Sem imagem
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black text-[var(--color-text-primary)]">{item.productName || "Pedido externo"}</p>
+                  {item.productLink ? (
+                    <a href={item.productLink} target="_blank" rel="noreferrer" className="mt-1 block truncate text-sm font-semibold text-[var(--color-danger)]">
+                      Abrir produto
+                    </a>
+                  ) : null}
+                  <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                    Variante informada: {item.externalVariant || variantText(item)}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Info label="Qtd" value={item.quantity ?? 1} />
+                    <Info label="Valor cotado" value={formatMoney(item.finalAmountMzn ?? item.subtotal ?? 0)} />
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : (
+            <article key={`${item.productId ?? "internal"}-${index}`} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-4">
+              <div className="flex gap-4">
+                {item.productImageUrl ? (
+                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.productImageUrl} alt={item.productName || "Produto"} className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] text-center text-xs font-semibold text-[var(--color-text-muted)]">
+                    Sem imagem
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-[var(--color-text-primary)]">{item.productName || "Produto"}</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Variante: {variantText(item)}</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <Info label="Qtd" value={item.quantity ?? 0} />
+                    <Info label="Preco" value={formatMoney(item.unitPrice ?? 0)} />
+                    <Info label="Subtotal" value={formatMoney(item.subtotal ?? 0)} />
+                  </div>
+                </div>
+              </div>
+            </article>
+          )
+        )) : (
+          <p className="rounded-2xl bg-[var(--color-background-tertiary)] p-4 text-sm text-[var(--color-text-secondary)]">
+            Nenhum item associado ao pagamento.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ActionDot({ visible }: { visible: boolean }) {
   return visible ? <span className="h-2.5 w-2.5 rounded-full bg-[#F97316]" aria-label="Precisa de accao" /> : null;
 }
@@ -169,6 +299,42 @@ function Info({ label, value }: { label: string; value: string | number | null |
     <div className="rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3">
       <p className="text-xs font-semibold text-[var(--color-text-muted)]">{label}</p>
       <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">{value || "Sem registo"}</p>
+    </div>
+  );
+}
+
+function ReviewActionButton({
+  label,
+  loadingLabel,
+  action,
+  busyAction,
+  disabled,
+  reason,
+  tone = "muted",
+  onClick,
+}: {
+  label: string;
+  loadingLabel: string;
+  action: string;
+  busyAction: string | null;
+  disabled: boolean;
+  reason: string;
+  tone?: "muted" | "danger";
+  onClick: () => void;
+}) {
+  const isBusy = busyAction === action;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || Boolean(busyAction)}
+        title={disabled ? reason : label}
+        className={`${tone === "danger" ? "admin-button-danger" : "admin-button-muted"} w-full justify-center disabled:cursor-not-allowed disabled:opacity-45`}
+      >
+        {isBusy ? <AdminSpinner label={loadingLabel} /> : label}
+      </button>
+      {disabled ? <p className="mt-1 text-xs text-[var(--color-text-muted)]">{reason}</p> : null}
     </div>
   );
 }
@@ -264,6 +430,7 @@ function SubmissionDrawer({
   onClose,
   onAction,
   busyAction,
+  actionError,
   canDecide,
 }: {
   submission: PaymentSubmission | null;
@@ -273,14 +440,46 @@ function SubmissionDrawer({
   onClose: () => void;
   onAction: (action: "review" | "approve" | "reject" | "flag" | "request-new-proof") => void;
   busyAction: string | null;
+  actionError: string;
   canDecide: boolean;
 }) {
   const proof = submission ? proofKind(submission) : "none";
-  const canStartReview = submission !== null && (submission.status === "SUBMITTED" || submission.status === "FLAGGED");
-  const canDecideOnReview = submission !== null && submission.status === "UNDER_REVIEW";
+  const allowed = allowedActionsFor(submission);
+  const canOpenReview = allowed.canStartReview || Boolean(allowed.canReopenReview);
+  const reviewLabel = allowed.canReopenReview ? "Reabrir revisao" : "Iniciar revisao";
+  const reviewLoadingLabel = allowed.canReopenReview ? "A reabrir..." : "A iniciar...";
+  const reviewReasonKey = allowed.canReopenReview ? "canReopenReview" : "canStartReview";
+  const canApprove = allowed.canApprove && canDecide;
+  const canReject = allowed.canReject && canDecide;
+  const canMarkSuspect = allowed.canMarkSuspect;
+  const canRequestNewProof = allowed.canRequestNewProof && canDecide;
+  const isProcessing = Boolean(busyAction);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isProcessing) {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isProcessing, onClose]);
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_0_80px_rgba(0,0,0,0.24)]">
+    <div className="fixed inset-0 z-40">
+      <button
+        type="button"
+        aria-label="Fechar detalhe de pagamento"
+        onClick={() => {
+          if (!isProcessing) {
+            onClose();
+          }
+        }}
+        disabled={isProcessing}
+        className="absolute inset-0 bg-black/35"
+      />
+      <aside className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_0_80px_rgba(0,0,0,0.24)]">
+      <ProcessingOverlay visible={isProcessing} />
       <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-danger)]">Analise financeira</p>
@@ -288,7 +487,7 @@ function SubmissionDrawer({
             {submission ? `Submissao #${submission.id}` : "Detalhe"}
           </h2>
         </div>
-        <button type="button" onClick={onClose} className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">
+        <button type="button" onClick={onClose} disabled={isProcessing} className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50">
           Fechar
         </button>
       </div>
@@ -304,6 +503,9 @@ function SubmissionDrawer({
                 {statusBadge(submission.status)}
                 {submission.riskFlags?.length ? <span className="rounded-full bg-[#FFF1F2] px-2.5 py-1 text-xs font-black text-[#BE123C]">Suspeito</span> : null}
               </div>
+              <p className="mt-3 rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-secondary)]">
+                {stateHint(submission)}
+              </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Info label="Pedido" value={submission.orderCode || `#${submission.orderId}`} />
                 <Info label="Tipo" value={submission.orderType === "EXTERNAL" ? "EXT" : submission.orderType === "INTERNAL" ? "INT" : submission.orderType} />
@@ -325,6 +527,8 @@ function SubmissionDrawer({
                 <Info label="Revisto por" value={submission.reviewedBy} />
               </div>
             </section>
+
+            <OrderItemsSummary submission={submission} />
 
             <section className="rounded-[24px] border border-[var(--color-border)] p-5">
               <div className="flex items-center justify-between gap-3">
@@ -384,21 +588,57 @@ function SubmissionDrawer({
                 <textarea value={note} onChange={(event) => setNote(event.target.value)} className="admin-input mt-2 min-h-24 w-full" placeholder="Motivo, referencia interna ou instrucao para o cliente." />
               </label>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <button type="button" onClick={() => onAction("review")} disabled={!canStartReview || Boolean(busyAction)} className="admin-button-muted justify-center">
-                  {busyAction === "review" ? "A iniciar..." : "Iniciar revisao"}
-                </button>
-                <button type="button" onClick={() => onAction("approve")} disabled={!canDecideOnReview || !canDecide || Boolean(busyAction)} className="admin-button-danger justify-center">
-                  {busyAction === "approve" ? "A aprovar..." : "Aprovar pagamento"}
-                </button>
-                <button type="button" onClick={() => onAction("reject")} disabled={!canDecideOnReview || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center">
-                  {busyAction === "reject" ? "A rejeitar..." : "Rejeitar"}
-                </button>
-                <button type="button" onClick={() => onAction("flag")} disabled={!canDecideOnReview || Boolean(busyAction)} className="admin-button-muted justify-center">
-                  {busyAction === "flag" ? "A marcar..." : "Marcar suspeito"}
-                </button>
-                <button type="button" onClick={() => onAction("request-new-proof")} disabled={!canDecideOnReview || !canDecide || Boolean(busyAction)} className="admin-button-muted justify-center sm:col-span-2">
-                  {busyAction === "request-new-proof" ? "A solicitar..." : "Pedir novo comprovativo"}
-                </button>
+                <div className="sm:col-span-2">
+                  <ActionError message={actionError} />
+                </div>
+                <ReviewActionButton
+                  label={reviewLabel}
+                  loadingLabel={reviewLoadingLabel}
+                  action="review"
+                  busyAction={busyAction}
+                  disabled={!canOpenReview}
+                  reason={disabledReason(reviewReasonKey, submission, canDecide)}
+                  onClick={() => onAction("review")}
+                />
+                <ReviewActionButton
+                  label="Aprovar pagamento"
+                  loadingLabel="A aprovar..."
+                  action="approve"
+                  busyAction={busyAction}
+                  disabled={!canApprove}
+                  reason={disabledReason("canApprove", submission, canDecide)}
+                  tone="danger"
+                  onClick={() => onAction("approve")}
+                />
+                <ReviewActionButton
+                  label="Rejeitar"
+                  loadingLabel="A rejeitar..."
+                  action="reject"
+                  busyAction={busyAction}
+                  disabled={!canReject}
+                  reason={disabledReason("canReject", submission, canDecide)}
+                  onClick={() => onAction("reject")}
+                />
+                <ReviewActionButton
+                  label="Marcar suspeito"
+                  loadingLabel="A marcar..."
+                  action="flag"
+                  busyAction={busyAction}
+                  disabled={!canMarkSuspect}
+                  reason={disabledReason("canMarkSuspect", submission, canDecide)}
+                  onClick={() => onAction("flag")}
+                />
+                <div className="sm:col-span-2">
+                  <ReviewActionButton
+                    label="Pedir novo comprovativo"
+                    loadingLabel="A solicitar..."
+                    action="request-new-proof"
+                    busyAction={busyAction}
+                    disabled={!canRequestNewProof}
+                    reason={disabledReason("canRequestNewProof", submission, canDecide)}
+                    onClick={() => onAction("request-new-proof")}
+                  />
+                </div>
               </div>
               {!canDecide ? <p className="mt-3 text-xs text-[var(--color-text-secondary)]">A tua role permite acompanhar a fila, mas a decisao final exige SUPER_ADMIN ou FINANCE_MANAGER.</p> : null}
             </section>
@@ -407,12 +647,13 @@ function SubmissionDrawer({
           <p className="text-sm text-[var(--color-text-secondary)]">Seleciona uma submissao para abrir a analise.</p>
         )}
       </div>
-    </aside>
+      </aside>
+    </div>
   );
 }
 
 export function PaymentsManagementView() {
-  const { hasAccess, effectiveRole } = useAdminAuth();
+  const { hasAccess, profile } = useAdminAuth();
   const searchParams = useSearchParams();
   const initialQueue = (searchParams.get("queue") || "SUBMITTED") as PaymentSubmissionQueue;
   const initialSearch = searchParams.get("orderId") || "";
@@ -429,12 +670,16 @@ export function PaymentsManagementView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [paymentInlineError, setPaymentInlineError] = useState("");
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [newPayment, setNewPayment] = useState<PaymentSubmission | null>(null);
   const previousSubmittedCountRef = useRef<number | null>(null);
+  const paymentAction = useAsyncAction({
+    onError: (message) => setFeedback({ tone: "error", message }),
+  });
 
-  const canDecide = effectiveRole === "SUPER_ADMIN" || effectiveRole === "FINANCE_MANAGER";
+  const canDecide = canManageFinance(profile);
 
   async function load(queue = activeQueue, options: { silent?: boolean } = {}) {
     if (!options.silent) setIsLoading(true);
@@ -464,8 +709,29 @@ export function PaymentsManagementView() {
         setAwaitingPage(pageFrom<PaymentAwaitingSubmission>(list));
         setSubmissionsPage(null);
       } else {
-        const list = await adminApiFetch<PaymentSubmissionsPage>(`/api/admin/payment-submissions?queue=${queue}&page=0&size=50`);
-        setSubmissionsPage(pageFrom<PaymentSubmission>(list));
+        if (queue === "REJECTED") {
+          const [rejected, suspicious] = await Promise.all([
+            adminApiFetch<PaymentSubmissionsPage>("/api/admin/payment-submissions?queue=REJECTED&page=0&size=50"),
+            adminApiFetch<PaymentSubmissionsPage>("/api/admin/payment-submissions?queue=SUSPICIOUS&page=0&size=50"),
+          ]);
+          const rejectedPage = pageFrom<PaymentSubmission>(rejected);
+          const suspiciousPage = pageFrom<PaymentSubmission>(suspicious);
+          const content = [...rejectedPage.content, ...suspiciousPage.content].sort((left, right) => {
+            const leftTime = new Date(left.submittedAt ?? 0).getTime();
+            const rightTime = new Date(right.submittedAt ?? 0).getTime();
+            return rightTime - leftTime;
+          });
+          setSubmissionsPage({
+            content,
+            page: 0,
+            size: 100,
+            totalElements: content.length,
+            totalPages: content.length ? 1 : 0,
+          });
+        } else {
+          const list = await adminApiFetch<PaymentSubmissionsPage>(`/api/admin/payment-submissions?queue=${queue}&page=0&size=50`);
+          setSubmissionsPage(pageFrom<PaymentSubmission>(list));
+        }
         setAwaitingPage(null);
       }
     } catch (loadError) {
@@ -477,7 +743,10 @@ export function PaymentsManagementView() {
 
   useEffect(() => {
     if (hasAccess("payments")) {
-      void load(activeQueue);
+      const timer = window.setTimeout(() => {
+        void load(activeQueue);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQueue, hasAccess]);
@@ -488,6 +757,7 @@ export function PaymentsManagementView() {
   );
 
   async function openDetail(id: number) {
+    if (busyAction) return;
     setSelectedId(id);
     setIsDetailLoading(true);
     setNote("");
@@ -504,7 +774,9 @@ export function PaymentsManagementView() {
 
   async function handleAction(action: "review" | "approve" | "reject" | "flag" | "request-new-proof") {
     if (!selected) return;
+    setPaymentInlineError("");
     if ((action === "reject" || action === "request-new-proof") && !note.trim()) {
+      setPaymentInlineError(action === "reject" ? "Indica o motivo da rejeicao." : "Indica o motivo para pedir novo comprovativo.");
       setFeedback({ tone: "error", message: action === "reject" ? "Indica o motivo da rejeição." : "Indica o motivo para pedir novo comprovativo." });
       return;
     }
@@ -522,12 +794,16 @@ export function PaymentsManagementView() {
       if (!ok) return;
     }
     setBusyAction(action);
-    try {
+    await paymentAction.run(async () => {
       const updated = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${selected.id}/${action}`, {
         method: "POST",
         body: JSON.stringify({ note: note.trim() || null }),
       });
       setSelected(updated);
+      setSubmissionsPage((current) => current ? {
+        ...current,
+        content: current.content.map((item) => item.id === updated.id ? updated : item),
+      } : current);
       setFeedback({
         tone: "success",
         message:
@@ -537,12 +813,13 @@ export function PaymentsManagementView() {
             : action === "request-new-proof" ? "Novo comprovativo solicitado"
             : "Revisao iniciada",
       });
-      await load(activeQueue);
-    } catch (actionError) {
-      setFeedback({ tone: "error", message: actionError instanceof Error ? actionError.message : "Nao foi possivel processar a acao." });
-    } finally {
-      setBusyAction(null);
-    }
+      if (action === "approve" || action === "reject" || action === "request-new-proof") {
+        setSelectedId(null);
+        setSelected(null);
+      }
+      await load(activeQueue, { silent: true });
+    });
+    setBusyAction(null);
   }
 
   const filteredSubmissions = useMemo(() => {
@@ -669,6 +946,7 @@ export function PaymentsManagementView() {
           }}
           onAction={handleAction}
           busyAction={busyAction}
+          actionError={paymentInlineError || paymentAction.error}
           canDecide={canDecide}
         />
       ) : null}

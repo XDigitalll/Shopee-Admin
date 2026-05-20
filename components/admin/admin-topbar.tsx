@@ -6,10 +6,11 @@ import { usePathname } from "next/navigation";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { formatFullDate } from "@/lib/admin/format";
 import { getModuleForPath, MODULE_METADATA } from "@/lib/admin/roles";
+import { canManageCatalog, canManageOrders } from "@/lib/admin/permissions";
 import { PlusIcon, QuoteIcon } from "@/components/admin/icons";
 
 export function AdminTopbar() {
-  const { hasAccess } = useAdminAuth();
+  const { profile } = useAdminAuth();
   const pathname = usePathname();
   const today = formatFullDate(new Date());
   const currentModule = getModuleForPath(pathname);
@@ -30,13 +31,13 @@ export function AdminTopbar() {
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-[var(--color-text-secondary)] lg:block">{today}</span>
-          {hasAccess("products") ? (
+          {canManageCatalog(profile) ? (
             <Link href="/admin/products/new" className="admin-button-muted">
               <PlusIcon className="h-4 w-4" />
               Novo produto
             </Link>
           ) : null}
-          {hasAccess("quotes") ? (
+          {canManageOrders(profile) ? (
             <Link href="/admin/orders" className="admin-button-danger">
               <QuoteIcon className="h-4 w-4" />
               Analisar pedido

@@ -6,6 +6,27 @@ import { getCsrfToken, XSRF_HEADER } from "@/lib/admin/csrf";
 
 type ApiOptions = RequestInit;
 
+type ApiErrorPayload = {
+  message?: unknown;
+  error?: unknown;
+  code?: unknown;
+  details?: unknown;
+};
+
+export class ApiError extends Error {
+  status?: number;
+  code?: string;
+  details?: unknown;
+
+  constructor(message: string, status?: number, code?: string, details?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
 const GET_CACHE_TTL_MS = 5_000;
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -15,6 +36,53 @@ const resolvedGetCache = new Map<string, { expiresAt: number; value: unknown }>(
 function emitAuthChange() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(ADMIN_AUTH_CHANGE_EVENT));
+}
+
+function statusFallbackMessage(status?: number) {
+  if (status === 400 || status === 422) {
+    return "Operacao nao permitida pela base de dados. Verifica os dados e tenta novamente.";
+  }
+  if (status === 401) return "Sessao expirada. Entra novamente.";
+  if (status === 403) return "Sem permissao para esta acao.";
+  if (status === 404) return "Recurso nao encontrado.";
+  if (status === 409) return "Esta operacao entrou em conflito com o estado atual. Atualiza os dados e tenta novamente.";
+  if (status === 429) return "Muitas tentativas. Aguarda um pouco e tenta novamente.";
+  if (typeof status === "number" && status >= 500) return "Erro interno. Tenta novamente.";
+  return "Nao foi possivel concluir a operacao.";
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function parseApiErrorPayload(payload: unknown): ApiErrorPayload {
+  return payload && typeof payload === "object" ? (payload as ApiErrorPayload) : {};
+}
+
+function createApiError(payload: unknown, status?: number) {
+  const parsed = parseApiErrorPayload(payload);
+  const backendMessage = firstString(parsed.message, parsed.error);
+  const shouldUseBackendMessage = !status || status === 400 || status === 422;
+  const message = shouldUseBackendMessage && backendMessage ? backendMessage : statusFallbackMessage(status);
+  return new ApiError(
+    message,
+    status,
+    typeof parsed.code === "string" ? parsed.code : undefined,
+    parsed.details
+  );
+}
+
+export function getApiErrorMessage(error: unknown) {
+  if (error instanceof ApiError || error instanceof Error) {
+    return error.message || statusFallbackMessage(error instanceof ApiError ? error.status : undefined);
+  }
+
+  return statusFallbackMessage();
 }
 
 function clearAdminGetCache() {
@@ -127,7 +195,7 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
       // Session expired — always goes to login, never to "unauthorized".
       clearAdminSession();
       window.location.href = "/admin/login";
-      throw new Error("A tua sessao expirou. Entra novamente.");
+      throw createApiError({ message: "Sessao expirada. Entra novamente." }, response.status);
     }
 
     if (response.status === 403) {
@@ -139,24 +207,20 @@ export async function adminApiFetch<T>(path: string, options: ApiOptions = {}) {
         "error" in payload &&
         payload.error === "CSRF invalido";
       if (isCsrfError) {
-        throw new Error(
-          (payload as { message?: string }).message ??
-            "A validacao de seguranca expirou. Atualize a pagina e tente novamente."
-        );
+          throw createApiError(
+            {
+              message:
+                (payload as { message?: string }).message ??
+                "A validacao de seguranca expirou. Atualize a pagina e tente novamente.",
+            },
+            response.status
+          );
       }
-      window.location.href = "/admin/unauthorized";
-      throw new Error("A tua role nao permite este modulo.");
+      throw createApiError(payload || { message: "Sem permissao para esta acao." }, response.status);
     }
 
     if (!response.ok) {
-      const message =
-        (payload &&
-          typeof payload === "object" &&
-          "message" in payload &&
-          typeof payload.message === "string" &&
-          payload.message) ||
-        "Nao foi possivel concluir a operacao.";
-      throw new Error(message);
+      throw createApiError(payload, response.status);
     }
 
     return payload as T;

@@ -16,6 +16,7 @@ type QueueOrder = {
   queueStatus?: string | null;
   paymentStatus?: string | null;
   type?: string | null;
+  actionRequired?: boolean | null;
 };
 
 const PRIORITY_WEIGHT: Record<OrderPriority, number> = {
@@ -26,7 +27,7 @@ const PRIORITY_WEIGHT: Record<OrderPriority, number> = {
 
 const CLOSED_STATUSES = new Set(["DELIVERED", "CANCELLED", "FAILED", "COMPLETED"]);
 const ORDERS_ACTION_STATUSES = new Set(["CREATED", "UNDER_REVIEW", "QUOTED", "APPROVED"]);
-const DELIVERY_ACTION_STATUSES = new Set(["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"]);
+const DELIVERY_ACTION_STATUSES = new Set(["READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "DELIVERY_FAILED"]);
 const PAYMENT_ACTION_STATUSES = new Set(["PENDING", "PENDING_REVIEW", "SUBMITTED", "FAILED"]);
 const QUOTE_ACTION_STATUSES = new Set(["UNDER_REVIEW", "DRAFT", "REJECTED", "NEEDS_REVIEW"]);
 
@@ -60,6 +61,9 @@ export function isActionRequired(
   }
 
   const order = item as QueueOrder;
+  if (typeof order.actionRequired === "boolean") {
+    return order.actionRequired;
+  }
   const status = normalized(order.status);
   const uiStatus = normalized(order.uiStatus || order.status);
   const queueStatus = normalized(order.queueStatus);

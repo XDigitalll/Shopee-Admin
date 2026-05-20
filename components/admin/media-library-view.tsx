@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
+import { canManageCatalog } from "@/lib/admin/permissions";
 import type { ImageLibraryItem, ImageLibraryPageResponse } from "@/lib/admin/types";
 
 function TrashIcon() {
@@ -10,6 +12,8 @@ function TrashIcon() {
 }
 
 export function MediaLibraryView() {
+  const { profile } = useAdminAuth();
+  const canWriteCatalog = canManageCatalog(profile);
   const [items, setItems] = useState<ImageLibraryItem[]>([]);
   const [page, setPage] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
@@ -123,13 +127,15 @@ export function MediaLibraryView() {
             {totalElements} imagem{totalElements !== 1 ? "ns" : ""} em todos os produtos
           </p>
         </div>
-        <Link
-          href="/admin/products/new"
-          className="rounded-2xl px-4 py-2.5 text-sm font-bold text-white transition"
-          style={{ background: "#E8431A" }}
-        >
-          + Novo produto
-        </Link>
+        {canWriteCatalog ? (
+          <Link
+            href="/admin/products/new"
+            className="rounded-2xl px-4 py-2.5 text-sm font-bold text-white transition"
+            style={{ background: "#E8431A" }}
+          >
+            + Novo produto
+          </Link>
+        ) : null}
       </div>
 
       {/* Grid */}

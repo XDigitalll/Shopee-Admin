@@ -25,6 +25,8 @@ type FormState = {
   sendCredentials: boolean;
 };
 
+type FormErrors = Partial<Record<"fullName" | "email" | "phone" | "password" | "role" | "form", string>>;
+
 const ROLE_PILLS: RolePill[] = ["ALL", "ADMIN", "DELIVERY_DRIVER", "ORDER_MANAGER", "CATALOG_MANAGER", "FINANCE_MANAGER", "CUSTOMER_SUPPORT", "CRM_MANAGER", "ANALYST"];
 
 const STATUS_OPTIONS: Array<{ value: "ALL" | ManagedAdminStatus; label: string }> = [
@@ -221,6 +223,34 @@ function normalizeMozambiquePhone(value: string) {
   if (local.startsWith("258")) local = local.slice(3);
   if (local.startsWith("0")) local = local.slice(1);
   return /^(82|83|84|85|86|87)\d{7}$/.test(local) ? `+258${local}` : null;
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function getFieldErrorClass(hasError: boolean) {
+  return hasError ? "border-[#E8431A] shadow-[0_0_0_3px_rgba(232,67,26,0.14)] focus:border-[#E8431A]" : "";
+}
+
+function inferAdminFormErrors(message: string): FormErrors {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("telefone") || normalized.includes("phone")) {
+    return { phone: message };
+  }
+  if (normalized.includes("email") || normalized.includes("e-mail")) {
+    return { email: message };
+  }
+  if (normalized.includes("senha") || normalized.includes("password")) {
+    return { password: message };
+  }
+  if (normalized.includes("nome") || normalized.includes("name")) {
+    return { fullName: message };
+  }
+  if (normalized.includes("role") || normalized.includes("perfil")) {
+    return { role: message };
+  }
+  return { form: message };
 }
 
 function buildCsv(admins: ManagedAdmin[]) {
@@ -509,11 +539,12 @@ function SuspendModal({ admin, onClose, onConfirm }: { admin: ManagedAdmin; onCl
 }
 
 function AdminFormDrawer({
-  open, mode, form, saving, resettingPassword, resetResult, showPassword, onClose, onTogglePassword, onChange, onGeneratePassword, onSubmit, onResetPassword,
+  open, mode, form, errors, saving, resettingPassword, resetResult, showPassword, onClose, onTogglePassword, onChange, onGeneratePassword, onSubmit, onResetPassword,
 }: {
   open: boolean;
   mode: FormMode;
   form: FormState;
+  errors: FormErrors;
   saving: boolean;
   resettingPassword: boolean;
   resetResult: { password: string | null; emailSent: boolean; emailError: string | null } | null;
@@ -534,35 +565,45 @@ function AdminFormDrawer({
           <h2 className="mt-2 pr-8 font-[family-name:var(--font-sora)] text-xl font-semibold leading-tight text-[var(--color-text-primary)]">{mode === "create" ? "Adicionar administrador" : "Guardar alterações"}</h2>
         </div>
         <div className="space-y-5 px-5 py-5">
+          {errors.form ? (
+            <div className="rounded-[18px] border border-[rgba(232,67,26,0.22)] bg-[rgba(232,67,26,0.08)] px-4 py-3 text-sm font-medium text-[#B42318]" role="alert">
+              {errors.form}
+            </div>
+          ) : null}
           <div className="space-y-4">
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Nome completo</label>
-              <input value={form.fullName} onChange={(event) => onChange("fullName", event.target.value)} className="admin-input w-full" placeholder="Ex: Edson Nedy" />
+              <input value={form.fullName} onChange={(event) => onChange("fullName", event.target.value)} className={`admin-input w-full ${getFieldErrorClass(Boolean(errors.fullName))}`} placeholder="Ex: Edson Nedy" aria-invalid={Boolean(errors.fullName)} />
+              {errors.fullName ? <p className="mt-1 text-xs font-medium leading-5 text-[#E8431A]" role="alert">{errors.fullName}</p> : null}
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Email</label>
-              <input type="email" value={form.email} onChange={(event) => onChange("email", event.target.value)} className="admin-input w-full" placeholder="admin@empresa.com" />
+              <input type="email" value={form.email} onChange={(event) => onChange("email", event.target.value)} className={`admin-input w-full ${getFieldErrorClass(Boolean(errors.email))}`} placeholder="admin@empresa.com" aria-invalid={Boolean(errors.email)} />
+              {errors.email ? <p className="mt-1 text-xs font-medium leading-5 text-[#E8431A]" role="alert">{errors.email}</p> : null}
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Telefone</label>
-              <input value={form.phone} onChange={(event) => onChange("phone", event.target.value)} className="admin-input w-full" inputMode="tel" placeholder="+258 8x xxx xxxx" />
+              <input value={form.phone} onChange={(event) => onChange("phone", event.target.value)} className={`admin-input w-full ${getFieldErrorClass(Boolean(errors.phone))}`} inputMode="tel" placeholder="+258 8x xxx xxxx" aria-invalid={Boolean(errors.phone)} />
+              {errors.phone ? <p className="mt-1 text-xs font-medium leading-5 text-[#E8431A]" role="alert">{errors.phone}</p> : null}
               <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">Use um numero mocambicano valido: 82, 83, 84, 85, 86 ou 87.</p>
             </div>
             {mode === "create" ? (
               <div>
                 <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Senha temporária</label>
                 <div className="relative">
-                  <input type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => onChange("password", event.target.value)} className="admin-input w-full pr-24" />
+                  <input type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => onChange("password", event.target.value)} className={`admin-input w-full pr-24 ${getFieldErrorClass(Boolean(errors.password))}`} aria-invalid={Boolean(errors.password)} />
                   <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
                     <button type="button" onClick={onTogglePassword} className="rounded-full p-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-background-secondary)]">{showPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}</button>
                     <button type="button" onClick={onGeneratePassword} className="rounded-full p-2 text-[#E8431A] hover:bg-[rgba(232,67,26,0.08)]"><SparklesIcon className="h-4 w-4" /></button>
                   </div>
                 </div>
+                {errors.password ? <p className="mt-1 text-xs font-medium leading-5 text-[#E8431A]" role="alert">{errors.password}</p> : null}
               </div>
             ) : null}
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">Role</label>
-              <select value={form.role} onChange={(event) => onChange("role", event.target.value)} className="admin-input w-full">{PERMISSION_ROLES.map((role) => <option key={role} value={role}>{humanizeRole(role)}</option>)}</select>
+              <select value={form.role} onChange={(event) => onChange("role", event.target.value)} className={`admin-input w-full ${getFieldErrorClass(Boolean(errors.role))}`} aria-invalid={Boolean(errors.role)}>{PERMISSION_ROLES.map((role) => <option key={role} value={role}>{humanizeRole(role)}</option>)}</select>
+              {errors.role ? <p className="mt-1 text-xs font-medium leading-5 text-[#E8431A]" role="alert">{errors.role}</p> : null}
               <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{ROLE_DESCRIPTIONS[form.role]}</p>
             </div>
           </div>
@@ -645,6 +686,7 @@ export function AdminManagementView() {
   const [resetResult, setResetResult] = useState<{ password: string | null; emailSent: boolean; emailError: string | null } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState<FormState>(getDefaultFormState());
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [suspendTarget, setSuspendTarget] = useState<ManagedAdmin | null>(null);
   const searchDebounceRef = useRef<number | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
@@ -712,6 +754,7 @@ export function AdminManagementView() {
   function openCreateDrawer() {
     setDrawerMode("create");
     setForm(getDefaultFormState());
+    setFormErrors({});
     setResetResult(null);
     setShowPassword(false);
     setDrawerOpen(true);
@@ -720,6 +763,7 @@ export function AdminManagementView() {
   function openEditDrawer(admin: ManagedAdmin) {
     setDrawerMode("edit");
     setForm({ fullName: admin.name, firstName: admin.firstName, lastName: admin.lastName, email: admin.email, phone: admin.phone ?? "", password: "", role: admin.role ?? "ADMIN", active: admin.status === "ACTIVE", sendCredentials: true });
+    setFormErrors({});
     setResetResult(null);
     setShowPassword(false);
     setDrawerOpen(true);
@@ -727,33 +771,64 @@ export function AdminManagementView() {
 
   function updateForm(field: keyof FormState, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
+    setFormErrors((current) => {
+      const next = { ...current };
+      delete next.form;
+      if (field === "fullName" || field === "email" || field === "phone" || field === "password" || field === "role") {
+        delete next[field];
+      }
+      return next;
+    });
   }
 
   async function submitForm() {
     const fullName = form.fullName.trim();
+    const email = form.email.trim();
     const nameParts = fullName.split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] ?? "";
     const lastName = nameParts.slice(1).join(" ");
     const normalizedPhone = normalizeMozambiquePhone(form.phone);
-    if (!fullName || !form.email.trim()) return showFeedback("error", "Nome completo e email são obrigatórios.");
-    if (normalizedPhone === null) return showFeedback("error", "Telefone invalido. Use um numero mocambicano no formato +2588xxxxxxxx.");
-    if (drawerMode === "create" && !form.password.trim()) return showFeedback("error", "Define uma senha temporária para o novo administrador.");
-    if (drawerMode === "edit" && selectedAdmin?.email === currentUserEmail && form.role !== "SUPER_ADMIN") return showFeedback("error", "Nao podes rebaixar a tua própria role de SUPER_ADMIN.");
-
+    if (!fullName || !email) {
+      setFormErrors({
+        ...(fullName ? {} : { fullName: "Informe o nome completo do administrador." }),
+        ...(email ? {} : { email: "Informe o email do administrador." }),
+      });
+      showFeedback("error", "Corrige os campos assinalados antes de guardar.");
+      return;
+    }
+    const nextErrors: FormErrors = {};
+    if (!fullName) nextErrors.fullName = "Informe o nome completo do administrador.";
+    if (!email) {
+      nextErrors.email = "Informe o email do administrador.";
+    } else if (!isValidEmail(email)) {
+      nextErrors.email = "Email invalido. Use um endereco no formato nome@dominio.com.";
+    }
+    if (normalizedPhone === null) nextErrors.phone = "Telefone invalido. Use um numero mocambicano no formato +2588xxxxxxxx.";
+    if (drawerMode === "create" && !form.password.trim()) nextErrors.password = "Define uma senha temporaria para o novo administrador.";
+    if (!PERMISSION_ROLES.includes(form.role)) nextErrors.role = "Seleciona uma role valida para este administrador.";
+    if (drawerMode === "edit" && selectedAdmin?.email === currentUserEmail && form.role !== "SUPER_ADMIN") nextErrors.role = "Nao podes rebaixar a tua propria role de SUPER_ADMIN.";
+    if (Object.keys(nextErrors).length > 0) {
+      setFormErrors(nextErrors);
+      showFeedback("error", "Corrige os campos assinalados antes de guardar.");
+      return;
+    }
     setSaving(true);
     try {
       if (drawerMode === "create") {
-        await adminApiFetch("/api/super-admin/admins", { method: "POST", body: JSON.stringify({ firstName, lastName, email: form.email.trim(), phone: normalizedPhone, password: form.password, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
+        await adminApiFetch("/api/super-admin/admins", { method: "POST", body: JSON.stringify({ firstName, lastName, email, phone: normalizedPhone, password: form.password, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
         showFeedback("success", "Administrador criado com sucesso.");
       } else if (selectedAdmin) {
-        await adminApiFetch(`/api/super-admin/admins/${selectedAdmin.id}`, { method: "PUT", body: JSON.stringify({ firstName, lastName, email: form.email.trim(), phone: normalizedPhone, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
+        await adminApiFetch(`/api/super-admin/admins/${selectedAdmin.id}`, { method: "PUT", body: JSON.stringify({ firstName, lastName, email, phone: normalizedPhone, role: form.role, active: form.active, sendCredentials: form.sendCredentials }) });
         showFeedback("success", "Alterações guardadas com sucesso.");
       }
+      setFormErrors({});
       setDrawerOpen(false);
       await Promise.all([loadStats(), loadAdmins(page)]);
       if (selectedAdmin) await refreshSelectedAdmin(selectedAdmin.id);
     } catch (error) {
-      showFeedback("error", error instanceof Error ? error.message : "Nao foi possivel guardar o administrador.");
+      const message = error instanceof Error ? error.message : "Nao foi possivel guardar o administrador.";
+      setFormErrors(inferAdminFormErrors(message));
+      showFeedback("error", message);
     } finally {
       setSaving(false);
     }
@@ -941,7 +1016,7 @@ export function AdminManagementView() {
       </div>
 
       <PermissionMatrix />
-      <AdminFormDrawer open={drawerOpen} mode={drawerMode} form={form} saving={saving} resettingPassword={resettingPassword} resetResult={resetResult} showPassword={showPassword} onClose={() => setDrawerOpen(false)} onTogglePassword={() => setShowPassword((current) => !current)} onChange={updateForm} onGeneratePassword={() => updateForm("password", generateSecurePassword())} onSubmit={() => void submitForm()} onResetPassword={drawerMode === "edit" ? () => void handleResetPassword() : null} />
+      <AdminFormDrawer open={drawerOpen} mode={drawerMode} form={form} errors={formErrors} saving={saving} resettingPassword={resettingPassword} resetResult={resetResult} showPassword={showPassword} onClose={() => setDrawerOpen(false)} onTogglePassword={() => setShowPassword((current) => !current)} onChange={updateForm} onGeneratePassword={() => updateForm("password", generateSecurePassword())} onSubmit={() => void submitForm()} onResetPassword={drawerMode === "edit" ? () => void handleResetPassword() : null} />
       {suspendTarget ? <SuspendModal admin={suspendTarget} onClose={() => setSuspendTarget(null)} onConfirm={(payload) => void handleSuspend(payload)} /> : null}
     </div>
   );

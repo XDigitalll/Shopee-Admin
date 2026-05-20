@@ -52,10 +52,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return jsonError("Nao foi possivel carregar o estado atual do pedido.", detailResponse.status);
   }
 
-  const detailPayload = await parseBackendJson<{ content?: Array<{ status?: string | null }> }>(
+  const detailPayload = await parseBackendJson<{ content?: Array<{ status?: string | null; orderStatus?: string | null; fulfillmentStatus?: string | null }> }>(
     detailResponse
   );
-  let currentStatus = String(detailPayload?.content?.[0]?.status ?? "");
+  const currentOrder = detailPayload?.content?.[0];
+  let currentStatus = String(currentOrder?.orderStatus ?? currentOrder?.fulfillmentStatus ?? currentOrder?.status ?? "");
   const targetStatus = String(body?.status);
   if (!ALLOWED_PROGRESSION.includes(currentStatus as (typeof ALLOWED_PROGRESSION)[number])) {
     return jsonError("O estado atual do pedido nao suporta esta transicao administrativa.", 400);

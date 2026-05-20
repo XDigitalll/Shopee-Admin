@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AdminListLoadingOverlay } from "@/components/admin/feedback-state";
+import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import type { AdminProduct, AdminProductsPageResponse, ProductStatus } from "@/lib/admin/types";
 import { formatMoney } from "@/lib/admin/format";
+import { canManageCatalog } from "@/lib/admin/permissions";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +84,9 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 export function ProductsListView() {
+  const { profile } = useAdminAuth();
   const router = useRouter();
+  const canWriteCatalog = canManageCatalog(profile);
 
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [totalElements, setTotalElements] = useState(0);
@@ -224,16 +228,18 @@ export function ProductsListView() {
               <TableIcon /> Tabela
             </button>
           </div>
-          <Link
-            href="/admin/products/new"
-            className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-bold text-white transition"
-            style={{ background: "#E8431A" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#C0360F")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#E8431A")}
-          >
-            <PlusIcon />
-            Novo produto
-          </Link>
+          {canWriteCatalog ? (
+            <Link
+              href="/admin/products/new"
+              className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-bold text-white transition"
+              style={{ background: "#E8431A" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#C0360F")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#E8431A")}
+            >
+              <PlusIcon />
+              Novo produto
+            </Link>
+          ) : null}
         </div>
       </div>
 

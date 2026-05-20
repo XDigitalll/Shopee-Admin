@@ -60,6 +60,8 @@ function mapItem(item: Partial<AdminPaymentListItem>): AdminPaymentListItem {
     payerPhone: item.payerPhone ?? null,
     notes: item.notes ?? null,
     adminNote: item.adminNote ?? null,
+    orderItems: item.orderItems ?? [],
+    allowedActions: item.allowedActions,
   };
 }
 
