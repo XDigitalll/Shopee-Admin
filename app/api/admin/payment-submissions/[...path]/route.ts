@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { fetchBackend, jsonError, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
+import { fetchBackend, jsonErrorPayload, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 
 type RouteContext = {
   params: Promise<{
@@ -28,11 +28,7 @@ async function forward(request: NextRequest, context: RouteContext) {
   const payload = await parseBackendJson<unknown>(response);
 
   if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
-        ? payload.message
-        : "Nao foi possivel processar a submissao de pagamento.";
-    return jsonError(message, response.status);
+    return jsonErrorPayload(payload, response.status, "Nao foi possivel processar a submissao de pagamento.");
   }
 
   return NextResponse.json(payload);

@@ -504,6 +504,7 @@ export type PaymentSubmissionQueueStats = {
   rejected: number;
   suspicious: number;
   requestNewProof?: number;
+  pendingAttentionCount?: number;
 };
 
 export type PaymentAwaitingSubmission = {
@@ -543,6 +544,13 @@ export type PaymentSubmission = {
   proofUrl: string | null;
   proofType: string | null;
   status: PaymentSubmissionStatus;
+  bucket?: PaymentSubmissionQueue | null;
+  currentBucket?: PaymentSubmissionQueue | null;
+  isResubmission?: boolean | null;
+  hasUnreadChanges?: boolean | null;
+  actionRequired?: boolean | null;
+  actionReason?: string | null;
+  isTerminal?: boolean | null;
   submittedAt: string | null;
   reviewedAt: string | null;
   reviewedBy: string | null;
