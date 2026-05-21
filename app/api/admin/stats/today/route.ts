@@ -30,6 +30,7 @@ type BackendPaymentSubmissionStats = {
   underReview?: number | null;
   suspicious?: number | null;
   requestNewProof?: number | null;
+  pendingAttentionCount?: number | null;
 };
 
 type WorkQueueSummary = {
@@ -83,7 +84,7 @@ async function getOrderBadges(request: NextRequest) {
   const paymentQueuePayload = paymentQueueResponse.ok
     ? await parseBackendJson<BackendPaymentSubmissionStats>(paymentQueueResponse)
     : null;
-  const paymentQueueCount =
+  const paymentQueueCount = Number(paymentQueuePayload?.pendingAttentionCount ?? 0) ||
     Number(paymentQueuePayload?.submitted ?? 0) +
     Number(paymentQueuePayload?.underReview ?? 0) +
     Number(paymentQueuePayload?.suspicious ?? 0);

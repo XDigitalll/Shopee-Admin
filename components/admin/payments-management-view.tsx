@@ -8,7 +8,7 @@ import { ActionError, AdminBanner, AdminCardListSkeleton, AdminFeedbackDock, Adm
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
-import { adminApiFetch } from "@/lib/admin/api-client";
+import { ApiError, adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizePaymentMethod } from "@/lib/admin/format";
 import { canManageFinance } from "@/lib/admin/permissions";
 import type {
@@ -31,8 +31,9 @@ const QUEUES: Array<{
   { key: "SUBMITTED", label: "Submetidos", empty: "Nenhum pagamento submetido", needsAction: true },
   { key: "UNDER_REVIEW", label: "Em revisao", empty: "Nenhum pagamento em revisao", needsAction: true },
   { key: "APPROVED", label: "Aprovados", empty: "Nenhum pagamento aprovado", needsAction: false },
-  { key: "REJECTED", label: "Rejeitados/Suspeitos", empty: "Nenhum pagamento rejeitado ou suspeito", needsAction: true },
-  { key: "REQUEST_NEW_PROOF", label: "Novo comprovativo", empty: "Nenhum pedido de novo comprovativo", needsAction: false },
+  { key: "REJECTED", label: "Rejeitados", empty: "Nenhum pagamento rejeitado", needsAction: false },
+  { key: "SUSPICIOUS", label: "Suspeitos", empty: "Nenhum pagamento suspeito", needsAction: true },
+  { key: "REQUEST_NEW_PROOF", label: "Novo comprovativo", empty: "Nenhum novo comprovativo ou pedido pendente", needsAction: true },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -87,9 +88,10 @@ function queueCount(stats: PaymentSubmissionQueueStats | null, queue: PaymentSub
   if (queue === "SUBMITTED") return stats.submitted;
   if (queue === "UNDER_REVIEW") return stats.underReview;
   if (queue === "APPROVED") return stats.approved;
-  if (queue === "REJECTED") return stats.rejected + stats.suspicious;
+  if (queue === "REJECTED") return stats.rejected;
+  if (queue === "SUSPICIOUS") return stats.suspicious;
   if (queue === "REQUEST_NEW_PROOF") return Number(stats.requestNewProof ?? 0);
-  return stats.suspicious;
+  return 0;
 }
 
 function methodBadge(method: string | null | undefined) {
@@ -145,6 +147,8 @@ const EMPTY_ALLOWED_ACTIONS = {
   canMarkSuspect: false,
   canRequestNewProof: false,
 };
+
+type PaymentDrawerAction = "review" | "reopen-review" | "approve" | "reject" | "flag" | "request-new-proof";
 
 function allowedActionsFor(submission: PaymentSubmission | null) {
   if (!submission) return EMPTY_ALLOWED_ACTIONS;
@@ -373,7 +377,7 @@ function SubmissionCard({
   onClick: () => void;
 }) {
   const flags = item.riskFlags ?? [];
-  const actionRequired = ["SUBMITTED", "UNDER_REVIEW", "FLAGGED"].includes(item.status);
+  const actionRequired = Boolean(item.hasUnreadChanges ?? (item.actionRequired && item.status !== "REJECTED" && item.status !== "APPROVED"));
   return (
     <button
       type="button"
@@ -393,10 +397,12 @@ function SubmissionCard({
           <p className="mt-1 truncate text-sm text-[var(--color-text-secondary)]">
             {item.customerName || item.payerName || "Cliente sem nome"} {item.customerPhone ? `- ${item.customerPhone}` : item.payerPhone ? `- ${item.payerPhone}` : ""}
           </p>
+          {item.actionReason ? <p className="mt-1 text-xs font-bold text-[#C2410C]">{item.actionReason}</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {methodBadge(item.paymentMethod)}
           {statusBadge(item.status)}
+          {item.isResubmission ? <span className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-xs font-bold text-[#1D4ED8]">Novo comprovativo</span> : null}
         </div>
       </div>
 
@@ -438,7 +444,7 @@ function SubmissionDrawer({
   note: string;
   setNote: (value: string) => void;
   onClose: () => void;
-  onAction: (action: "review" | "approve" | "reject" | "flag" | "request-new-proof") => void;
+  onAction: (action: PaymentDrawerAction) => void;
   busyAction: string | null;
   actionError: string;
   canDecide: boolean;
@@ -446,7 +452,8 @@ function SubmissionDrawer({
   const proof = submission ? proofKind(submission) : "none";
   const allowed = allowedActionsFor(submission);
   const canOpenReview = allowed.canStartReview || Boolean(allowed.canReopenReview);
-  const reviewLabel = allowed.canReopenReview ? "Reabrir revisao" : "Iniciar revisao";
+  const reviewAction: PaymentDrawerAction = allowed.canReopenReview ? "reopen-review" : "review";
+  const reviewLabel = submission?.status === "UNDER_REVIEW" ? "Ja em revisao" : allowed.canReopenReview ? "Reabrir revisao" : "Iniciar revisao";
   const reviewLoadingLabel = allowed.canReopenReview ? "A reabrir..." : "A iniciar...";
   const reviewReasonKey = allowed.canReopenReview ? "canReopenReview" : "canStartReview";
   const canApprove = allowed.canApprove && canDecide;
@@ -501,7 +508,7 @@ function SubmissionDrawer({
               <div className="flex flex-wrap items-center gap-2">
                 {methodBadge(submission.paymentMethod)}
                 {statusBadge(submission.status)}
-                {submission.riskFlags?.length ? <span className="rounded-full bg-[#FFF1F2] px-2.5 py-1 text-xs font-black text-[#BE123C]">Suspeito</span> : null}
+                {submission.riskFlags?.length ? <span className="rounded-full bg-[#FFF7ED] px-2.5 py-1 text-xs font-black text-[#C2410C]">Alerta de risco</span> : null}
               </div>
               <p className="mt-3 rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-secondary)]">
                 {stateHint(submission)}
@@ -594,11 +601,11 @@ function SubmissionDrawer({
                 <ReviewActionButton
                   label={reviewLabel}
                   loadingLabel={reviewLoadingLabel}
-                  action="review"
+                  action={reviewAction}
                   busyAction={busyAction}
                   disabled={!canOpenReview}
                   reason={disabledReason(reviewReasonKey, submission, canDecide)}
-                  onClick={() => onAction("review")}
+                  onClick={() => onAction(reviewAction)}
                 />
                 <ReviewActionButton
                   label="Aprovar pagamento"
@@ -663,8 +670,9 @@ export function PaymentsManagementView() {
   const [stats, setStats] = useState<PaymentSubmissionQueueStats | null>(null);
   const [submissionsPage, setSubmissionsPage] = useState<PaymentSubmissionsPage | null>(null);
   const [awaitingPage, setAwaitingPage] = useState<AwaitingPaymentSubmissionsPage | null>(null);
+  // SINGLE SOURCE OF TRUTH: selectedId + selectedDetail (full data from the detail endpoint)
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [selected, setSelected] = useState<PaymentSubmission | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<PaymentSubmission | null>(null);
   const [search, setSearch] = useState(initialSearch);
   const [note, setNote] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -674,12 +682,70 @@ export function PaymentsManagementView() {
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [newPayment, setNewPayment] = useState<PaymentSubmission | null>(null);
+
   const previousSubmittedCountRef = useRef<number | null>(null);
+  // Refs for use inside async callbacks (avoids stale closure over state)
+  const selectedIdRef = useRef<number | null>(null);
+  const ownActionRef = useRef(false);
+  const prevStatusRef = useRef<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const paymentAction = useAsyncAction({
-    onError: (message) => setFeedback({ tone: "error", message }),
+    onError: (message, actionError) => setFeedback({
+      tone: "error",
+      message: actionError instanceof ApiError && actionError.status === 409
+        ? "Este pagamento foi atualizado. Reve o estado atual."
+        : message,
+    }),
   });
 
   const canDecide = canManageFinance(profile);
+
+  // DERIVED: drawer always reads from selectedDetail — never a stale local snapshot
+  const selectedPayment = selectedId !== null ? selectedDetail : null;
+
+  // Keep selectedIdRef in sync with the selectedId state for use in async callbacks
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  // Detect external status change (live refresh updated the drawer) → transient toast
+  useEffect(() => {
+    if (!selectedPayment) {
+      prevStatusRef.current = null;
+      return;
+    }
+    const prev = prevStatusRef.current;
+    const curr = selectedPayment.status;
+    if (prev !== null && prev !== curr && !ownActionRef.current) {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setFeedback({ tone: "success", message: "Este pagamento foi atualizado." });
+      toastTimerRef.current = setTimeout(() => setFeedback(null), 5000);
+    }
+    prevStatusRef.current = curr;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPayment?.status]);
+
+  async function fetchAndSetDetail(id: number, silent = false) {
+    if (!silent) setIsDetailLoading(true);
+    try {
+      const detail = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${id}?t=${Date.now()}`);
+      setSelectedDetail(detail);
+      return detail;
+    } finally {
+      if (!silent) setIsDetailLoading(false);
+    }
+  }
+
+  function closeDrawer() {
+    selectedIdRef.current = null;
+    prevStatusRef.current = null;
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setSelectedId(null);
+    setSelectedDetail(null);
+    setNote("");
+    setPaymentInlineError("");
+  }
 
   async function load(queue = activeQueue, options: { silent?: boolean } = {}) {
     if (!options.silent) setIsLoading(true);
@@ -709,29 +775,8 @@ export function PaymentsManagementView() {
         setAwaitingPage(pageFrom<PaymentAwaitingSubmission>(list));
         setSubmissionsPage(null);
       } else {
-        if (queue === "REJECTED") {
-          const [rejected, suspicious] = await Promise.all([
-            adminApiFetch<PaymentSubmissionsPage>("/api/admin/payment-submissions?queue=REJECTED&page=0&size=50"),
-            adminApiFetch<PaymentSubmissionsPage>("/api/admin/payment-submissions?queue=SUSPICIOUS&page=0&size=50"),
-          ]);
-          const rejectedPage = pageFrom<PaymentSubmission>(rejected);
-          const suspiciousPage = pageFrom<PaymentSubmission>(suspicious);
-          const content = [...rejectedPage.content, ...suspiciousPage.content].sort((left, right) => {
-            const leftTime = new Date(left.submittedAt ?? 0).getTime();
-            const rightTime = new Date(right.submittedAt ?? 0).getTime();
-            return rightTime - leftTime;
-          });
-          setSubmissionsPage({
-            content,
-            page: 0,
-            size: 100,
-            totalElements: content.length,
-            totalPages: content.length ? 1 : 0,
-          });
-        } else {
-          const list = await adminApiFetch<PaymentSubmissionsPage>(`/api/admin/payment-submissions?queue=${queue}&page=0&size=50`);
-          setSubmissionsPage(pageFrom<PaymentSubmission>(list));
-        }
+        const list = await adminApiFetch<PaymentSubmissionsPage>(`/api/admin/payment-submissions?queue=${queue}&page=0&size=50`);
+        setSubmissionsPage(pageFrom<PaymentSubmission>(list));
         setAwaitingPage(null);
       }
     } catch (loadError) {
@@ -752,28 +797,37 @@ export function PaymentsManagementView() {
   }, [activeQueue, hasAccess]);
 
   useAdminLiveRefresh(
-    () => load(activeQueue, { silent: true }),
+    async () => {
+      await load(activeQueue, { silent: true });
+      const openId = selectedIdRef.current;
+      if (openId && !ownActionRef.current) {
+        await fetchAndSetDetail(openId, true).catch(() => null);
+      }
+    },
     { enabled: hasAccess("payments"), intervalMs: 8_000, minIntervalMs: 4_000, runOnMount: false }
   );
 
   async function openDetail(id: number) {
     if (busyAction) return;
+    selectedIdRef.current = id;
+    prevStatusRef.current = null;
     setSelectedId(id);
-    setIsDetailLoading(true);
+    setSelectedDetail(null);
     setNote("");
+    setPaymentInlineError("");
     try {
-      const detail = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${id}`);
-      setSelected(detail);
+      const detail = await fetchAndSetDetail(id, false);
       setNote(detail.reviewNote || "");
+      // Fire-and-forget: mark as seen to clear the unread badge
+      adminApiFetch(`/api/admin/payment-submissions/${id}/seen`, { method: "PATCH" }).catch(() => null);
     } catch (detailError) {
       setFeedback({ tone: "error", message: detailError instanceof Error ? detailError.message : "Nao foi possivel abrir a submissao." });
-    } finally {
-      setIsDetailLoading(false);
+      closeDrawer();
     }
   }
 
-  async function handleAction(action: "review" | "approve" | "reject" | "flag" | "request-new-proof") {
-    if (!selected) return;
+  async function handleAction(action: PaymentDrawerAction) {
+    if (!selectedPayment) return;
     setPaymentInlineError("");
     if ((action === "reject" || action === "request-new-proof") && !note.trim()) {
       setPaymentInlineError(action === "reject" ? "Indica o motivo da rejeicao." : "Indica o motivo para pedir novo comprovativo.");
@@ -793,17 +847,19 @@ export function PaymentsManagementView() {
       );
       if (!ok) return;
     }
+
+    const targetId = selectedPayment.id;
+    const closesDrawer = action === "approve" || action === "reject" || action === "request-new-proof";
+
+    ownActionRef.current = true;
     setBusyAction(action);
-    await paymentAction.run(async () => {
-      const updated = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${selected.id}/${action}`, {
+
+    const result = await paymentAction.run(async () => {
+      // Execute action — backend is authoritative; no pre-check needed
+      await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${targetId}/${action}`, {
         method: "POST",
         body: JSON.stringify({ note: note.trim() || null }),
       });
-      setSelected(updated);
-      setSubmissionsPage((current) => current ? {
-        ...current,
-        content: current.content.map((item) => item.id === updated.id ? updated : item),
-      } : current);
       setFeedback({
         tone: "success",
         message:
@@ -811,14 +867,32 @@ export function PaymentsManagementView() {
             : action === "reject" ? "Pagamento rejeitado"
             : action === "flag" ? "Pagamento marcado como suspeito"
             : action === "request-new-proof" ? "Novo comprovativo solicitado"
+            : action === "reopen-review" ? "Revisao reaberta"
             : "Revisao iniciada",
       });
-      if (action === "approve" || action === "reject" || action === "request-new-proof") {
-        setSelectedId(null);
-        setSelected(null);
+      if (closesDrawer) {
+        closeDrawer();
       }
+      // Reload list — no local mutations to state
       await load(activeQueue, { silent: true });
+      // If drawer is still open, refresh detail and sync note from server
+      if (!closesDrawer && selectedIdRef.current) {
+        const fresh = await fetchAndSetDetail(selectedIdRef.current, true).catch(() => null);
+        if (fresh) setNote(fresh.reviewNote || "");
+      }
+      return true;
     });
+
+    if (!result) {
+      // Action failed: refresh to show the current server state
+      await load(activeQueue, { silent: true });
+      const openId = selectedIdRef.current;
+      if (openId) {
+        await fetchAndSetDetail(openId, true).catch(() => null);
+      }
+    }
+
+    ownActionRef.current = false;
     setBusyAction(null);
   }
 
@@ -936,14 +1010,11 @@ export function PaymentsManagementView() {
 
       {selectedId ? (
         <SubmissionDrawer
-          submission={selected}
+          submission={selectedPayment}
           isLoading={isDetailLoading}
           note={note}
           setNote={setNote}
-          onClose={() => {
-            setSelectedId(null);
-            setSelected(null);
-          }}
+          onClose={closeDrawer}
           onAction={handleAction}
           busyAction={busyAction}
           actionError={paymentInlineError || paymentAction.error}

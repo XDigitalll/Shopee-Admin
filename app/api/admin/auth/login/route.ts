@@ -43,6 +43,13 @@ export async function POST(request: NextRequest) {
             typeof payload.message === "string" &&
             payload.message) ||
           "Não foi possível autenticar no backend.",
+        code:
+          payload &&
+          typeof payload === "object" &&
+          "code" in payload &&
+          typeof payload.code === "string"
+            ? payload.code
+            : undefined,
       },
       { status: response.status }
     );

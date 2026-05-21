@@ -97,6 +97,15 @@ export function jsonError(message: string, status: number) {
   return NextResponse.json({ message }, { status });
 }
 
+export function jsonErrorPayload(payload: unknown, status: number, fallback: string) {
+  const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  return NextResponse.json({
+    message: typeof body.message === "string" ? body.message : fallback,
+    code: typeof body.code === "string" ? body.code : undefined,
+    details: body.details,
+  }, { status });
+}
+
 export async function relayAuthFailure(response: Response) {
   if (response.status === 401) {
     const cookieStore = await cookies();
