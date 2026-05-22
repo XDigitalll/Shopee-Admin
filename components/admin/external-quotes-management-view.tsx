@@ -20,19 +20,18 @@ import type {
 } from "@/lib/admin/types";
 
 const STATUS_CARDS = [
-  { key: "ALL", label: "Todos", statKey: "all" },
-  { key: "UNDER_REVIEW", label: "Por analisar", statKey: "underReview" },
-  { key: "DRAFT", label: "Rascunhos", statKey: "draft" },
-  { key: "SENT", label: "Enviadas", statKey: "sent" },
+  { key: "QUOTE_ANALYSIS", label: "Por analisar", statKey: "pendingAnalysis" },
+  { key: "WAITING_CUSTOMER", label: "Aguardando cliente", statKey: "waitingCustomer" },
+  { key: "WAITING_PAYMENT", label: "Pagamento", statKey: "waitingPayment" },
+  { key: "TO_PURCHASE", label: "Comprar fornecedor", statKey: "toPurchase" },
 ] as const;
 
 const STATUS_PILLS = [
-  { key: "ALL", label: "Todos" },
-  { key: "UNDER_REVIEW", label: "Por analisar" },
-  { key: "DRAFT", label: "Rascunho" },
-  { key: "SENT", label: "Enviada" },
-  { key: "APPROVED", label: "Aprovada" },
-  { key: "REJECTED", label: "Recusada" },
+  { key: "QUOTE_ANALYSIS", label: "Por analisar" },
+  { key: "WAITING_CUSTOMER", label: "Aguardando cliente" },
+  { key: "WAITING_PAYMENT", label: "Pagamento" },
+  { key: "TO_PURCHASE", label: "Comprar fornecedor" },
+  { key: "ARCHIVED", label: "Historico" },
 ] as const;
 
 const STORE_OPTIONS = [
@@ -60,8 +59,19 @@ const STATUS_BADGES: Record<string, string> = {
   REJECTED: "bg-[#FCEBEB] text-[#791F1F]",
 };
 
+const QUEUE_LABELS: Record<string, string> = {
+  QUOTE_ANALYSIS: "Por analisar",
+  WAITING_CUSTOMER: "Aguardando cliente",
+  WAITING_PAYMENT: "Pagamento",
+  TO_PURCHASE: "Comprar fornecedor",
+  PURCHASED: "Fornecedor",
+  IN_TRANSIT: "Em transito",
+  ARRIVED: "Delivery",
+  ARCHIVED: "Historico",
+};
+
 const defaultFilters: AdminQuotesFilterState = {
-  status: "ALL",
+  status: "QUOTE_ANALYSIS",
   search: "",
   store: "ALL",
   sort: "RECENT",
@@ -70,12 +80,16 @@ const defaultFilters: AdminQuotesFilterState = {
 };
 
 function buildAction(item: AdminQuoteListItem) {
-  if (item.status === "UNDER_REVIEW") {
+  if (item.quoteQueueStatus === "QUOTE_ANALYSIS") {
     return { label: "Analisar e cotar →", href: `/admin/orders/${item.id}/quote` };
   }
 
   if (item.status === "DRAFT") {
     return { label: "Continuar →", href: `/admin/orders/${item.id}/quote` };
+  }
+
+  if (item.quoteQueueStatus === "TO_PURCHASE") {
+    return { label: "Comprar no fornecedor", href: `/admin/orders/${item.id}` };
   }
 
   if (item.status === "SENT") {
@@ -93,7 +107,7 @@ function quoteNeedsAttention(item: AdminQuoteListItem | AdminQuoteDetail) {
 }
 
 function buildDetailActions(detail: AdminQuoteDetail, role: AdminRole | null) {
-  if (detail.status === "UNDER_REVIEW") {
+  if (detail.quoteQueueStatus === "QUOTE_ANALYSIS") {
     return {
       primary: { label: "Analisar e cotar", href: `/admin/orders/${detail.id}/quote` },
       secondary: { label: "Ver link", href: detail.externalCartUrl || "#" },
@@ -119,7 +133,9 @@ function buildDetailActions(detail: AdminQuoteDetail, role: AdminRole | null) {
 
   if (detail.status === "APPROVED") {
     return {
-      primary: { label: "Ver detalhes completos", href: `/admin/orders/${detail.id}` },
+      primary: detail.quoteQueueStatus === "TO_PURCHASE"
+        ? { label: "Comprar no fornecedor", href: `/admin/orders/${detail.id}` }
+        : { label: "Ver detalhes completos", href: `/admin/orders/${detail.id}` },
       secondary: role === "SUPER_ADMIN"
         ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
         : undefined,
@@ -303,7 +319,7 @@ export function ExternalQuotesManagementView() {
 
     detailActionsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     detailActionsRef.current?.focus({ preventScroll: true });
-    setShouldFocusActions(false);
+    queueMicrotask(() => setShouldFocusActions(false));
   }, [selectedDetail, selectedId, shouldFocusActions]);
 
   if (!hasAccess("quotes")) {
@@ -603,7 +619,7 @@ export function ExternalQuotesManagementView() {
                             {quote.storeLabel}
                           </span>
                           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_BADGES[quote.status]}`}>
-                            {STATUS_PILLS.find((item) => item.key === quote.status)?.label ?? quote.status}
+                            {QUEUE_LABELS[quote.quoteQueueStatus] ?? quote.operationalStatus}
                           </span>
                         </div>
                         <p className="mt-2 font-medium text-[var(--color-text-primary)]">{quote.customerName}</p>
@@ -733,7 +749,7 @@ export function ExternalQuotesManagementView() {
                   {[
                     ["Loja", selectedDetail.storeLabel],
                     ["Data de submissão", formatDate(selectedDetail.createdAt)],
-                    ["Estado", STATUS_PILLS.find((item) => item.key === selectedDetail.status)?.label ?? selectedDetail.status],
+                    ["Estado", QUEUE_LABELS[selectedDetail.quoteQueueStatus] ?? selectedDetail.operationalStatus],
                     ["Validade", selectedDetail.validityDate ? formatDate(selectedDetail.validityDate) : "Sem validade definida"],
                   ].map(([label, value]) => (
                     <div key={label} className="flex items-start justify-between gap-4">

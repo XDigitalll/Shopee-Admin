@@ -41,3 +41,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 export async function POST(request: NextRequest, context: RouteContext) {
   return forward(request, context);
 }
+
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  return forward(request, context);
+}

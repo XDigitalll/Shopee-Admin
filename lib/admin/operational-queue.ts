@@ -57,6 +57,9 @@ export function isActionRequired(
 
   if (context === "QUOTES") {
     const quote = item as AdminQuoteListItem | AdminQuoteDetail | AdminOrderListItem;
+    if (typeof quote.actionRequired === "boolean") {
+      return quote.actionRequired;
+    }
     return QUOTE_ACTION_STATUSES.has(normalized(quote.status)) || QUOTE_ACTION_STATUSES.has(normalized((quote as AdminOrderListItem).uiStatus));
   }
 

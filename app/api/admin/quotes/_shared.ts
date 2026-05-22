@@ -30,12 +30,22 @@ type BackendOrder = {
   urgent?: boolean | null;
   totalAmount?: number;
   status?: string;
+  operationalStatus?: string | null;
+  quoteQueueStatus?: AdminQuoteListItem["quoteQueueStatus"] | null;
+  nextActionLabel?: string | null;
+  nextActionModule?: string | null;
+  isArchived?: boolean | null;
   orderDate?: string;
   externalCartUrl?: string | null;
   sourceStore?: string | null;
   activeQuote?: {
     quotedAt?: string | null;
     finalAmountMzn?: number | null;
+  } | null;
+  actionRequired?: {
+    required?: boolean;
+    module?: string | null;
+    nextActionLabel?: string | null;
   } | null;
 };
 
@@ -91,23 +101,34 @@ function formatTimeAgo(value: string) {
 
 function normalizeQuoteStatus(order: BackendOrder, hasDraft: boolean): AdminQuoteStatus {
   const status = String(order.status ?? "UNDER_REVIEW");
+  const queueStatus = order.quoteQueueStatus;
 
-  if (status === "CANCELLED" || status === "FAILED") {
+  if (queueStatus === "ARCHIVED" || status === "CANCELLED" || status === "FAILED" || status === "PAYMENT_REJECTED") {
     return "REJECTED";
   }
 
-  if (status === "QUOTED") {
+  if (queueStatus === "WAITING_CUSTOMER" || status === "QUOTED") {
     return "SENT";
   }
 
   if (
+    queueStatus === "WAITING_PAYMENT" ||
+    queueStatus === "TO_PURCHASE" ||
+    queueStatus === "PURCHASED" ||
+    queueStatus === "IN_TRANSIT" ||
+    queueStatus === "ARRIVED" ||
     [
       "APPROVED",
       "PENDING_PAYMENT",
+      "PAYMENT_SUBMITTED",
+      "PAYMENT_UNDER_REVIEW",
       "PAID",
+      "TO_PURCHASE",
       "ORDERED",
+      "PURCHASED",
       "IN_TRANSIT",
       "ARRIVED",
+      "READY_FOR_DELIVERY",
       "OUT_FOR_DELIVERY",
       "DELIVERED",
     ].includes(status)
@@ -166,8 +187,14 @@ async function fetchExternalOrders(request: NextRequest) {
 function buildQuoteCardBase(order: BackendOrder) {
   const hasDraft = Boolean(getQuoteDraft(String(order.id)));
   const status = normalizeQuoteStatus(order, hasDraft);
+  const quoteQueueStatus = order.quoteQueueStatus ?? (
+    status === "REJECTED" ? "ARCHIVED" : status === "SENT" ? "WAITING_CUSTOMER" : "QUOTE_ANALYSIS"
+  );
   const createdAt = order.orderDate ?? new Date().toISOString();
   const itemNames = extractSummaryItems(order.externalCartUrl);
+  const actionRequired = Boolean(
+    order.actionRequired?.required && (order.actionRequired?.module === "EXTERNAL_QUOTES" || order.nextActionModule === "EXTERNAL_QUOTES")
+  );
   return {
     id: order.id,
     orderNumber: getOrderNumber(order),
@@ -176,6 +203,12 @@ function buildQuoteCardBase(order: BackendOrder) {
     sourceStore: order.sourceStore || "EXTERNAL",
     storeLabel: getStoreLabel(order.sourceStore),
     status,
+    quoteQueueStatus,
+    operationalStatus: order.operationalStatus ?? String(order.status ?? "UNDER_REVIEW"),
+    actionRequired,
+    nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
+    nextActionModule: order.nextActionModule ?? order.actionRequired?.module ?? null,
+    isArchived: Boolean(order.isArchived ?? quoteQueueStatus === "ARCHIVED"),
     createdAt,
     timeAgoLabel: formatTimeAgo(createdAt),
     estimatedValue: Number(order.activeQuote?.finalAmountMzn ?? order.totalAmount ?? 0),
@@ -193,7 +226,7 @@ function filterQuotes(items: AdminQuoteListItem[], filters: AdminQuotesFilterSta
   let filtered = [...items];
 
   if (filters.status !== "ALL") {
-    filtered = filtered.filter((item) => item.status === filters.status);
+    filtered = filtered.filter((item) => item.quoteQueueStatus === filters.status);
   }
 
   if (filters.store !== "ALL") {
@@ -249,16 +282,21 @@ export async function getQuotesPage(request: NextRequest, filters: AdminQuotesFi
 
 export async function getQuoteStats(request: NextRequest): Promise<AdminQuoteStatsResponse> {
   const orders = await fetchExternalOrders(request);
-  const statuses = orders.map((order) => normalizeQuoteStatus(order, Boolean(getQuoteDraft(String(order.id)))));
+  const cards = orders.map(buildQuoteCardBase);
+  const statuses = cards.map((order) => order.status);
 
   return {
     all: statuses.length,
-    underReview: statuses.filter((status) => status === "UNDER_REVIEW").length,
+    underReview: cards.filter((item) => item.quoteQueueStatus === "QUOTE_ANALYSIS").length,
     draft: statuses.filter((status) => status === "DRAFT").length,
     sent: statuses.filter((status) => status === "SENT").length,
     approved: statuses.filter((status) => status === "APPROVED").length,
     rejected: statuses.filter((status) => status === "REJECTED").length,
-    pendingAnalysis: statuses.filter((status) => status === "UNDER_REVIEW").length,
+    pendingAnalysis: cards.filter((item) => item.quoteQueueStatus === "QUOTE_ANALYSIS").length,
+    waitingCustomer: cards.filter((item) => item.quoteQueueStatus === "WAITING_CUSTOMER").length,
+    waitingPayment: cards.filter((item) => item.quoteQueueStatus === "WAITING_PAYMENT").length,
+    toPurchase: cards.filter((item) => item.quoteQueueStatus === "TO_PURCHASE").length,
+    archived: cards.filter((item) => item.quoteQueueStatus === "ARCHIVED").length,
   };
 }
 
@@ -297,6 +335,12 @@ export async function getQuoteDetail(request: NextRequest, id: string) {
     id: detail.id,
     orderNumber: detail.number,
     status,
+    quoteQueueStatus: detail.quoteQueueStatus ?? (status === "REJECTED" ? "ARCHIVED" : "QUOTE_ANALYSIS"),
+    operationalStatus: detail.operationalStatus ?? detail.status,
+    actionRequired: Boolean(detail.actionRequired),
+    nextActionLabel: detail.nextActionLabel ?? null,
+    nextActionModule: detail.nextActionModule ?? null,
+    isArchived: Boolean(detail.isArchived ?? status === "REJECTED"),
     sourceStore: detail.sourceStore,
     storeLabel: getStoreLabel(detail.sourceStore),
     createdAt: detail.createdAt,

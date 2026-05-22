@@ -72,6 +72,10 @@ function StatusBadge({ status }: { status: ProductStatus }) {
   );
 }
 
+function stockMetric(product: AdminProduct, key: "stockPhysical" | "stockReserved" | "stockAvailable") {
+  return Number(product[key] ?? product.stock ?? 0);
+}
+
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
@@ -410,11 +414,11 @@ export function ProductsListView() {
                     <span className="text-sm font-black" style={{ color: "#E8431A" }}>
                       {formatMoney(product.finalPrice)}
                     </span>
-                    <span
-                      className="text-xs font-semibold"
-                      style={{ color: product.stock <= 0 ? "#EF4444" : product.stock <= 5 ? "#F59E0B" : "#6B7280" }}
-                    >
-                      {product.stock} un.
+                    <span className="text-right text-xs font-semibold" style={{ color: stockMetric(product, "stockAvailable") <= 0 ? "#EF4444" : stockMetric(product, "stockAvailable") <= 5 ? "#F59E0B" : "#6B7280" }}>
+                      {stockMetric(product, "stockAvailable")} disp.
+                      <span className="block text-[10px]" style={{ color: "#6B7280" }}>
+                        {stockMetric(product, "stockPhysical")} fis. / {stockMetric(product, "stockReserved")} res.
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -496,12 +500,12 @@ export function ProductsListView() {
 
                     {/* Stock */}
                     <td className="hidden px-4 py-3 text-center md:table-cell">
-                      <span
-                        className="font-semibold"
-                        style={{ color: product.stock <= 0 ? "#EF4444" : product.stock <= 5 ? "#F59E0B" : "#9CA3AF" }}
-                      >
-                        {product.stock}
-                      </span>
+                      <div className="text-sm font-semibold" style={{ color: stockMetric(product, "stockAvailable") <= 0 ? "#EF4444" : stockMetric(product, "stockAvailable") <= 5 ? "#F59E0B" : "#9CA3AF" }}>
+                        {stockMetric(product, "stockAvailable")}
+                        <div className="text-[11px] font-medium" style={{ color: "#6B7280" }}>
+                          Fisico {stockMetric(product, "stockPhysical")} / Reservado {stockMetric(product, "stockReserved")}
+                        </div>
+                      </div>
                     </td>
 
                     {/* Status */}

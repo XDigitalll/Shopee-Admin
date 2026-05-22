@@ -83,6 +83,16 @@ type BackendOrderDetail = {
   deliveryMethod?: "DELIVERY" | "STORE_PICKUP" | null;
   urgent?: boolean | null;
   status?: string;
+  operationalStatus?: string | null;
+  quoteQueueStatus?: ExternalOrderDetail["quoteQueueStatus"] | null;
+  nextActionLabel?: string | null;
+  nextActionModule?: string | null;
+  isArchived?: boolean | null;
+  actionRequired?: {
+    required?: boolean;
+    module?: string | null;
+    nextActionLabel?: string | null;
+  } | null;
   externalCartUrl?: string | null;
   requestInputType?: "LINK" | "DESCRIPTION" | null;
   productDetails?: string | null;
@@ -551,6 +561,12 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     customerVerified: Boolean(order.customerEmail || order.primaryPhoneNumber),
     type: externalOrder ? "EXTERNAL" : "INTERNAL",
     status: effectiveOrderStatus,
+    quoteQueueStatus: order.quoteQueueStatus ?? null,
+    operationalStatus: order.operationalStatus ?? order.status ?? "UNDER_REVIEW",
+    actionRequired: Boolean(order.actionRequired?.required && order.actionRequired?.module === "EXTERNAL_QUOTES"),
+    nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
+    nextActionModule: order.nextActionModule ?? order.actionRequired?.module ?? null,
+    isArchived: Boolean(order.isArchived ?? order.quoteQueueStatus === "ARCHIVED"),
     deliveryMethod: order.deliveryMethod ?? null,
     urgentRequest: Boolean(order.urgent),
     externalCartUrl: externalOrder ? order.externalCartUrl ?? "" : "",
