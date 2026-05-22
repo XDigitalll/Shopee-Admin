@@ -88,9 +88,7 @@ export function OrderPaymentReviewView({ orderId }: { orderId: string }) {
     setError("");
     setSuccess("");
     try {
-      await adminApiFetch(`/api/admin/orders/${orderId}/payment/validate`, { method: "PUT" });
-      setSuccess("Pagamento validado com sucesso.");
-      await refreshData();
+      router.push(`/admin/payments?orderId=${orderId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel validar o pagamento.");
     }

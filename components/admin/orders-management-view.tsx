@@ -409,10 +409,7 @@ function OrdersDrawer({
     if (!order) return;
 
     await actionRunner.run(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
-        method: "PUT",
-      });
-      onActionComplete();
+      window.location.assign(`/admin/payments?orderId=${order.id}`);
     });
   }
 
@@ -428,18 +425,11 @@ function OrdersDrawer({
     });
   }
 
-  async function handleCollectAndClose(targetStatus: "DELIVERED") {
+  async function handleCollectAndClose(_targetStatus: "DELIVERED") {
     if (!order) return;
 
     await actionRunner.run(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/payment/validate`, {
-        method: "PUT",
-      });
-      await adminApiFetch(`/api/admin/orders/${order.id}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: targetStatus }),
-      });
-      onActionComplete();
+      window.location.assign(`/admin/payments?orderId=${order.id}`);
     });
   }
 

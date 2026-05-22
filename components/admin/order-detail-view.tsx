@@ -409,8 +409,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     setError("");
     try {
       if (action === "validate-payment") {
-        await adminApiFetch(`/api/admin/orders/${detail.id}/payment/validate`, { method: "PUT" });
-        await refreshData();
+        router.push(`/admin/payments?orderId=${detail.id}`);
         return;
       }
 
@@ -439,12 +438,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       }
 
       if (action === "collect-and-deliver") {
-        await adminApiFetch(`/api/admin/orders/${detail.id}/payment/validate`, { method: "PUT" });
-        await adminApiFetch(`/api/admin/orders/${detail.id}/status`, {
-          method: "PUT",
-          body: JSON.stringify({ status: "DELIVERED" }),
-        });
-        await refreshData();
+        router.push(`/admin/payments?orderId=${detail.id}`);
         return;
       }
 
