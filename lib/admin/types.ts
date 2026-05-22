@@ -70,6 +70,8 @@ export type AdminOrderListItem = {
   operationalStatusLabel?: string | null;
   customerStatusLabel?: string | null;
   fulfillmentStatus?: string | null;
+  operationalStatus?: string | null;
+  quoteQueueStatus?: AdminQuoteQueueStatus | null;
   uiStatus: RawAdminOrderStatus;
   queueStatus: Exclude<OrderQueueStatus, "ALL">;
   customerStage: CustomerOrderStage;
@@ -86,6 +88,8 @@ export type AdminOrderListItem = {
   actionModule?: string | null;
   actionReason?: string | null;
   nextActionLabel?: string | null;
+  nextActionModule?: string | null;
+  isArchived?: boolean | null;
 };
 
 export type OrdersPageResponse = {
@@ -283,6 +287,12 @@ export type ExternalOrderDetail = {
   customerId: number | null;
   type: "EXTERNAL" | "INTERNAL";
   status: string;
+  quoteQueueStatus: AdminQuoteQueueStatus | null;
+  operationalStatus: string;
+  actionRequired: boolean;
+  nextActionLabel: string | null;
+  nextActionModule: string | null;
+  isArchived: boolean;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
   urgentRequest: boolean;
   externalCartUrl: string;
@@ -483,7 +493,7 @@ export type AdminPaymentReceiptResponse = {
   url: string | null;
 };
 
-export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED" | "REQUEST_NEW_PROOF";
+export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF" | "REQUESTED_NEW_PROOF";
 export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF";
 export type PaymentMethodType = "EMOLA" | "MPESA" | "BANK_TRANSFER" | "VISA_MANUAL";
 
@@ -641,11 +651,17 @@ export type AdminQuoteStatus =
 
 export type AdminQuoteStatusFilter =
   | "ALL"
-  | "UNDER_REVIEW"
-  | "DRAFT"
-  | "SENT"
-  | "APPROVED"
-  | "REJECTED";
+  | AdminQuoteQueueStatus;
+
+export type AdminQuoteQueueStatus =
+  | "QUOTE_ANALYSIS"
+  | "WAITING_CUSTOMER"
+  | "WAITING_PAYMENT"
+  | "TO_PURCHASE"
+  | "PURCHASED"
+  | "IN_TRANSIT"
+  | "ARRIVED"
+  | "ARCHIVED";
 
 export type AdminQuoteStoreFilter =
   | "ALL"
@@ -676,6 +692,12 @@ export type AdminQuoteListItem = {
   sourceStore: string;
   storeLabel: string;
   status: AdminQuoteStatus;
+  quoteQueueStatus: AdminQuoteQueueStatus;
+  operationalStatus: string;
+  actionRequired: boolean;
+  nextActionLabel: string | null;
+  nextActionModule: string | null;
+  isArchived: boolean;
   createdAt: string;
   timeAgoLabel: string;
   estimatedValue: number;
@@ -704,12 +726,22 @@ export type AdminQuoteStatsResponse = {
   approved: number;
   rejected: number;
   pendingAnalysis: number;
+  waitingCustomer?: number;
+  waitingPayment?: number;
+  toPurchase?: number;
+  archived?: number;
 };
 
 export type AdminQuoteDetail = {
   id: number;
   orderNumber: string;
   status: AdminQuoteStatus;
+  quoteQueueStatus: AdminQuoteQueueStatus;
+  operationalStatus: string;
+  actionRequired: boolean;
+  nextActionLabel: string | null;
+  nextActionModule: string | null;
+  isArchived: boolean;
   sourceStore: string;
   storeLabel: string;
   createdAt: string;
@@ -762,6 +794,9 @@ export type AdminProductVariant = {
   color: string | null;
   size: string | null;
   stock: number;
+  stockPhysical?: number | null;
+  stockReserved?: number | null;
+  stockAvailable?: number | null;
   purchasePrice: number | null;
   finalPrice: number | null;
   promotionalPrice: number | null;
@@ -813,6 +848,9 @@ export type AdminProduct = {
   weight: number | null;
   volume: number | null;
   stock: number;
+  stockPhysical?: number | null;
+  stockReserved?: number | null;
+  stockAvailable?: number | null;
   images: string[];
   gallery: ProductImageItem[];
   primaryImageUrl: string | null;

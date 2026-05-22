@@ -40,6 +40,8 @@ type BackendOrder = {
   status?: string;
   orderStatus?: string | null;
   operationalStatusLabel?: string | null;
+  operationalStatus?: string | null;
+  quoteQueueStatus?: string | null;
   customerStatusLabel?: string | null;
   fulfillmentStatus?: string | null;
   orderDate?: string;
@@ -61,6 +63,8 @@ type BackendOrder = {
   actionModule?: string | null;
   actionReason?: string | null;
   nextActionLabel?: string | null;
+  nextActionModule?: string | null;
+  isArchived?: boolean | null;
 };
 
 function getOrderNumber(order: Pick<BackendOrder, "id" | "code" | "orderCode">) {
@@ -110,6 +114,8 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     status: operationalStatus,
     orderStatus: operationalStatus,
     operationalStatusLabel: order.operationalStatusLabel ?? null,
+    operationalStatus: order.operationalStatus ?? operationalStatus,
+    quoteQueueStatus: (order.quoteQueueStatus as AdminOrderListItem["quoteQueueStatus"]) ?? null,
     customerStatusLabel: order.customerStatusLabel ?? null,
     fulfillmentStatus: order.fulfillmentStatus ?? order.orderStatus ?? order.status ?? null,
     uiStatus: resolveUiOrderStatus(rawStatus, order.type ?? "INTERNAL"),
@@ -128,6 +134,8 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     actionModule: order.actionModule ?? order.actionRequired?.module ?? null,
     actionReason: order.actionReason ?? order.actionRequired?.reason ?? null,
     nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
+    nextActionModule: order.nextActionModule ?? order.actionModule ?? order.actionRequired?.module ?? null,
+    isArchived: Boolean(order.isArchived ?? false),
   };
 }
 
@@ -175,7 +183,7 @@ function isPendingQuoteCandidate(order: AdminOrderListItem) {
     return false;
   }
 
-  return ["UNDER_REVIEW", "QUOTED", "PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED"].includes(order.uiStatus);
+  return order.quoteQueueStatus === "QUOTE_ANALYSIS";
 }
 
 function matchesStatusFilter(order: AdminOrderListItem, status: string | null) {

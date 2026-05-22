@@ -42,7 +42,9 @@ const STATUS_LABELS: Record<string, string> = {
   APPROVED: "Aprovado",
   REJECTED: "Rejeitado",
   FLAGGED: "Suspeito",
+  SUSPICIOUS: "Suspeito",
   REQUEST_NEW_PROOF: "Novo comprovativo",
+  REQUESTED_NEW_PROOF: "Novo comprovativo",
 };
 
 const RISK_LABELS: Record<string, string> = {
@@ -94,6 +96,16 @@ function queueCount(stats: PaymentSubmissionQueueStats | null, queue: PaymentSub
   return 0;
 }
 
+function queueForStatus(status: string | null | undefined, isResubmission?: boolean | null): PaymentSubmissionQueue | null {
+  if (status === "SUBMITTED") return isResubmission ? "REQUEST_NEW_PROOF" : "SUBMITTED";
+  if (status === "UNDER_REVIEW") return "UNDER_REVIEW";
+  if (status === "APPROVED") return "APPROVED";
+  if (status === "REJECTED") return "REJECTED";
+  if (status === "FLAGGED" || status === "SUSPICIOUS") return "SUSPICIOUS";
+  if (status === "REQUEST_NEW_PROOF" || status === "REQUESTED_NEW_PROOF") return "REQUEST_NEW_PROOF";
+  return null;
+}
+
 function methodBadge(method: string | null | undefined) {
   const value = method || "UNKNOWN";
   const label = METHOD_LABELS[value] ?? humanizePaymentMethod(value).toUpperCase();
@@ -109,8 +121,8 @@ function statusBadge(status: string) {
   const className =
     status === "APPROVED" ? "bg-[#EAF3DE] text-[#166534]"
       : status === "REJECTED" ? "bg-[#FCEBEB] text-[#B42318]"
-      : status === "FLAGGED" ? "bg-[#FFF1F2] text-[#BE123C]"
-      : status === "REQUEST_NEW_PROOF" ? "bg-[#EFF6FF] text-[#1D4ED8]"
+      : status === "FLAGGED" || status === "SUSPICIOUS" ? "bg-[#FFF1F2] text-[#BE123C]"
+      : status === "REQUEST_NEW_PROOF" || status === "REQUESTED_NEW_PROOF" ? "bg-[#EFF6FF] text-[#1D4ED8]"
       : status === "UNDER_REVIEW" ? "bg-[#EEEDFE] text-[#3C3489]"
       : "bg-[#FAEEDA] text-[#9A5B00]";
   return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${className}`}>{STATUS_LABELS[status] ?? status}</span>;
@@ -155,11 +167,11 @@ function allowedActionsFor(submission: PaymentSubmission | null) {
   if (submission.allowedActions) return submission.allowedActions;
   return {
     canStartReview: submission.status === "SUBMITTED",
-    canReopenReview: submission.status === "FLAGGED",
+    canReopenReview: submission.status === "FLAGGED" || submission.status === "SUSPICIOUS",
     canApprove: submission.status === "UNDER_REVIEW",
-    canReject: submission.status === "UNDER_REVIEW" || submission.status === "FLAGGED",
+    canReject: submission.status === "UNDER_REVIEW" || submission.status === "FLAGGED" || submission.status === "SUSPICIOUS",
     canMarkSuspect: submission.status === "UNDER_REVIEW",
-    canRequestNewProof: ["UNDER_REVIEW", "REJECTED", "FLAGGED"].includes(submission.status),
+    canRequestNewProof: ["UNDER_REVIEW", "REJECTED", "FLAGGED", "SUSPICIOUS"].includes(submission.status),
   };
 }
 
@@ -169,8 +181,8 @@ function stateHint(submission: PaymentSubmission | null) {
   if (submission.status === "UNDER_REVIEW") return "Pagamento em revisão. As ações de decisão estão disponíveis.";
   if (submission.status === "APPROVED") return "Pagamento aprovado. Não é possível alterar esta submissão.";
   if (submission.status === "REJECTED") return "Pagamento rejeitado. Só é possível pedir novo comprovativo quando permitido.";
-  if (submission.status === "FLAGGED") return "Pagamento suspeito. Aprovação fica bloqueada; rejeita ou pede novo comprovativo.";
-  if (submission.status === "REQUEST_NEW_PROOF") return "Aguardando novo comprovativo do cliente.";
+  if (submission.status === "FLAGGED" || submission.status === "SUSPICIOUS") return "Pagamento suspeito. Aprovação fica bloqueada; rejeita ou pede novo comprovativo.";
+  if (submission.status === "REQUEST_NEW_PROOF" || submission.status === "REQUESTED_NEW_PROOF") return "Aguardando novo comprovativo do cliente.";
   return "";
 }
 
@@ -182,8 +194,8 @@ function disabledReason(action: keyof ReturnType<typeof allowedActionsFor>, subm
   if (submission.status === "SUBMITTED" && action !== "canStartReview") return "É preciso iniciar revisão primeiro.";
   if (submission.status === "UNDER_REVIEW" && (action === "canStartReview" || action === "canReopenReview")) return "Este pagamento já está em revisão.";
   if (submission.status === "APPROVED") return "Pagamento aprovado não pode ser alterado.";
-  if (submission.status === "REQUEST_NEW_PROOF") return "Aguardando novo comprovativo do cliente.";
-  if (submission.status === "FLAGGED" && action === "canApprove") return "Pagamento suspeito precisa ser reaberto para revisão antes de aprovar.";
+  if (submission.status === "REQUEST_NEW_PROOF" || submission.status === "REQUESTED_NEW_PROOF") return "Aguardando novo comprovativo do cliente.";
+  if ((submission.status === "FLAGGED" || submission.status === "SUSPICIOUS") && action === "canApprove") return "Pagamento suspeito precisa ser reaberto para revisão antes de aprovar.";
   return "Ação indisponível neste estado.";
 }
 
@@ -377,7 +389,7 @@ function SubmissionCard({
   onClick: () => void;
 }) {
   const flags = item.riskFlags ?? [];
-  const actionRequired = Boolean(item.hasUnreadChanges ?? (item.actionRequired && item.status !== "REJECTED" && item.status !== "APPROVED"));
+  const actionRequired = Boolean(item.hasUnreadChanges);
   return (
     <button
       type="button"
@@ -670,9 +682,7 @@ export function PaymentsManagementView() {
   const [stats, setStats] = useState<PaymentSubmissionQueueStats | null>(null);
   const [submissionsPage, setSubmissionsPage] = useState<PaymentSubmissionsPage | null>(null);
   const [awaitingPage, setAwaitingPage] = useState<AwaitingPaymentSubmissionsPage | null>(null);
-  // SINGLE SOURCE OF TRUTH: selectedId + selectedDetail (full data from the detail endpoint)
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [selectedDetail, setSelectedDetail] = useState<PaymentSubmission | null>(null);
   const [search, setSearch] = useState(initialSearch);
   const [note, setNote] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -701,8 +711,11 @@ export function PaymentsManagementView() {
 
   const canDecide = canManageFinance(profile);
 
-  // DERIVED: drawer always reads from selectedDetail — never a stale local snapshot
-  const selectedPayment = selectedId !== null ? selectedDetail : null;
+  const payments = submissionsPage?.content ?? [];
+  const selectedPayment = useMemo(
+    () => payments.find((payment) => payment.id === selectedId) ?? null,
+    [payments, selectedId]
+  );
 
   // Keep selectedIdRef in sync with the selectedId state for use in async callbacks
   useEffect(() => {
@@ -726,11 +739,22 @@ export function PaymentsManagementView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPayment?.status]);
 
-  async function fetchAndSetDetail(id: number, silent = false) {
+  async function fetchAndSetDetail(id: number, silent = false, queueOverride = activeQueue) {
     if (!silent) setIsDetailLoading(true);
     try {
       const detail = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${id}?t=${Date.now()}`);
-      setSelectedDetail(detail);
+      setSubmissionsPage((current) => {
+        if (!current) {
+          return { content: [detail], page: 0, size: 1, totalElements: 1, totalPages: 1 };
+        }
+        const detailQueue = detail.currentBucket ?? detail.bucket ?? queueForStatus(detail.status, detail.isResubmission);
+        const belongsToActiveQueue = detailQueue === queueOverride;
+        const contentWithoutDetail = current.content.filter((item) => item.id !== id);
+        return {
+          ...current,
+          content: belongsToActiveQueue ? [detail, ...contentWithoutDetail] : contentWithoutDetail,
+        };
+      });
       return detail;
     } finally {
       if (!silent) setIsDetailLoading(false);
@@ -742,7 +766,6 @@ export function PaymentsManagementView() {
     prevStatusRef.current = null;
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setSelectedId(null);
-    setSelectedDetail(null);
     setNote("");
     setPaymentInlineError("");
   }
@@ -801,7 +824,7 @@ export function PaymentsManagementView() {
       await load(activeQueue, { silent: true });
       const openId = selectedIdRef.current;
       if (openId && !ownActionRef.current) {
-        await fetchAndSetDetail(openId, true).catch(() => null);
+        await reloadPaymentFromServer(openId).catch(() => null);
       }
     },
     { enabled: hasAccess("payments"), intervalMs: 8_000, minIntervalMs: 4_000, runOnMount: false }
@@ -812,18 +835,43 @@ export function PaymentsManagementView() {
     selectedIdRef.current = id;
     prevStatusRef.current = null;
     setSelectedId(id);
-    setSelectedDetail(null);
     setNote("");
     setPaymentInlineError("");
     try {
       const detail = await fetchAndSetDetail(id, false);
       setNote(detail.reviewNote || "");
-      // Fire-and-forget: mark as seen to clear the unread badge
-      adminApiFetch(`/api/admin/payment-submissions/${id}/seen`, { method: "PATCH" }).catch(() => null);
+      adminApiFetch(`/api/admin/payment-submissions/${id}/seen`, { method: "PATCH" })
+        .then(() => {
+          setSubmissionsPage((current) => current
+            ? { ...current, content: current.content.map((item) => item.id === id ? { ...item, hasUnreadChanges: false } : item) }
+            : current);
+        })
+        .catch(() => null);
     } catch (detailError) {
       setFeedback({ tone: "error", message: detailError instanceof Error ? detailError.message : "Nao foi possivel abrir a submissao." });
       closeDrawer();
     }
+  }
+
+  async function reloadPaymentFromServer(id: number) {
+    const fresh = await adminApiFetch<PaymentSubmission>(`/api/admin/payment-submissions/${id}?t=${Date.now()}`);
+    if (selectedIdRef.current === id && prevStatusRef.current && prevStatusRef.current !== fresh.status && !ownActionRef.current) {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setFeedback({ tone: "success", message: "Este pagamento foi atualizado." });
+      toastTimerRef.current = setTimeout(() => setFeedback(null), 5000);
+      prevStatusRef.current = fresh.status;
+    }
+    const nextQueue = fresh.currentBucket ?? fresh.bucket ?? queueForStatus(fresh.status, fresh.isResubmission) ?? activeQueue;
+    setActiveQueue(nextQueue);
+    await load(nextQueue, { silent: true });
+    setSubmissionsPage((current) => {
+      if (!current) {
+        return { content: [fresh], page: 0, size: 1, totalElements: 1, totalPages: 1 };
+      }
+      const withoutFresh = current.content.filter((item) => item.id !== id);
+      return { ...current, content: [fresh, ...withoutFresh] };
+    });
+    return fresh;
   }
 
   async function handleAction(action: PaymentDrawerAction) {
@@ -849,7 +897,6 @@ export function PaymentsManagementView() {
     }
 
     const targetId = selectedPayment.id;
-    const closesDrawer = action === "approve" || action === "reject" || action === "request-new-proof";
 
     ownActionRef.current = true;
     setBusyAction(action);
@@ -870,16 +917,8 @@ export function PaymentsManagementView() {
             : action === "reopen-review" ? "Revisao reaberta"
             : "Revisao iniciada",
       });
-      if (closesDrawer) {
-        closeDrawer();
-      }
-      // Reload list — no local mutations to state
-      await load(activeQueue, { silent: true });
-      // If drawer is still open, refresh detail and sync note from server
-      if (!closesDrawer && selectedIdRef.current) {
-        const fresh = await fetchAndSetDetail(selectedIdRef.current, true).catch(() => null);
-        if (fresh) setNote(fresh.reviewNote || "");
-      }
+      const fresh = await reloadPaymentFromServer(targetId);
+      setNote(fresh.reviewNote || "");
       return true;
     });
 
