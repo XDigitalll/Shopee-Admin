@@ -13,6 +13,15 @@ import type {
   ImageLibraryItem,
 } from "@/lib/admin/types";
 import { ImagePickerModal } from "@/components/admin/image-picker-modal";
+import { AttentionDot } from "@/components/admin/attention-dot";
+import { isLowStockQuantity, isLowStockVariant, LOW_STOCK_THRESHOLD } from "@/lib/admin/stock-alerts";
+import {
+  MAX_SPEC_PASTE_LENGTH,
+  mergeSpecificationRows,
+  parseSpecificationBlock,
+  type DuplicateResolution,
+  type ParsedSpecificationRow,
+} from "@/lib/admin/specification-parser";
 
 // Helpers 
 
@@ -49,6 +58,32 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+async function isSupportedImageBySignature(file: File) {
+  const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const isJpeg = header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  const isPng =
+    header.length >= 8 &&
+    header[0] === 0x89 &&
+    header[1] === 0x50 &&
+    header[2] === 0x4e &&
+    header[3] === 0x47 &&
+    header[4] === 0x0d &&
+    header[5] === 0x0a &&
+    header[6] === 0x1a &&
+    header[7] === 0x0a;
+  const isWebp =
+    header.length >= 12 &&
+    header[0] === 0x52 &&
+    header[1] === 0x49 &&
+    header[2] === 0x46 &&
+    header[3] === 0x46 &&
+    header[8] === 0x57 &&
+    header[9] === 0x45 &&
+    header[10] === 0x42 &&
+    header[11] === 0x50;
+  return isJpeg || isPng || isWebp || file.type.startsWith("image/");
+}
+
 // Constants 
 
 const ALL_SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
@@ -65,18 +100,9 @@ const PRESET_COLORS = [
   { name: "Rosa", hex: "#EC4899" },
 ];
 
-const ACCEPTED_IMAGE_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/avif",
-  "image/gif",
-  "image/bmp",
-  "image/tiff",
-  "image/svg+xml",
-];
-
-const ACCEPTED_IMAGE_INPUT = "image/*";
+const ACCEPTED_IMAGE_INPUT = "image/*,.jpg,.jpeg,.png,.webp";
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const INVALID_IMAGE_MESSAGE = "Esta imagem parece inválida ou corrompida. Usa outro ficheiro de imagem.";
 
 // Local types 
 
@@ -344,6 +370,10 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   // Specs 
   const [specs, setSpecs] = useState<SpecRow[]>(initialDraft?.specs ?? []);
+  const [specPasteOpen, setSpecPasteOpen] = useState(false);
+  const [specPasteText, setSpecPasteText] = useState("");
+  const [specPreviewRows, setSpecPreviewRows] = useState<ParsedSpecificationRow[]>([]);
+  const [specDuplicateResolution, setSpecDuplicateResolution] = useState<DuplicateResolution>("replace");
 
   // Rich content 
   const [shortDescription, setShortDescription] = useState("");
@@ -444,6 +474,13 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const showBuilderImageControls = ["COLOR", "COLOR_SIZE", "MODEL", "EYEWEAR", "TECH"].includes(variantBuilderType);
   const showBuilderUploadControls = ["MODEL", "EYEWEAR", "TECH"].includes(variantBuilderType);
   const hasLiveVariants = isEdit && editVariants.length > 0;
+  const lowStockThreshold = Math.max(0, parseInt(minStock, 10) || LOW_STOCK_THRESHOLD);
+  const editableStockTotal = hasLiveVariants ? activeVariantStockTotal : parseInt(stock, 10) || 0;
+  const stockIsLow = manageStock && isLowStockQuantity(editableStockTotal, lowStockThreshold);
+  const lowStockVariantCount = editVariants.filter((variant) => variant.active && isLowStockVariant(variant, lowStockThreshold)).length;
+  const specDuplicateCount = specPreviewRows.filter((row) => row.duplicate).length;
+  const specReviewCount = specPreviewRows.filter((row) => row.needsReview || !row.attribute.trim()).length;
+  const specExtrasCount = specPreviewRows.filter((row) => row.extras.length > 0).length;
 
   function imageSourceLabel(url: string | null | undefined): string {
     if (!url) return "Sem imagem";
@@ -654,11 +691,22 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   // Image handlers 
   const handleFilesSelected = useCallback(
     async (files: FileList | File[]) => {
-      const arr = Array.from(files).filter(
-        (f) =>
-          ACCEPTED_IMAGE_TYPES.includes(f.type) &&
-          f.size <= 5 * 1024 * 1024
+      const selected = Array.from(files);
+      const checks = await Promise.all(
+        selected.map(async (file) => ({
+          file,
+          valid: file.size <= MAX_IMAGE_SIZE_BYTES && await isSupportedImageBySignature(file),
+        }))
       );
+      const arr = checks.filter((item) => item.valid).map((item) => item.file);
+      const rejectedCount = checks.length - arr.length;
+
+      if (rejectedCount > 0) {
+        setErrors((prev) => ({ ...prev, images: INVALID_IMAGE_MESSAGE }));
+      } else {
+        setErrors((prev) => ({ ...prev, images: undefined }));
+      }
+
       if (arr.length === 0) return;
 
       if (!productId) {
@@ -691,8 +739,12 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
             pending: false,
           }));
           setImages(gallery);
-        } catch {
-          // silent — user can retry
+          setErrors((prev) => ({ ...prev, images: undefined }));
+        } catch (error) {
+          setErrors((prev) => ({
+            ...prev,
+            images: error instanceof Error ? error.message || INVALID_IMAGE_MESSAGE : INVALID_IMAGE_MESSAGE,
+          }));
         } finally {
           setUploadingImages(false);
         }
@@ -828,6 +880,32 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   function removeSpec(id: string) {
     setSpecs((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  function openSpecPasteModal() {
+    setSpecPasteOpen(true);
+    setSpecPasteText("");
+    setSpecPreviewRows([]);
+    setSpecDuplicateResolution("replace");
+  }
+
+  function organizePastedSpecs() {
+    setSpecPreviewRows(parseSpecificationBlock(specPasteText, specs.map((spec) => spec.key)));
+  }
+
+  function updateSpecPreviewRow(id: string, field: "attribute" | "value", value: string) {
+    setSpecPreviewRows((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
+  }
+
+  function removeSpecPreviewRow(id: string) {
+    setSpecPreviewRows((prev) => prev.filter((row) => row.id !== id));
+  }
+
+  function applySpecPreview(mode: "append" | "replaceAll", duplicateResolution = specDuplicateResolution) {
+    setSpecs((prev) => mergeSpecificationRows<SpecRow>(prev, specPreviewRows, mode, duplicateResolution));
+    setSpecPasteOpen(false);
+    setSpecPasteText("");
+    setSpecPreviewRows([]);
   }
 
   // Package items 
@@ -1399,10 +1477,14 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     if (fileImages.length > 0) {
       const fd = new FormData();
       fileImages.forEach((i) => fd.append("files", i.file!));
-      await adminApiFetch<AdminProduct>(`/api/admin/products/${newProductId}/images`, {
-        method: "POST",
-        body: fd,
-      });
+      try {
+        await adminApiFetch<AdminProduct>(`/api/admin/products/${newProductId}/images`, {
+          method: "POST",
+          body: fd,
+        });
+      } catch (error) {
+        throw new Error(`IMAGE_UPLOAD:${error instanceof Error ? error.message || INVALID_IMAGE_MESSAGE : INVALID_IMAGE_MESSAGE}`);
+      }
     }
 
     const libraryImages = images.filter((i) => !i.pending && i.libraryImageId != null);
@@ -1456,7 +1538,13 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       router.push("/admin/products?saved=1");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao guardar produto.";
-      setErrors((prev) => ({ ...prev, name: msg }));
+      if (msg.startsWith("IMAGE_UPLOAD:")) {
+        setErrors((prev) => ({ ...prev, images: msg.replace("IMAGE_UPLOAD:", "") || INVALID_IMAGE_MESSAGE }));
+      } else if (msg.toLowerCase().includes("slug") || msg.toLowerCase().includes("referencia")) {
+        setErrors((prev) => ({ ...prev, name: "Já existe um produto com nome semelhante. Geramos uma referência única automaticamente. Tenta guardar novamente." }));
+      } else {
+        setErrors((prev) => ({ ...prev, name: msg }));
+      }
     } finally {
       setter(false);
     }
@@ -1862,7 +1950,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                   Arraste imagens ou clique para seleccionar
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-                  PNG, JPG, WEBP — máximo 5 MB cada
+                  PNG, JPG, WEBP — máximo 10 MB cada
                 </p>
               </div>
               {uploadingImages && (
@@ -1872,7 +1960,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
             <input
               ref={fileInputRef}
               type="file"
-              accept={ACCEPTED_IMAGE_TYPES.join(",")}
+              accept={ACCEPTED_IMAGE_INPUT}
               multiple
               className="hidden"
               onChange={(e) => e.target.files && handleFilesSelected(e.target.files)}
@@ -1952,7 +2040,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                 <input
                   ref={editImageInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/avif,image/gif,image/bmp,image/tiff"
+                  accept={ACCEPTED_IMAGE_INPUT}
                   className="hidden"
                   onChange={(e) => handleEditImageFile(e.target.files?.[0] ?? null)}
                 />
@@ -2027,7 +2115,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                             </td>
                             {/* Stock */}
                             <td className="px-4 py-2.5 text-right">
-                              <span className={`font-semibold ${v.stock <= 0 ? "text-[var(--color-danger)]" : v.stock <= 5 ? "text-orange-500" : "text-[var(--color-text-primary)]"}`}>
+                              <span className={`inline-flex items-center justify-end gap-2 font-semibold ${v.stock <= 0 ? "text-[var(--color-danger)]" : isLowStockVariant(v, lowStockThreshold) ? "text-orange-500" : "text-[var(--color-text-primary)]"}`}>
+                                {isLowStockVariant(v, lowStockThreshold) ? <AttentionDot label="Stock da variante a esgotar" className="h-2.5 w-2.5" /> : null}
                                 {v.stock}
                               </span>
                             </td>
@@ -2822,9 +2911,18 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
           {/* Specs card */}
           <div className="admin-card p-6 flex flex-col gap-4">
-            <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
-              Especificações
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-[family-name:var(--font-sora)] font-semibold text-base">
+                Especificações
+              </h2>
+              <button
+                type="button"
+                onClick={openSpecPasteModal}
+                className="rounded-full bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#d63b17]"
+              >
+                Colar especificações
+              </button>
+            </div>
             {specs.length > 0 && (
               <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
                 <table className="w-full text-sm">
@@ -2873,6 +2971,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
               </div>
             )}
             <button
+              type="button"
               onClick={addSpec}
               className="self-start rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)] transition-colors"
             >
@@ -3086,15 +3185,34 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
           {/* Stock card */}
           <div className="admin-card p-5 flex flex-col gap-4">
-            <h3 className="font-[family-name:var(--font-sora)] font-semibold text-sm">
-              Stock
-            </h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-[family-name:var(--font-sora)] font-semibold text-sm">
+                Stock
+              </h3>
+              {stockIsLow || lowStockVariantCount > 0 ? (
+                <span className="inline-flex items-center gap-2 rounded-full bg-[rgba(249,115,22,0.12)] px-3 py-1 text-xs font-bold text-[#F59E0B]">
+                  <AttentionDot label="Stock a esgotar" className="h-2.5 w-2.5" />
+                  Stock baixo
+                </span>
+              ) : null}
+            </div>
             {hasLiveVariants && (
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-3 text-xs text-[var(--color-text-secondary)]">
                 <p className="font-semibold text-[var(--color-text-primary)]">Este produto usa stock por variante.</p>
                 <p className="mt-1">Stock total calculado: <strong>{activeVariantStockTotal}</strong> unidades.</p>
+                {lowStockVariantCount > 0 ? (
+                  <p className="mt-2 inline-flex items-center gap-2 font-semibold text-[#F59E0B]">
+                    <AttentionDot label="Variante com stock a esgotar" className="h-2.5 w-2.5" />
+                    {lowStockVariantCount} variante{lowStockVariantCount === 1 ? "" : "s"} com stock a esgotar.
+                  </p>
+                ) : null}
               </div>
             )}
+            {!hasLiveVariants && stockIsLow ? (
+              <div className="rounded-2xl border border-[rgba(249,115,22,0.28)] bg-[rgba(249,115,22,0.08)] px-3 py-2 text-xs font-semibold text-[#F59E0B]">
+                Apenas {editableStockTotal} unidade{editableStockTotal === 1 ? "" : "s"} disponíve{editableStockTotal === 1 ? "l" : "is"}.
+              </div>
+            ) : null}
             <Toggle value={manageStock} onChange={setManageStock} label="Gerir stock" />
             {manageStock && (
               <>
@@ -3260,6 +3378,227 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           </div>
         </div>
       </div>
+
+      {specPasteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
+              <div>
+                <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">
+                  Colar especificações
+                </h3>
+                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                  Cola um bloco de texto e organiza em linhas editáveis antes de inserir no produto.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSpecPasteOpen(false)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-background-tertiary)] hover:text-[var(--color-danger)]"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="flex min-h-[360px] flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Texto colado
+                  </label>
+                  <span className="text-xs text-[var(--color-text-secondary)]">
+                    {specPasteText.length}/{MAX_SPEC_PASTE_LENGTH}
+                  </span>
+                </div>
+                <textarea
+                  value={specPasteText}
+                  maxLength={MAX_SPEC_PASTE_LENGTH}
+                  onChange={(event) => setSpecPasteText(event.target.value)}
+                  className="min-h-[300px] flex-1 resize-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm outline-none transition-colors focus:border-[rgba(232,67,26,0.45)]"
+                  placeholder={`Cole aqui as especificações, uma por linha:\n\nMarca: Sony\nModelo: PlayStation 5 Slim Digital Edition\nArmazenamento: 1TB SSD\nCor: Branco e preto`}
+                />
+                <div className="rounded-2xl border border-[rgba(232,67,26,0.18)] bg-[rgba(232,67,26,0.06)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                  Aceita :, -, =, |, TAB e colunas separadas por espaços largos. HTML e scripts são removidos antes do preview.
+                </div>
+                <button
+                  type="button"
+                  onClick={organizePastedSpecs}
+                  disabled={!specPasteText.trim()}
+                  className="self-start rounded-full bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#d63b17] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Organizar
+                </button>
+              </div>
+
+              <div className="flex min-h-[360px] flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">Preview</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      {specPreviewRows.length} linha{specPreviewRows.length === 1 ? "" : "s"} preparada{specPreviewRows.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {specReviewCount > 0 ? (
+                      <span className="rounded-full bg-[#FFF7ED] px-2.5 py-1 font-semibold text-[#C2410C]">
+                        {specReviewCount} para rever
+                      </span>
+                    ) : null}
+                    {specDuplicateCount > 0 ? (
+                      <span className="rounded-full bg-[#FEF3C7] px-2.5 py-1 font-semibold text-[#92400E]">
+                        {specDuplicateCount} duplicado{specDuplicateCount === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                    {specExtrasCount > 0 ? (
+                      <span className="rounded-full bg-[#EFF6FF] px-2.5 py-1 font-semibold text-[#1D4ED8]">
+                        Extras ignorados
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {specDuplicateCount > 0 ? (
+                  <div className="rounded-2xl border border-[#FDE68A] bg-[#FFFBEB] p-3">
+                    <p className="text-xs font-semibold text-[#92400E]">Foram encontrados atributos que já existem no produto.</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {[
+                        { value: "replace", label: "Substituir" },
+                        { value: "keep", label: "Manter ambos" },
+                        { value: "ignore", label: "Ignorar duplicados" },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setSpecDuplicateResolution(option.value as DuplicateResolution)}
+                          className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                            specDuplicateResolution === option.value
+                              ? "bg-[#92400E] text-white"
+                              : "bg-white text-[#92400E] hover:bg-[#FEF3C7]"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="min-h-[260px] overflow-hidden rounded-2xl border border-[var(--color-border)]">
+                  {specPreviewRows.length > 0 ? (
+                    <div className="max-h-[360px] overflow-auto">
+                      <table className="w-full min-w-[620px] text-sm">
+                        <thead>
+                          <tr className="border-b border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Atributo</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Valor</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-secondary)]">Estado</th>
+                            <th className="w-8" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {specPreviewRows.map((row) => (
+                            <tr key={row.id} className="border-b border-[var(--color-border)] last:border-0">
+                              <td className="px-3 py-2 align-top">
+                                <input
+                                  value={row.attribute}
+                                  onChange={(event) => updateSpecPreviewRow(row.id, "attribute", event.target.value)}
+                                  className={`w-full rounded-xl border px-3 py-1.5 text-sm outline-none ${
+                                    row.needsReview || !row.attribute.trim()
+                                      ? "border-[#FDBA74] bg-[#FFF7ED]"
+                                      : "border-[var(--color-border)] bg-[var(--color-background-tertiary)]"
+                                  }`}
+                                  placeholder="Atributo"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <input
+                                  value={row.value}
+                                  onChange={(event) => updateSpecPreviewRow(row.id, "value", event.target.value)}
+                                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-3 py-1.5 text-sm outline-none"
+                                  placeholder="Valor"
+                                />
+                                {row.extras.length > 0 ? (
+                                  <p className="mt-1 text-[11px] text-[#1D4ED8]">
+                                    Colunas extras ignoradas: {row.extras.join(" | ")}
+                                  </p>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <div className="flex flex-col gap-1">
+                                  {row.needsReview || !row.attribute.trim() ? (
+                                    <span className="rounded-full bg-[#FFF7ED] px-2 py-1 text-[11px] font-bold text-[#C2410C]">Rever</span>
+                                  ) : null}
+                                  {row.duplicate ? (
+                                    <span className="rounded-full bg-[#FEF3C7] px-2 py-1 text-[11px] font-bold text-[#92400E]">Duplicado</span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="px-2 py-2 align-top">
+                                <button
+                                  type="button"
+                                  onClick={() => removeSpecPreviewRow(row.id)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-text-secondary)] transition-colors hover:bg-red-50 hover:text-[var(--color-danger)]"
+                                  aria-label="Remover especificação do preview"
+                                >
+                                  ×
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="flex h-full min-h-[260px] items-center justify-center px-6 text-center text-sm text-[var(--color-text-secondary)]">
+                      Cola especificações e clica em Organizar para ver o preview.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-5 py-4">
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                O produto guarda apenas Atributo e Valor. Linhas sem atributo entram marcadas para revisão.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSpecPasteOpen(false)}
+                  className="rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applySpecPreview("replaceAll")}
+                  disabled={specPreviewRows.length === 0}
+                  className="rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Substituir especificações atuais
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applySpecPreview("append", "keep")}
+                  disabled={specPreviewRows.length === 0}
+                  className="rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Adicionar sem apagar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applySpecPreview("append")}
+                  disabled={specPreviewRows.length === 0}
+                  className="rounded-full bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#d63b17] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Adicionar ao produto
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ImagePickerModal
         open={pickerOpen}

@@ -8,6 +8,7 @@ import type { CurrencyCode, ExchangeRate, ExchangeRateRequest } from "@/lib/admi
 type BaseCurrency = Exclude<CurrencyCode, "MZN">;
 
 const BASE_CURRENCIES: BaseCurrency[] = ["USD", "ZAR"];
+const HISTORY_PAGE_SIZE = 5;
 
 const SOURCE_LABEL: Record<string, string> = {
   MANUAL: "Manual",
@@ -122,6 +123,7 @@ export function ExchangeRatesPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const sortedHistory = useMemo(
     () =>
@@ -130,6 +132,15 @@ export function ExchangeRatesPanel() {
       ),
     [history],
   );
+  const historyPageCount = Math.max(1, Math.ceil(sortedHistory.length / HISTORY_PAGE_SIZE));
+  const paginatedHistory = useMemo(
+    () => sortedHistory.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE),
+    [historyPage, sortedHistory],
+  );
+
+  useEffect(() => {
+    setHistoryPage((current) => Math.min(current, historyPageCount));
+  }, [historyPageCount]);
 
   const loadRates = useCallback(async () => {
     setIsLoading(true);
@@ -330,48 +341,48 @@ export function ExchangeRatesPanel() {
             <table className="min-w-[760px] w-full text-left text-sm">
               <thead className="bg-[var(--color-background-tertiary)] text-[11px] uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
                 <tr>
-                  <th className="px-5 py-3 font-bold">Moeda</th>
-                  <th className="px-5 py-3 font-bold">Taxa</th>
-                  <th className="px-5 py-3 font-bold">Source</th>
-                  <th className="px-5 py-3 font-bold">Estado</th>
-                  <th className="px-5 py-3 font-bold">Criado em</th>
-                  <th className="px-5 py-3 font-bold">Criado por</th>
-                  <th className="px-5 py-3 font-bold">Notas</th>
+                  <th className="px-4 py-3 font-bold">Moeda</th>
+                  <th className="px-4 py-3 font-bold">Taxa</th>
+                  <th className="px-4 py-3 font-bold">Source</th>
+                  <th className="px-4 py-3 font-bold">Estado</th>
+                  <th className="px-4 py-3 font-bold">Criado em</th>
+                  <th className="px-4 py-3 font-bold">Criado por</th>
+                  <th className="px-4 py-3 font-bold">Notas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-[var(--color-text-secondary)]">
+                    <td colSpan={7} className="px-4 py-8 text-center text-[var(--color-text-secondary)]">
                       A carregar histórico...
                     </td>
                   </tr>
                 ) : sortedHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-[var(--color-text-secondary)]">
+                    <td colSpan={7} className="px-4 py-8 text-center text-[var(--color-text-secondary)]">
                       Ainda não há taxas registadas.
                     </td>
                   </tr>
                 ) : (
-                  sortedHistory.map((row) => (
+                  paginatedHistory.map((row) => (
                     <tr key={`${row.baseCurrency}-${row.id}`} className="align-top">
-                      <td className="px-5 py-4 font-bold text-[var(--color-text-primary)]">
+                      <td className="px-4 py-3 font-bold text-[var(--color-text-primary)]">
                         {row.baseCurrency} → {row.targetCurrency}
                       </td>
-                      <td className="px-5 py-4 font-semibold text-[var(--color-text-primary)]">
+                      <td className="px-4 py-3 font-semibold text-[var(--color-text-primary)]">
                         {formatRate(row.rate)}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-3">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${sourceClassName(row.source)}`}>
                           {SOURCE_LABEL[row.source] ?? row.source}
                         </span>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-3">
                         <StatusChip active={row.active} />
                       </td>
-                      <td className="px-5 py-4 text-[var(--color-text-secondary)]">{formatDate(row.createdAt)}</td>
-                      <td className="px-5 py-4 text-[var(--color-text-secondary)]">{row.createdBy || "Sistema"}</td>
-                      <td className="max-w-[240px] px-5 py-4 text-[var(--color-text-secondary)]">
+                      <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatDate(row.createdAt)}</td>
+                      <td className="px-4 py-3 text-[var(--color-text-secondary)]">{row.createdBy || "Sistema"}</td>
+                      <td className="max-w-[220px] px-4 py-3 text-[var(--color-text-secondary)]">
                         {row.notes || "Sem notas"}
                       </td>
                     </tr>
@@ -380,6 +391,32 @@ export function ExchangeRatesPanel() {
               </tbody>
             </table>
           </div>
+
+          {!isLoading && sortedHistory.length > HISTORY_PAGE_SIZE ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-text-secondary)]">
+              <span>
+                Página {historyPage} de {historyPageCount}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                  disabled={historyPage === 1}
+                  className="rounded-full border border-[var(--color-border)] px-3 py-1.5 font-bold text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))}
+                  disabled={historyPage === historyPageCount}
+                  className="rounded-full border border-[var(--color-border)] px-3 py-1.5 font-bold text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Seguinte
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>

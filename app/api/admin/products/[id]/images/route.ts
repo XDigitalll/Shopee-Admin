@@ -16,8 +16,15 @@ export async function POST(request: NextRequest, { params }: Params) {
   await relayAuthFailure(response);
 
   if (!response.ok) {
-    const error = await response.text();
-    return jsonError(error || "Nao foi possivel fazer upload das imagens.", response.status);
+    const text = await response.text();
+    let message = text || "Nao foi possivel fazer upload das imagens.";
+    try {
+      const payload = JSON.parse(text) as { message?: string; error?: string };
+      message = payload.message || payload.error || message;
+    } catch {
+      // keep plain-text backend error
+    }
+    return jsonError(message, response.status);
   }
 
   const data = await parseBackendJson<AdminProduct>(response);

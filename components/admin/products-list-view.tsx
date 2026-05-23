@@ -9,6 +9,8 @@ import { adminApiFetch } from "@/lib/admin/api-client";
 import type { AdminProduct, AdminProductsPageResponse, ProductStatus } from "@/lib/admin/types";
 import { formatMoney } from "@/lib/admin/format";
 import { canManageCatalog } from "@/lib/admin/permissions";
+import { AttentionDot } from "@/components/admin/attention-dot";
+import { isLowStockProduct } from "@/lib/admin/stock-alerts";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,19 @@ function StatusBadge({ status }: { status: ProductStatus }) {
 
 function stockMetric(product: AdminProduct, key: "stockPhysical" | "stockReserved" | "stockAvailable") {
   return Number(product[key] ?? product.stock ?? 0);
+}
+
+function LowStockInlineAlert({ product }: { product: AdminProduct }) {
+  if (!isLowStockProduct(product)) {
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#F59E0B]" title="Stock a esgotar">
+      <AttentionDot className="h-2.5 w-2.5 shadow-[0_0_0_3px_rgba(249,115,22,0.14),0_0_12px_rgba(249,115,22,0.55)]" />
+      Stock baixo
+    </span>
+  );
 }
 
 // ─── Main view ────────────────────────────────────────────────────────────────
@@ -361,6 +376,11 @@ export function ProductsListView() {
                   <div className="absolute top-2 left-2">
                     <StatusBadge status={product.status} />
                   </div>
+                  {isLowStockProduct(product) ? (
+                    <div className="absolute right-2 top-2">
+                      <AttentionDot label="Stock a esgotar" />
+                    </div>
+                  ) : null}
                   <div className="absolute bottom-2 left-2 rounded-lg bg-black/70 px-2 py-1 font-mono text-[11px] font-bold text-white">
                     {product.code || `#${product.id}`}
                   </div>
@@ -402,6 +422,7 @@ export function ProductsListView() {
                   <p className="truncate text-sm font-semibold leading-tight" style={{ color: "#F9FAFB" }}>
                     {product.name}
                   </p>
+                  <LowStockInlineAlert product={product} />
                   <p className="font-mono text-[11px] font-semibold" style={{ color: "#6B7280" }}>
                     {product.code || `#${product.id}`}
                   </p>
@@ -475,8 +496,12 @@ export function ProductsListView() {
                         </div>
                         <div className="min-w-0">
                           <p className="truncate max-w-[180px] font-semibold" style={{ color: "#F9FAFB" }}>
-                            {product.name}
+                            <span className="inline-flex items-center gap-2">
+                              {isLowStockProduct(product) ? <AttentionDot label="Stock a esgotar" className="h-2.5 w-2.5" /> : null}
+                              <span className="truncate">{product.name}</span>
+                            </span>
                           </p>
+                          <LowStockInlineAlert product={product} />
                           <p className="text-xs" style={{ color: "#6B7280" }}>
                             {product.source || "LOCAL"} {product.subCategory ? `• ${product.subCategory}` : ""}
                           </p>

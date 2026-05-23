@@ -21,6 +21,16 @@ function normalizeProduct(product: AdminProduct): AdminProduct {
   };
 }
 
+function backendMessage(text: string, fallback: string) {
+  if (!text.trim()) return fallback;
+  try {
+    const payload = JSON.parse(text) as { message?: string; error?: string };
+    return payload.message || payload.error || fallback;
+  } catch {
+    return text.slice(0, 200);
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const page = searchParams.get("page") ?? "0";
@@ -74,7 +84,7 @@ export async function POST(request: NextRequest) {
 
   if (!response.ok) {
     const error = await response.text();
-    return jsonError(error || "Não foi possível criar o produto.", response.status);
+    return jsonError(backendMessage(error, "Nao foi possivel criar o produto."), response.status);
   }
 
   const data = await parseBackendJson<AdminProduct>(response);
