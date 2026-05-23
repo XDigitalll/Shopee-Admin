@@ -36,9 +36,15 @@ function normalizeProduct(product: AdminProduct): AdminProduct {
 
 async function backendError(response: Response, fallback: string) {
   const detail = await response.text().catch(() => "");
-  const message = detail.trim()
-    ? `Erro ${response.status} do backend: ${detail.slice(0, 200)}`
-    : fallback;
+  let message = fallback;
+  if (detail.trim()) {
+    try {
+      const payload = JSON.parse(detail) as { message?: string; error?: string };
+      message = payload.message || payload.error || fallback;
+    } catch {
+      message = detail.slice(0, 200);
+    }
+  }
 
   return jsonError(message, response.status);
 }

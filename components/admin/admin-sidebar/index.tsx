@@ -1,15 +1,17 @@
 "use client";
 
 import type { ComponentType, SVGProps } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
+import type { AdminProductsPageResponse } from "@/lib/admin/types";
 import { humanizeRole } from "@/lib/admin/format";
 import { canAccessSuperAdmin, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
 import { canPerform, hasPermission } from "@/lib/admin/permissions";
+import { isLowStockProduct } from "@/lib/admin/stock-alerts";
 import {
   BannerIcon,
   BoxIcon,
@@ -241,7 +243,44 @@ export function AdminSidebar({
   const { effectiveRole, logout, profile } = useAdminAuth();
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [temporaryPasswordCleared, setTemporaryPasswordCleared] = useState(false);
+  const [lowStockCount, setLowStockCount] = useState(0);
   const mustChangePassword = Boolean(profile.mustChangePassword) && !temporaryPasswordCleared;
+
+  useEffect(() => {
+    if (!hasPermission(profile, "products")) {
+      setLowStockCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadLowStockCount() {
+      try {
+        const firstPage = await adminApiFetch<AdminProductsPageResponse>("/api/admin/products?page=0&size=100");
+        const pageCount = Math.min(firstPage.totalPages ?? 1, 10);
+        const products = [...(firstPage.content ?? [])];
+
+        for (let pageIndex = 1; pageIndex < pageCount; pageIndex += 1) {
+          const nextPage = await adminApiFetch<AdminProductsPageResponse>(`/api/admin/products?page=${pageIndex}&size=100`);
+          products.push(...(nextPage.content ?? []));
+        }
+
+        if (!cancelled) {
+          setLowStockCount(products.filter(isLowStockProduct).length);
+        }
+      } catch {
+        if (!cancelled) {
+          setLowStockCount(0);
+        }
+      }
+    }
+
+    void loadLowStockCount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
 
   function renderNavItem(item: SidebarItem) {
     if (item.roles && !canPerform(profile, item.roles)) {
@@ -273,6 +312,13 @@ export function AdminSidebar({
       >
         <Icon className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
+        {item.module === "products" && item.href === "/admin/products" && lowStockCount > 0 ? (
+          <span
+            aria-label={`${lowStockCount} produtos com stock baixo`}
+            title={`${lowStockCount} produtos com stock baixo`}
+            className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F97316] shadow-[0_0_0_4px_rgba(249,115,22,0.16),0_0_14px_rgba(249,115,22,0.7)]"
+          />
+        ) : null}
         {typeof count === "number" ? (
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${

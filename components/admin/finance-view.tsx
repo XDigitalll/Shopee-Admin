@@ -17,6 +17,7 @@ import {
 // Types
 
 type FinancePeriod = "week" | "month" | "quarter" | "year";
+const TRANSACTIONS_PAGE_SIZE = 5;
 
 type FinanceStats = {
   totalRevenue: number;
@@ -573,6 +574,10 @@ function TransactionsTable({
   transactions: FinanceTransaction[] | null;
   isLoading: boolean;
 }) {
+  const [page, setPage] = useState(1);
+  const rows = transactions ?? [];
+  const pageCount = Math.max(1, Math.ceil(rows.length / TRANSACTIONS_PAGE_SIZE));
+  const paginatedRows = rows.slice((page - 1) * TRANSACTIONS_PAGE_SIZE, page * TRANSACTIONS_PAGE_SIZE);
   const heads = [
     "Nº Pedido",
     "Cliente",
@@ -582,9 +587,13 @@ function TransactionsTable({
     "Estado",
   ];
 
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount));
+  }, [pageCount]);
+
   return (
     <section className="admin-card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-5">
+      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
         <div>
           <SectionEyebrow>Movimentos</SectionEyebrow>
           <SectionTitle>Transacções recentes</SectionTitle>
@@ -597,7 +606,7 @@ function TransactionsTable({
           <thead className="border-b border-[var(--color-border)] text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
             <tr>
               {heads.map((h) => (
-                <th key={h} className="px-6 py-4 font-medium">
+                <th key={h} className="px-5 py-3 font-medium">
                   {h}
                 </th>
               ))}
@@ -608,7 +617,7 @@ function TransactionsTable({
               Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="border-b border-[var(--color-border)]">
                   {Array.from({ length: 6 }).map((__, j) => (
-                    <td key={j} className="px-6 py-4">
+                    <td key={j} className="px-5 py-3">
                       <div className="h-4 animate-pulse rounded-lg bg-[var(--color-background-tertiary)]" />
                     </td>
                   ))}
@@ -616,27 +625,27 @@ function TransactionsTable({
               ))}
 
             {!isLoading &&
-              (transactions ?? []).map((tx) => (
+              paginatedRows.map((tx) => (
                 <tr
                   key={tx.id}
                   className="border-b border-[var(--color-border)] transition-colors last:border-b-0 hover:bg-[var(--color-background-tertiary)]/60"
                 >
-                  <td className="px-6 py-4 font-[family-name:var(--font-sora)] text-sm font-semibold text-[var(--color-text-primary)]">
+                  <td className="px-5 py-3 font-[family-name:var(--font-sora)] text-sm font-semibold text-[var(--color-text-primary)]">
                     {tx.orderNumber}
                   </td>
-                  <td className="px-6 py-4 text-sm text-[var(--color-text-secondary)]">
+                  <td className="px-5 py-3 text-sm text-[var(--color-text-secondary)]">
                     {tx.customer}
                   </td>
-                  <td className="px-6 py-4 text-sm font-medium text-[var(--color-text-primary)]">
+                  <td className="px-5 py-3 text-sm font-medium text-[var(--color-text-primary)]">
                     {formatMoney(tx.totalAmount)}
                   </td>
-                  <td className="px-6 py-4 text-sm font-semibold text-[#639922]">
+                  <td className="px-5 py-3 text-sm font-semibold text-[#639922]">
                     {formatMoney(tx.commission)}
                   </td>
-                  <td className="px-6 py-4 text-sm text-[var(--color-text-secondary)]">
+                  <td className="px-5 py-3 text-sm text-[var(--color-text-secondary)]">
                     {tx.paymentMethod}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-5 py-3">
                     <span
                       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${txStatusStyle(tx.status)}`}
                     >
@@ -659,6 +668,32 @@ function TransactionsTable({
           </tbody>
         </table>
       </div>
+
+      {!isLoading && rows.length > TRANSACTIONS_PAGE_SIZE ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-text-secondary)]">
+          <span>
+            Página {page} de {pageCount}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+              className="rounded-full border border-[var(--color-border)] px-3 py-1.5 font-bold text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+              disabled={page === pageCount}
+              className="rounded-full border border-[var(--color-border)] px-3 py-1.5 font-bold text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Seguinte
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
