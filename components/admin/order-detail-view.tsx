@@ -25,12 +25,26 @@ const STANDARD_STATUS_STEPS = [
   "DELIVERED",
 ] as const;
 
+// External orders use TO_PURCHASE instead of PAID (post-payment approval step)
+const EXTERNAL_STATUS_STEPS = [
+  "CREATED",
+  "UNDER_REVIEW",
+  "QUOTED",
+  "PENDING_PAYMENT",
+  "TO_PURCHASE",
+  "ORDERED",
+  "IN_TRANSIT",
+  "ARRIVED",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+] as const;
+
 const PICKUP_STATUS_STEPS = [
   "CREATED",
   "UNDER_REVIEW",
   "QUOTED",
   "PENDING_PAYMENT",
-  "PAID",
+  "TO_PURCHASE",
   "ORDERED",
   "DELIVERED",
 ] as const;
@@ -43,7 +57,11 @@ const INTERNAL_DELIVERY_STATUS_STEPS = [
   "DELIVERED",
 ] as const;
 
-type TrackableStatus = (typeof STANDARD_STATUS_STEPS)[number];
+type TrackableStatus =
+  | (typeof STANDARD_STATUS_STEPS)[number]
+  | (typeof EXTERNAL_STATUS_STEPS)[number]
+  | (typeof PICKUP_STATUS_STEPS)[number]
+  | (typeof INTERNAL_DELIVERY_STATUS_STEPS)[number];
 type DetailAction =
   | { label: string; href: string }
   | {
@@ -62,6 +80,7 @@ const STATUS_THEME: Record<string, string> = {
   APPROVED: "bg-[#d1fae5] text-[#065f46]",
   PENDING_PAYMENT: "bg-[#FAEEDA] text-[#633806]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
+  TO_PURCHASE: "bg-[#FFF2D6] text-[#8A5A00]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
@@ -131,6 +150,11 @@ function normalizeTrackingStatus(detail: ExternalOrderDetail | null): TrackableS
     }
   }
 
+  // External orders: PAID (legacy pre-migration) maps to TO_PURCHASE step in external tracker
+  if (detail.type === "EXTERNAL" && !isInternalDeliveryOrder(detail) && status === "PAID") {
+    return "TO_PURCHASE";
+  }
+
   return status as TrackableStatus | "";
 }
 
@@ -140,6 +164,9 @@ function getTrackingSteps(detail: ExternalOrderDetail | null) {
   }
   if (detail && isInternalDeliveryOrder(detail)) {
     return INTERNAL_DELIVERY_STATUS_STEPS;
+  }
+  if (detail && detail.type === "EXTERNAL") {
+    return EXTERNAL_STATUS_STEPS;
   }
   return STANDARD_STATUS_STEPS;
 }
@@ -157,6 +184,7 @@ function getCurrentStepIndex(
 
 function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) {
   if (detail && isPickupOrder(detail)) {
+    if (step === "TO_PURCHASE") return "Pago";
     if (step === "ORDERED") return "Pronto para levantar";
     if (step === "DELIVERED") return "Levantado";
   }
@@ -164,6 +192,7 @@ function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) 
     if (step === "PAID") return "Pago";
     if (step === "OUT_FOR_DELIVERY") return "A caminho";
   }
+  if (step === "TO_PURCHASE") return "Comprar no fornecedor";
 
   return humanizeOrderStatus(step);
 }
@@ -218,7 +247,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
     return null;
   }
 
-  if (status === "PAID") {
+  if (status === "TO_PURCHASE" || status === "PAID") {
     return { label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" };
   }
   if (status === "ORDERED") {
@@ -290,7 +319,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
       actions.push({ label: "Confirmar cobrança na entrega", action: "validate-payment" });
     }
   } else {
-    if (status === "PAID") {
+    if (status === "TO_PURCHASE" || status === "PAID") {
       actions.push({ label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" });
       actions.push({ label: "Actualizar rastreio", action: "focus-tracking" });
     }
@@ -409,8 +438,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     setError("");
     try {
       if (action === "validate-payment") {
-        await adminApiFetch(`/api/admin/orders/${detail.id}/payment/validate`, { method: "PUT" });
-        await refreshData();
+        router.push(`/admin/payments?orderId=${detail.id}`);
         return;
       }
 
@@ -439,12 +467,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       }
 
       if (action === "collect-and-deliver") {
-        await adminApiFetch(`/api/admin/orders/${detail.id}/payment/validate`, { method: "PUT" });
-        await adminApiFetch(`/api/admin/orders/${detail.id}/status`, {
-          method: "PUT",
-          body: JSON.stringify({ status: "DELIVERED" }),
-        });
-        await refreshData();
+        router.push(`/admin/payments?orderId=${detail.id}`);
         return;
       }
 

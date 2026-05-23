@@ -1,6 +1,17 @@
 import type { CustomerOrderStage, OrderQueueStatus, RawAdminOrderStatus } from "@/lib/admin/order-status";
 import type { AdminModule, AdminRole } from "@/lib/admin/roles";
 
+export type TrackingStep = {
+  key: string;
+  label: string;
+  description?: string | null;
+  /** COMPLETED | CURRENT | PENDING | FAILED */
+  state: "COMPLETED" | "CURRENT" | "PENDING" | "FAILED";
+  occurredAt?: string | null;
+  visibleToCustomer?: boolean;
+  visibleToAdmin?: boolean;
+};
+
 export type AdminMetric = {
   id: string;
   label: string;
@@ -90,6 +101,11 @@ export type AdminOrderListItem = {
   nextActionLabel?: string | null;
   nextActionModule?: string | null;
   isArchived?: boolean | null;
+  primaryActionLabel?: string | null;
+  primaryActionEndpoint?: string | null;
+  primaryActionMethod?: string | null;
+  trackingSummarySteps?: TrackingStep[] | null;
+  trackingDetailSteps?: TrackingStep[] | null;
 };
 
 export type OrdersPageResponse = {
