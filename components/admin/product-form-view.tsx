@@ -355,6 +355,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   // Images 
   const [images, setImages] = useState<FormImage[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [deletingImageIds, setDeletingImageIds] = useState<Set<string>>(new Set());
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -481,6 +482,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const specDuplicateCount = specPreviewRows.filter((row) => row.duplicate).length;
   const specReviewCount = specPreviewRows.filter((row) => row.needsReview || !row.attribute.trim()).length;
   const specExtrasCount = specPreviewRows.filter((row) => row.extras.length > 0).length;
+  const imageMutationInProgress = uploadingImages || deletingImageIds.size > 0;
 
   function imageSourceLabel(url: string | null | undefined): string {
     if (!url) return "Sem imagem";
@@ -810,13 +812,54 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   }
 
   async function handleRemoveImage(img: FormImage, index: number) {
+    if (deletingImageIds.has(img.id) || uploadingImages || saving || savingDraft) {
+      return;
+    }
+    setDeletingImageIds((prev) => new Set(prev).add(img.id));
     if (!img.pending && productId) {
       try {
-        await adminApiFetch(`/api/admin/products/${productId}/images/${img.id}`, {
-          method: "DELETE",
-        });
-      } catch {
+        let updated: AdminProduct | null = null;
+        try {
+          updated = await adminApiFetch<AdminProduct>(`/api/admin/products/${productId}/images/${img.id}`, {
+            method: "DELETE",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          if (message.toLowerCase().includes("alterado noutra") || message.toLowerCase().includes("optimistic")) {
+            updated = await adminApiFetch<AdminProduct>(`/api/admin/products/${productId}/images/${img.id}`, {
+              method: "DELETE",
+            });
+          } else {
+            throw error;
+          }
+        }
+        if (updated) {
+          const gallery: FormImage[] = (updated.gallery ?? []).map((image) => ({
+            id: String(image.id),
+            url: image.originalUrl,
+            thumbnailUrl: image.thumbnailUrl ?? undefined,
+            isPrimary: image.primaryImage,
+            displayOrder: image.displayOrder,
+            pending: false,
+          }));
+          setImages(gallery);
+          setErrors((prev) => ({ ...prev, images: undefined }));
+          return;
+        }
+      } catch (error) {
+        setErrors((prev) => ({
+          ...prev,
+          images: error instanceof Error
+            ? error.message
+            : "Este produto foi alterado noutra operação. Atualizamos os dados automaticamente.",
+        }));
         return;
+      } finally {
+        setDeletingImageIds((prev) => {
+          const next = new Set(prev);
+          next.delete(img.id);
+          return next;
+        });
       }
     }
     if (img.pending && img.url.startsWith("blob:")) {
@@ -825,6 +868,11 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
     setImages((prev) => {
       const next = prev.filter((_, i) => i !== index);
       if (img.isPrimary && next.length > 0) next[0].isPrimary = true;
+      return next;
+    });
+    setDeletingImageIds((prev) => {
+      const next = new Set(prev);
+      next.delete(img.id);
       return next;
     });
   }
@@ -1639,14 +1687,14 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           )}
           <button
             onClick={() => handleSave(true)}
-            disabled={savingDraft || saving}
+            disabled={savingDraft || saving || imageMutationInProgress}
             className="admin-button-muted text-sm py-2 px-4 disabled:opacity-50"
           >
             {savingDraft ? "A guardar…" : "Guardar rascunho"}
           </button>
           <button
             onClick={() => handleSave(false)}
-            disabled={saving || savingDraft}
+            disabled={saving || savingDraft || imageMutationInProgress}
             className="admin-button-danger text-sm py-2 px-4 disabled:opacity-60"
           >
             {saving ? (isEdit ? "A actualizar…" : "A publicar…") : (isEdit ? "Actualizar produto" : "Publicar produto")}
@@ -1998,14 +2046,16 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                       <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-yellow-400" title="Aguarda upload" />
                     )}
                     <button
+                      type="button"
+                      disabled={deletingImageIds.has(img.id) || uploadingImages || saving || savingDraft}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRemoveImage(img, idx);
                       }}
-                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white text-xs leading-none hover:bg-[var(--color-danger)] transition-colors"
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white text-xs leading-none transition-colors hover:bg-[var(--color-danger)] disabled:cursor-wait disabled:opacity-70"
                       title="Remover"
                     >
-                      ×
+                      {deletingImageIds.has(img.id) ? "…" : "×"}
                     </button>
                   </div>
                 ))}
