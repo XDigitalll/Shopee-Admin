@@ -18,6 +18,7 @@ import type {
   OrdersPageResponse,
   PendingQuote,
   RecentOrder,
+  TrackingStep,
 } from "@/lib/admin/types";
 
 type BackendPage<T> = {
@@ -65,6 +66,11 @@ type BackendOrder = {
   nextActionLabel?: string | null;
   nextActionModule?: string | null;
   isArchived?: boolean | null;
+  primaryActionLabel?: string | null;
+  primaryActionEndpoint?: string | null;
+  primaryActionMethod?: string | null;
+  trackingSummarySteps?: TrackingStep[] | null;
+  trackingDetailSteps?: TrackingStep[] | null;
 };
 
 function getOrderNumber(order: Pick<BackendOrder, "id" | "code" | "orderCode">) {
@@ -136,6 +142,11 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
     nextActionModule: order.nextActionModule ?? order.actionModule ?? order.actionRequired?.module ?? null,
     isArchived: Boolean(order.isArchived ?? false),
+    primaryActionLabel: order.primaryActionLabel ?? null,
+    primaryActionEndpoint: order.primaryActionEndpoint ?? null,
+    primaryActionMethod: order.primaryActionMethod ?? null,
+    trackingSummarySteps: order.trackingSummarySteps ?? null,
+    trackingDetailSteps: order.trackingDetailSteps ?? null,
   };
 }
 

@@ -19,7 +19,7 @@ type DrawerAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "mark-status" | "mark-ready-for-delivery" | "validate-payment" | "collect-and-close" | "handoff";
+      action: "mark-status" | "mark-ready-for-delivery" | "mark-purchased" | "mark-in-transit" | "mark-arrived" | "validate-payment" | "collect-and-close" | "handoff";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
       targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION";
     };
@@ -83,34 +83,6 @@ const STATUS_THEME: Record<string, string> = {
   CANCELLED: "bg-[#FCEBEB] text-[#791F1F]",
 };
 
-const TRACKING_STEPS = [
-  "UNDER_REVIEW",
-  "QUOTED",
-  "PENDING_PAYMENT",
-  "PAYMENT_SUBMITTED",
-  "PAYMENT_UNDER_REVIEW",
-  "PAYMENT_REJECTED",
-  "PAID",
-  "ORDERED",
-  "IN_TRANSIT",
-  "DELIVERED",
-] as const;
-
-const DELIVERY_TRACKING_STEPS = [
-  "ARRIVED",
-  "OUT_FOR_DELIVERY",
-  "DELIVERED",
-] as const;
-
-const INTERNAL_DELIVERY_TRACKING_STEPS = [
-  "READY_FOR_FULFILLMENT",
-  "READY_FOR_DELIVERY",
-  "OUT_FOR_DELIVERY",
-  "DELIVERED",
-] as const;
-
-const PICKUP_TRACKING_STEPS = ["PAID", "ORDERED", "DELIVERED"] as const;
-
 const DELIVERY_NEXT_ACTION: Record<
   string,
   {
@@ -153,54 +125,6 @@ function paymentQueueForOrder(status: string) {
   return "AWAITING_SUBMISSION";
 }
 
-function getDrawerTrackingSteps(order: AdminOrderListItem | null, mode: "orders" | "delivery") {
-  if (isPickupOrder(order)) {
-    return PICKUP_TRACKING_STEPS;
-  }
-
-  if (isInternalDeliveryOrder(order)) {
-    return INTERNAL_DELIVERY_TRACKING_STEPS;
-  }
-
-  if (mode === "delivery" && order?.type === "EXTERNAL") {
-    return DELIVERY_TRACKING_STEPS;
-  }
-
-  return mode === "delivery" ? INTERNAL_DELIVERY_TRACKING_STEPS : TRACKING_STEPS;
-}
-
-function getDrawerTrackingStatus(order: AdminOrderListItem | null, mode: "orders" | "delivery") {
-  if (!order) {
-    return "";
-  }
-
-  const status = getOperationalStatus(order);
-
-  if (isPickupOrder(order)) {
-    if (["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
-      return "ORDERED";
-    }
-    return status;
-  }
-
-  if (isInternalDeliveryOrder(order)) {
-    if (status === "ORDERED" || status === "ARRIVED") {
-      return "READY_FOR_DELIVERY";
-    }
-    return status;
-  }
-
-  return mode === "delivery" ? status : order.uiStatus;
-}
-
-function getDrawerTrackingStepLabel(step: string, order: AdminOrderListItem | null) {
-  if (isPickupOrder(order)) {
-    if (step === "ORDERED") return "Pronto para levantar";
-    if (step === "DELIVERED") return "Levantado";
-  }
-
-  return humanizeOrderStatus(step);
-}
 
 function TypeBadge({ type }: { type: "EXTERNAL" | "INTERNAL" }) {
   return (
@@ -282,11 +206,9 @@ function OrdersDrawer({
   });
   const isPending = actionRunner.isRunning;
   const actionRegionRef = useRef<HTMLDivElement | null>(null);
-  const trackingSteps = getDrawerTrackingSteps(order, mode);
   const paymentValidated = isPaymentValidated(order?.paymentStatus ?? null);
   const cashOnDelivery = isCashOnDelivery(order);
-  const currentTrackingStatus = getDrawerTrackingStatus(order, mode);
-  const currentStepIndex = trackingSteps.findIndex((step) => step === currentTrackingStatus);
+  const backendTrackingSteps = order?.trackingDetailSteps ?? [];
 
   function primaryAction(orderItem: AdminOrderListItem | null): DrawerAction | null {
     if (!orderItem) return null;
@@ -348,14 +270,14 @@ function OrdersDrawer({
     if (isInternalDeliveryOrder(orderItem) && status === "READY_FOR_DELIVERY") {
       return { label: "Ver em entregas", href: "/admin/delivery/pending" };
     }
-    if (orderItem.uiStatus === "PAID") {
-      return { label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" };
+    if (orderItem.type === "EXTERNAL" && (orderItem.uiStatus === "TO_PURCHASE" || orderItem.uiStatus === "PAID")) {
+      return { label: "Marcar como comprado", action: "mark-purchased" };
     }
-    if (orderItem.type === "EXTERNAL" && status === "ORDERED") {
-      return { label: "Marcar em transito", action: "mark-status", targetStatus: "IN_TRANSIT" };
+    if (orderItem.type === "EXTERNAL" && (status === "ORDERED" || status === "PURCHASED")) {
+      return { label: "Marcar em trânsito", action: "mark-in-transit" };
     }
     if (orderItem.type === "EXTERNAL" && status === "IN_TRANSIT") {
-      return { label: "Marcar como chegado a sede", action: "mark-status", targetStatus: "ARRIVED" };
+      return { label: "Marcar como chegado a sede", action: "mark-arrived" };
     }
     if (orderItem.type === "EXTERNAL" && status === "ARRIVED") {
       return effectiveRole === "SUPER_ADMIN"
@@ -421,6 +343,42 @@ function OrdersDrawer({
         method: "PATCH",
       });
       onFeedback({ message: "Pedido marcado como pronto para entrega.", tone: "success" });
+      onActionComplete();
+    });
+  }
+
+  async function handleMarkPurchased() {
+    if (!order) return;
+
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/mark-purchased`, {
+        method: "PATCH",
+      });
+      onFeedback({ message: "Pedido marcado como comprado no fornecedor.", tone: "success" });
+      onActionComplete();
+    });
+  }
+
+  async function handleMarkInTransit() {
+    if (!order) return;
+
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/mark-in-transit`, {
+        method: "PATCH",
+      });
+      onFeedback({ message: "Pedido marcado como em trânsito internacional.", tone: "success" });
+      onActionComplete();
+    });
+  }
+
+  async function handleMarkArrived() {
+    if (!order) return;
+
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/mark-arrived`, {
+        method: "PATCH",
+      });
+      onFeedback({ message: "Pedido marcado como chegado a sede.", tone: "success" });
       onActionComplete();
     });
   }
@@ -543,28 +501,30 @@ function OrdersDrawer({
                 Rastreador
               </p>
               <div className="space-y-3">
-                {trackingSteps.map((step, index) => {
-                  const done = currentStepIndex >= index && currentStepIndex !== -1;
-                  const active = currentTrackingStatus === step;
+                {backendTrackingSteps.map((step, index) => {
+                  const done = step.state === "COMPLETED";
+                  const active = step.state === "CURRENT";
+                  const failed = step.state === "FAILED";
 
                   return (
-                    <div key={step} className="flex items-start gap-3">
+                    <div key={step.key} className="flex items-start gap-3">
                       <div className="flex flex-col items-center">
                         <span
                           className="flex h-4 w-4 items-center justify-center rounded-full border-2"
                           style={{
-                            borderColor: done ? "#E8431A" : "var(--color-border-strong)",
-                            backgroundColor: done ? "#E8431A" : "transparent",
+                            borderColor: done || active ? "#E8431A" : failed ? "#B42318" : "var(--color-border-strong)",
+                            backgroundColor: done ? "#E8431A" : failed ? "#B42318" : "transparent",
                           }}
                         >
-                          {active ? <span className="text-[10px] text-white">→</span> : null}
+                          {active ? <span className="h-2 w-2 rounded-full" style={{ background: "#E8431A" }} /> : null}
+                          {failed && !active ? <span className="text-[9px] text-white">✕</span> : null}
                         </span>
-                        {index < trackingSteps.length - 1 ? (
+                        {index < backendTrackingSteps.length - 1 ? (
                           <span className="mt-1 h-6 w-px" style={{ backgroundColor: done ? "#E8431A" : "var(--color-border-strong)" }} />
                         ) : null}
                       </div>
-                      <span className={`text-sm ${active ? "font-semibold text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>
-                        {getDrawerTrackingStepLabel(step, order)}
+                      <span className={`text-sm ${active || failed ? "font-semibold text-[var(--color-text-primary)]" : done ? "text-[var(--color-text-secondary)]" : "text-[var(--color-text-tertiary,var(--color-text-secondary))]"}`}>
+                        {step.label}
                       </span>
                     </div>
                   );
@@ -611,6 +571,21 @@ function OrdersDrawer({
 
                       if (action.action === "mark-ready-for-delivery") {
                         void handleMarkReadyForDelivery();
+                        return;
+                      }
+
+                      if (action.action === "mark-purchased") {
+                        void handleMarkPurchased();
+                        return;
+                      }
+
+                      if (action.action === "mark-in-transit") {
+                        void handleMarkInTransit();
+                        return;
+                      }
+
+                      if (action.action === "mark-arrived") {
+                        void handleMarkArrived();
                         return;
                       }
 

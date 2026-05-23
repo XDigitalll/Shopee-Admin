@@ -19,14 +19,18 @@ function hasReachedTarget(currentStatus: string, targetStatus: string) {
   }
 
   if (targetStatus === "ORDERED") {
-    return ["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(currentStatus);
+    return ["ORDERED", "PURCHASED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(currentStatus);
+  }
+
+  if (targetStatus === "PURCHASED") {
+    return ["PURCHASED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(currentStatus);
   }
 
   return false;
 }
 
-const ALLOWED_TARGETS = ["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
-const ALLOWED_PROGRESSION = ["PAID", "ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
+const ALLOWED_TARGETS = ["ORDERED", "PURCHASED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
+const ALLOWED_PROGRESSION = ["PAID", "TO_PURCHASE", "ORDERED", "PURCHASED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
