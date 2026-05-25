@@ -102,6 +102,8 @@ export function jsonErrorPayload(payload: unknown, status: number, fallback: str
   return NextResponse.json({
     message: typeof body.message === "string" ? body.message : fallback,
     code: typeof body.code === "string" ? body.code : undefined,
+    action: typeof body.action === "string" ? body.action : undefined,
+    fieldErrors: body.fieldErrors,
     details: body.details,
   }, { status });
 }

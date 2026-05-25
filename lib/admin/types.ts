@@ -918,6 +918,18 @@ export type AdminProductsPageResponse = {
   totalPages: number;
 };
 
+export type ProductAttentionItem = {
+  productId: number | string;
+  productCode?: string | null;
+  productName?: string | null;
+  reason: string;
+};
+
+export type ProductAttentionResponse = {
+  count: number;
+  items: ProductAttentionItem[];
+};
+
 export type ImageLibraryItem = {
   id: number;
   thumbnailUrl: string;

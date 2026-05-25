@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { fetchBackend, jsonError, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
+import { fetchBackend, jsonError, jsonErrorPayload, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 import type { AdminProduct, AdminProductCategory, CreateProductPayload } from "@/lib/admin/types";
 
 type Params = { params: Promise<{ id: string }> };
@@ -49,6 +49,11 @@ async function backendError(response: Response, fallback: string) {
   return jsonError(message, response.status);
 }
 
+async function relayBackendError(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => null);
+  return jsonErrorPayload(payload, response.status, fallback);
+}
+
 export async function GET(request: NextRequest, { params }: Params) {
   const { id } = await params;
 
@@ -86,7 +91,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   await relayAuthFailure(response);
 
   if (!response.ok) {
-    return backendError(response, "Nao foi possivel actualizar o produto.");
+    return relayBackendError(response, "Nao foi possivel actualizar o produto.");
   }
 
   const data = await parseBackendJson<AdminProduct>(response);
@@ -106,9 +111,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   await relayAuthFailure(response);
 
   if (!response.ok) {
-    return backendError(response, "Nao foi possivel remover o produto.");
+    return relayBackendError(response, "Nao foi possivel remover o produto.");
   }
 
-  const data = await parseBackendJson<AdminProduct>(response);
-  return NextResponse.json(normalizeProduct(data));
+  return new NextResponse(null, { status: 204 });
 }
