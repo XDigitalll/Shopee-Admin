@@ -7,11 +7,10 @@ import { usePathname } from "next/navigation";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
-import type { AdminProductsPageResponse } from "@/lib/admin/types";
+import type { ProductAttentionResponse } from "@/lib/admin/types";
 import { humanizeRole } from "@/lib/admin/format";
 import { canAccessSuperAdmin, MODULE_METADATA, type AdminRole } from "@/lib/admin/roles";
 import { canPerform, hasPermission } from "@/lib/admin/permissions";
-import { isLowStockProduct } from "@/lib/admin/stock-alerts";
 import {
   BannerIcon,
   BoxIcon,
@@ -243,44 +242,45 @@ export function AdminSidebar({
   const { effectiveRole, logout, profile } = useAdminAuth();
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [temporaryPasswordCleared, setTemporaryPasswordCleared] = useState(false);
-  const [lowStockCount, setLowStockCount] = useState(0);
+  const [productAttention, setProductAttention] = useState<ProductAttentionResponse>({ count: 0, items: [] });
+  const [productAttentionOpen, setProductAttentionOpen] = useState(false);
   const mustChangePassword = Boolean(profile.mustChangePassword) && !temporaryPasswordCleared;
 
   useEffect(() => {
     if (!hasPermission(profile, "products")) {
-      setLowStockCount(0);
+      setProductAttention({ count: 0, items: [] });
+      setProductAttentionOpen(false);
       return;
     }
 
     let cancelled = false;
 
-    async function loadLowStockCount() {
+    async function loadProductAttention() {
       try {
-        const firstPage = await adminApiFetch<AdminProductsPageResponse>("/api/admin/products?page=0&size=100");
-        const pageCount = Math.min(firstPage.totalPages ?? 1, 10);
-        const products = [...(firstPage.content ?? [])];
-
-        for (let pageIndex = 1; pageIndex < pageCount; pageIndex += 1) {
-          const nextPage = await adminApiFetch<AdminProductsPageResponse>(`/api/admin/products?page=${pageIndex}&size=100`);
-          products.push(...(nextPage.content ?? []));
-        }
-
+        const payload = await adminApiFetch<ProductAttentionResponse>("/api/admin/products/attention");
         if (!cancelled) {
-          setLowStockCount(products.filter(isLowStockProduct).length);
+          setProductAttention({
+            count: Number(payload.count ?? 0),
+            items: payload.items ?? [],
+          });
+          if ((payload.count ?? 0) <= 0) {
+            setProductAttentionOpen(false);
+          }
         }
       } catch {
         if (!cancelled) {
-          setLowStockCount(0);
+          setProductAttention({ count: 0, items: [] });
+          setProductAttentionOpen(false);
         }
       }
     }
 
-    void loadLowStockCount();
+    void loadProductAttention();
 
     return () => {
       cancelled = true;
     };
-  }, [profile]);
+  }, [profile, pathname]);
 
   function renderNavItem(item: SidebarItem) {
     if (item.roles && !canPerform(profile, item.roles)) {
@@ -296,39 +296,80 @@ export function AdminSidebar({
       return null;
     }
     const count = item.counterKey ? counters[item.counterKey] : null;
+    const isProductsItem = item.module === "products" && item.href === "/admin/products";
+    const productAttentionCount = productAttention.count ?? 0;
+    const productAttentionTitle = `${productAttentionCount} ${productAttentionCount === 1 ? "produto precisa" : "produtos precisam"} de atencao`;
     const Icon = item.icon;
 
     return (
-      <Link
-        key={item.href}
-        href={item.href}
-        className={[
-          "group flex items-center gap-3 rounded-2xl border-l-2 px-3 py-2.5 transition",
-          item.indent ? "ml-4 pl-4" : "",
-          isActive
-            ? "border-[#E8431A] bg-[rgba(232,67,26,0.12)] text-[#FF8066]"
-            : "border-transparent text-white/75 hover:bg-white/5 hover:text-white",
-        ].join(" ")}
-      >
-        <Icon className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
-        {item.module === "products" && item.href === "/admin/products" && lowStockCount > 0 ? (
-          <span
-            aria-label={`${lowStockCount} produtos com stock baixo`}
-            title={`${lowStockCount} produtos com stock baixo`}
-            className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F97316] shadow-[0_0_0_4px_rgba(249,115,22,0.16),0_0_14px_rgba(249,115,22,0.7)]"
-          />
+      <div key={item.href} className="relative">
+        <Link
+          href={item.href}
+          className={[
+            "group flex items-center gap-3 rounded-2xl border-l-2 px-3 py-2.5 transition",
+            item.indent ? "ml-4 pl-4" : "",
+            isActive
+              ? "border-[#E8431A] bg-[rgba(232,67,26,0.12)] text-[#FF8066]"
+              : "border-transparent text-white/75 hover:bg-white/5 hover:text-white",
+          ].join(" ")}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
+          {isProductsItem && productAttentionCount > 0 ? (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={productAttentionTitle}
+              title={productAttentionTitle}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setProductAttentionOpen((open) => !open);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setProductAttentionOpen((open) => !open);
+                }
+              }}
+              className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F97316] shadow-[0_0_0_4px_rgba(249,115,22,0.16),0_0_14px_rgba(249,115,22,0.7)] outline-none ring-offset-2 ring-offset-[#111827] focus:ring-2 focus:ring-[#FDBA74]"
+            />
+          ) : null}
+          {typeof count === "number" ? (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                count > 0 ? "bg-[#E8431A] text-white" : "bg-white/10 text-white/80"
+              }`}
+            >
+              {count}
+            </span>
+          ) : null}
+        </Link>
+        {isProductsItem && productAttentionOpen && productAttentionCount > 0 ? (
+          <div className="absolute left-full top-0 z-50 ml-3 w-[280px] rounded-2xl border border-white/10 bg-[#111827] p-3 text-white shadow-2xl max-[760px]:left-3 max-[760px]:top-full max-[760px]:mt-2 max-[760px]:ml-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#FDBA74]">{productAttentionTitle}</p>
+            <div className="mt-3 space-y-2">
+              {productAttention.items.slice(0, 6).map((attention) => (
+                <Link
+                  key={`${attention.productId}-${attention.reason}`}
+                  href={`/admin/products/${attention.productId}/edit`}
+                  className="block rounded-xl border border-white/8 bg-white/5 px-3 py-2 transition hover:border-[#F97316]/50 hover:bg-white/8"
+                  onClick={() => setProductAttentionOpen(false)}
+                >
+                  <span className="block truncate text-sm font-semibold text-white">
+                    {attention.productName || attention.productCode || `Produto ${attention.productId}`}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-white/65">{attention.reason}</span>
+                </Link>
+              ))}
+            </div>
+            {productAttentionCount > 6 ? (
+              <p className="mt-3 text-xs text-white/55">Mais {productAttentionCount - 6} produtos precisam de atencao.</p>
+            ) : null}
+          </div>
         ) : null}
-        {typeof count === "number" ? (
-          <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              count > 0 ? "bg-[#E8431A] text-white" : "bg-white/10 text-white/80"
-            }`}
-          >
-            {count}
-          </span>
-        ) : null}
-      </Link>
+      </div>
     );
   }
 

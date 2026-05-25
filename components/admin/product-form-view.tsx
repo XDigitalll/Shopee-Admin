@@ -131,9 +131,11 @@ interface SpecRow {
 
 interface FormErrors {
   name?: string;
+  description?: string;
   finalPrice?: string;
   categoryId?: string;
   images?: string;
+  stock?: string;
 }
 
 type ProductDraftSnapshot = {
@@ -462,13 +464,6 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const totalStockUnits = variantsEnabled
     ? Object.values(variantStock).reduce((sum, value) => sum + (parseInt(value, 10) || 0), 0)
     : parseInt(stock, 10) || 0;
-  const readinessItems = [
-    { label: "Nome", done: name.trim().length >= 3 },
-    { label: "Categoria", done: Boolean(categoryId || subcategoryId) },
-    { label: "Preço", done: fp > 0 },
-    { label: "Imagens", done: images.length > 0 },
-  ];
-  const completedReadiness = readinessItems.filter((item) => item.done).length;
   const activeVariantStockTotal = editVariants
     .filter((variant) => variant.active)
     .reduce((sum, variant) => sum + (Number(variant.stock) || 0), 0);
@@ -477,6 +472,16 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   const hasLiveVariants = isEdit && editVariants.length > 0;
   const lowStockThreshold = Math.max(0, parseInt(minStock, 10) || LOW_STOCK_THRESHOLD);
   const editableStockTotal = hasLiveVariants ? activeVariantStockTotal : parseInt(stock, 10) || 0;
+  const readinessItems = [
+    { label: "Nome", done: name.trim().length >= 3, fix: "Preenche pelo menos 3 caracteres." },
+    { label: "Descricao", done: description.trim().length >= 10, fix: "Adiciona uma descricao curta do produto." },
+    { label: "Categoria", done: Boolean(categoryId || subcategoryId), fix: "Seleciona categoria ou subcategoria." },
+    { label: "Preco", done: fp > 0, fix: "Define preco de venda maior que zero." },
+    { label: "Imagem principal", done: images.length > 0, fix: "Adiciona pelo menos uma imagem." },
+    { label: "Stock", done: status !== "ACTIVE" || editableStockTotal > 0, fix: "Adiciona stock antes de publicar." },
+  ];
+  const completedReadiness = readinessItems.filter((item) => item.done).length;
+  const missingReadiness = readinessItems.filter((item) => !item.done);
   const stockIsLow = manageStock && isLowStockQuantity(editableStockTotal, lowStockThreshold);
   const lowStockVariantCount = editVariants.filter((variant) => variant.active && isLowStockVariant(variant, lowStockThreshold)).length;
   const specDuplicateCount = specPreviewRows.filter((row) => row.duplicate).length;
@@ -584,9 +589,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
         const derivedStatus =
           product.status === "ARCHIVED"
             ? "ARCHIVED"
-            : product.status === "INACTIVE"
-            ? "INACTIVE"
-            : "ACTIVE";
+            : product.status === "ACTIVE"
+            ? "ACTIVE"
+            : "INACTIVE";
         setStatus(derivedStatus);
 
         if (product.category) {
@@ -1482,9 +1487,11 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
   function validate(): boolean {
     const errs: FormErrors = {};
     if (name.trim().length < 3) errs.name = "O nome deve ter pelo menos 3 caracteres.";
+    if (description.trim().length < 10) errs.description = "Adicione uma descrição curta do produto.";
     if (!fp || fp <= 0) errs.finalPrice = "O preço de venda deve ser maior que zero.";
     if (!categoryId && !subcategoryId) errs.categoryId = "Seleccione uma categoria ou subcategoria.";
     if (images.length === 0) errs.images = "Adicione pelo menos uma imagem.";
+    if (status === "ACTIVE" && editableStockTotal <= 0) errs.stock = "Não é possível publicar produto sem stock.";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -1510,7 +1517,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       weight: weight ? parseFloat(weight) : undefined,
       volume: volume ? parseFloat(volume) : undefined,
       stock: hasLiveVariants ? activeVariantStockTotal : parseInt(stock) || 0,
-      active: asActive,
+      active: asActive && status === "ACTIVE",
       deliveryInfo: deliveryInfo.trim() || undefined,
       warrantyInfo: warrantyInfo.trim() || undefined,
       returnPolicy: returnPolicy.trim() || undefined,
@@ -1573,11 +1580,18 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
           body: JSON.stringify(payload),
         });
       } else {
+        const createPayload = status === "ACTIVE" ? { ...payload, active: false } : payload;
         const created = await adminApiFetch<AdminProduct>("/api/admin/products", {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(createPayload),
         });
         await uploadPendingImages(created.id);
+        if (status === "ACTIVE") {
+          await adminApiFetch(`/api/admin/products/${created.id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "ACTIVE" }),
+          });
+        }
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(PRODUCT_DRAFT_STORAGE_KEY);
         }
@@ -1592,6 +1606,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
         setErrors((prev) => ({ ...prev, name: "Já existe um produto com nome semelhante. Geramos uma referência única automaticamente. Tenta guardar novamente." }));
       } else {
         setErrors((prev) => ({ ...prev, name: msg }));
+        setDraftToast({ type: "err", msg });
       }
     } finally {
       setter(false);
@@ -1796,6 +1811,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                 />
               </div>
               <FieldHint text="Explica o que o produto oferece, materiais, beneficios e o que o cliente recebe." />
+              {errors.description && (
+                <p className="mt-1 text-xs text-[var(--color-danger)]">{errors.description}</p>
+              )}
             </div>
 
             {/* Prices row */}
@@ -3231,6 +3249,16 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                 </div>
               ))}
             </div>
+            {missingReadiness.length > 0 ? (
+              <div className="rounded-2xl border border-[rgba(232,67,26,0.2)] bg-[rgba(232,67,26,0.07)] p-3 text-xs text-[var(--color-danger)]">
+                <p className="font-bold">Antes de publicar, corrige:</p>
+                <ul className="mt-2 space-y-1">
+                  {missingReadiness.map((item) => (
+                    <li key={item.label}>{item.label}: {item.fix}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           {/* Stock card */}
@@ -3273,11 +3301,14 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                   <input
                     type="number"
                     min="0"
-                    className="admin-input font-[family-name:var(--font-sora)] font-semibold text-sm"
+                    className={`admin-input font-[family-name:var(--font-sora)] font-semibold text-sm ${errors.stock ? "border-[var(--color-danger)]" : ""}`}
                     value={stock}
                     disabled={hasLiveVariants}
                     onChange={(e) => setStock(e.target.value)}
                   />
+                  {errors.stock && (
+                    <p className="mt-1 text-xs text-[var(--color-danger)]">{errors.stock}</p>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">

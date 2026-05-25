@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AdminListLoadingOverlay } from "@/components/admin/feedback-state";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
-import { adminApiFetch } from "@/lib/admin/api-client";
+import { ApiError, adminApiFetch } from "@/lib/admin/api-client";
 import type { AdminProduct, AdminProductsPageResponse, ProductStatus } from "@/lib/admin/types";
 import { formatMoney } from "@/lib/admin/format";
 import { canManageCatalog } from "@/lib/admin/permissions";
@@ -76,6 +76,16 @@ function StatusBadge({ status }: { status: ProductStatus }) {
 
 function stockMetric(product: AdminProduct, key: "stockPhysical" | "stockReserved" | "stockAvailable") {
   return Number(product[key] ?? product.stock ?? 0);
+}
+
+function publishBlockReason(product: AdminProduct) {
+  if (stockMetric(product, "stockAvailable") <= 0) return "Nao e possivel publicar produto sem stock.";
+  if (!product.category?.id) return "Nao e possivel publicar produto sem categoria.";
+  if (Number(product.finalPrice ?? 0) <= 0) return "Nao e possivel publicar produto sem preco valido.";
+  if (!product.gallery?.some((image) => image.primaryImage) && !product.primaryImageUrl && (product.images?.length ?? 0) === 0) {
+    return "Nao e possivel publicar produto sem imagem principal.";
+  }
+  return null;
 }
 
 function LowStockInlineAlert({ product }: { product: AdminProduct }) {
@@ -172,13 +182,34 @@ export function ProductsListView() {
       showToast("ok", `"${product.name}" eliminado.`);
       void load(page);
     } catch (e) {
-      showToast("err", e instanceof Error ? e.message : "Erro ao eliminar produto.");
+      if (e instanceof ApiError && e.code === "PRODUCT_HAS_ORDERS") {
+        const shouldArchive = confirm(`${e.message}\n\nArquivar este produto agora?`);
+        if (shouldArchive) {
+          try {
+            await adminApiFetch(`/api/admin/products/${product.id}/archive`, { method: "PATCH" });
+            showToast("ok", `"${product.name}" arquivado.`);
+            void load(page);
+          } catch (archiveError) {
+            showToast("err", archiveError instanceof Error ? archiveError.message : "Erro ao arquivar produto.");
+          }
+        } else {
+          showToast("err", e.message);
+        }
+      } else {
+        showToast("err", e instanceof Error ? e.message : "Erro ao eliminar produto.");
+      }
     } finally {
       setDeletingId(null);
     }
   };
 
   const handlePublish = async (product: AdminProduct) => {
+    const blockReason = publishBlockReason(product);
+    if (blockReason) {
+      showToast("err", blockReason);
+      return;
+    }
+
     setPublishingId(product.id);
     try {
       await adminApiFetch(`/api/admin/products/${product.id}/status`, {
@@ -357,6 +388,7 @@ export function ProductsListView() {
           {products.map((product) => {
             const img = primaryImage(product);
             const isDeleting = deletingId === product.id;
+            const publishReason = publishBlockReason(product);
             return (
               <div
                 key={product.id}
@@ -381,7 +413,7 @@ export function ProductsListView() {
                       <AttentionDot label="Stock a esgotar" />
                     </div>
                   ) : null}
-                  <div className="absolute bottom-2 left-2 rounded-lg bg-black/70 px-2 py-1 font-mono text-[11px] font-bold text-white">
+                  <div className="absolute bottom-2 left-2 whitespace-nowrap rounded-lg bg-black/70 px-2 py-1 font-mono text-[11px] font-bold text-white">
                     {product.code || `#${product.id}`}
                   </div>
                   {/* Quick actions on hover */}
@@ -389,7 +421,8 @@ export function ProductsListView() {
                     {(product.status === "DRAFT" || product.status === "INACTIVE") && (
                       <button
                         type="button"
-                        disabled={publishingId === product.id}
+                        disabled={publishingId === product.id || Boolean(publishReason)}
+                        title={publishReason ?? "Publicar produto"}
                         onClick={() => void handlePublish(product)}
                         className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold transition disabled:opacity-50"
                         style={{ background: "#065F46", color: "#D1FAE5" }}
@@ -423,7 +456,7 @@ export function ProductsListView() {
                     {product.name}
                   </p>
                   <LowStockInlineAlert product={product} />
-                  <p className="font-mono text-[11px] font-semibold" style={{ color: "#6B7280" }}>
+                  <p className="whitespace-nowrap font-mono text-[11px] font-semibold" style={{ color: "#6B7280" }}>
                     {product.code || `#${product.id}`}
                   </p>
                   {product.category?.name && (
@@ -465,6 +498,7 @@ export function ProductsListView() {
               {products.map((product, i) => {
                 const img = primaryImage(product);
                 const isDeleting = deletingId === product.id;
+                const publishReason = publishBlockReason(product);
                 return (
                   <tr
                     key={product.id}
@@ -474,7 +508,7 @@ export function ProductsListView() {
                     }}
                   >
                     <td className="px-4 py-3 align-middle">
-                      <span className="rounded-lg px-2 py-1 font-mono text-xs font-bold" style={{ background: "#1F2937", color: "#D1D5DB" }}>
+                      <span className="inline-flex whitespace-nowrap rounded-lg px-2 py-1 font-mono text-xs font-bold" style={{ background: "#1F2937", color: "#D1D5DB" }}>
                         {product.code || `#${product.id}`}
                       </span>
                     </td>
@@ -544,7 +578,8 @@ export function ProductsListView() {
                         {(product.status === "DRAFT" || product.status === "INACTIVE") && (
                           <button
                             type="button"
-                            disabled={publishingId === product.id}
+                            disabled={publishingId === product.id || Boolean(publishReason)}
+                            title={publishReason ?? "Publicar produto"}
                             onClick={() => void handlePublish(product)}
                             className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold transition disabled:opacity-50"
                             style={{ background: "#065F46", color: "#D1FAE5" }}

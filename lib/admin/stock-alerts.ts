@@ -15,6 +15,10 @@ export function isLowStockQuantity(stock: number, threshold = LOW_STOCK_THRESHOL
 }
 
 export function isLowStockProduct(product: AdminProduct, threshold = LOW_STOCK_THRESHOLD) {
+  if (product.status !== "ACTIVE") {
+    return false;
+  }
+
   const variantStocks = product.variants
     ?.filter((variant) => variant.active)
     .map((variant) => numericStock(variant.stockAvailable ?? variant.stock)) ?? [];

@@ -10,19 +10,25 @@ type ApiErrorPayload = {
   message?: unknown;
   error?: unknown;
   code?: unknown;
+  action?: unknown;
+  fieldErrors?: unknown;
   details?: unknown;
 };
 
 export class ApiError extends Error {
   status?: number;
   code?: string;
+  action?: string;
+  fieldErrors?: unknown;
   details?: unknown;
 
-  constructor(message: string, status?: number, code?: string, details?: unknown) {
+  constructor(message: string, status?: number, code?: string, details?: unknown, action?: string, fieldErrors?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.action = action;
+    this.fieldErrors = fieldErrors;
     this.details = details;
   }
 }
@@ -67,13 +73,15 @@ function parseApiErrorPayload(payload: unknown): ApiErrorPayload {
 function createApiError(payload: unknown, status?: number) {
   const parsed = parseApiErrorPayload(payload);
   const backendMessage = firstString(parsed.message, parsed.error);
-  const shouldUseBackendMessage = !status || status === 400 || status === 422;
+  const shouldUseBackendMessage = Boolean(backendMessage);
   const message = shouldUseBackendMessage && backendMessage ? backendMessage : statusFallbackMessage(status);
   return new ApiError(
     message,
     status,
     typeof parsed.code === "string" ? parsed.code : undefined,
-    parsed.details
+    parsed.details,
+    typeof parsed.action === "string" ? parsed.action : undefined,
+    parsed.fieldErrors
   );
 }
 
