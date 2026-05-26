@@ -45,6 +45,13 @@ const ISSUE_OPTIONS = [
 
 const CLIENT_APP_URL = (process.env.NEXT_PUBLIC_CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
 const READY_FOR_DELIVERY_STATUSES = new Set(["READY_FOR_DELIVERY", "DELIVERY_FAILED"]);
+const ESTIMATED_DELIVERY_PRESETS = [
+  { label: "30 min", minutes: 30 },
+  { label: "45 min", minutes: 45 },
+  { label: "1h", minutes: 60 },
+  { label: "1h 30", minutes: 90 },
+  { label: "2h", minutes: 120 },
+];
 
 type FeedbackState = {
   tone: "success" | "error" | "loading";
@@ -151,6 +158,37 @@ function buildCsv(rows: string[][]) {
   return rows
     .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
     .join("\n");
+}
+
+function parseEstimatedDeliveryMinutes(value: string | null | undefined) {
+  const hours = Number(value ?? 0);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return 0;
+  }
+  return Math.round(hours * 60);
+}
+
+function formatEstimatedDeliveryValue(totalMinutes: number) {
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+    return "";
+  }
+  const hours = totalMinutes / 60;
+  return Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(2)));
+}
+
+function getEstimatedDeliveryParts(value: string | null | undefined) {
+  const totalMinutes = parseEstimatedDeliveryMinutes(value);
+  return {
+    totalMinutes,
+    hours: Math.floor(totalMinutes / 60),
+    minutes: totalMinutes % 60,
+  };
+}
+
+function combineEstimatedDeliveryParts(hours: number, minutes: number) {
+  const safeHours = Number.isFinite(hours) ? Math.max(0, Math.min(72, Math.floor(hours))) : 0;
+  const safeMinutes = Number.isFinite(minutes) ? Math.max(0, Math.min(59, Math.floor(minutes))) : 0;
+  return formatEstimatedDeliveryValue(safeHours * 60 + safeMinutes);
 }
 
 function isReadyForDeliveryStatus(status: string | null | undefined) {
@@ -769,6 +807,23 @@ export function DeliveryPendingView() {
     }));
   }
 
+  function updateEstimatedDeliveryPart(orderId: number, part: "hours" | "minutes", value: string) {
+    const current = getEstimatedDeliveryParts(forms[orderId]?.estimatedDeliveryTime);
+    const numericValue = Number(value);
+    const nextHours = part === "hours" ? numericValue : current.hours;
+    const nextMinutes = part === "minutes" ? numericValue : current.minutes;
+
+    updateForm(orderId, {
+      estimatedDeliveryTime: combineEstimatedDeliveryParts(nextHours, nextMinutes),
+    });
+  }
+
+  function setEstimatedDeliveryPreset(orderId: number, minutes: number) {
+    updateForm(orderId, {
+      estimatedDeliveryTime: formatEstimatedDeliveryValue(minutes),
+    });
+  }
+
   async function defineFee(order: DeliveryPendingOrder) {
     if (!isReadyForDeliveryStatus(order.status)) {
       setFeedback({
@@ -780,6 +835,7 @@ export function DeliveryPendingView() {
 
     const form = forms[order.id];
     const fee = Number(form?.deliveryFee ?? 0);
+    const estimatedDeliveryMinutes = parseEstimatedDeliveryMinutes(form?.estimatedDeliveryTime);
     if (!Number.isFinite(fee) || fee <= 0) {
       setFeedback({ tone: "error", message: `Define um preco de entrega valido para ${order.number}.` });
       return;
@@ -792,7 +848,7 @@ export function DeliveryPendingView() {
         method: "PUT",
         body: JSON.stringify({
           deliveryFee: fee,
-          estimatedDeliveryTime: form?.estimatedDeliveryTime ? Number(form.estimatedDeliveryTime) : null,
+          estimatedDeliveryTime: estimatedDeliveryMinutes > 0 ? estimatedDeliveryMinutes / 60 : null,
           notes: form?.notes?.trim() || null,
         }),
       });
@@ -934,6 +990,7 @@ export function DeliveryPendingView() {
               notes: "",
               driverId: "",
             };
+            const estimatedDeliveryParts = getEstimatedDeliveryParts(form.estimatedDeliveryTime);
             const isRetry = (order.deliveryAttempt ?? 1) > 1;
             const isReadyForDelivery = isReadyForDeliveryStatus(order.status);
             const hasFee = Number(order.deliveryFee ?? Number(form.deliveryFee || 0)) > 0;
@@ -1045,18 +1102,64 @@ export function DeliveryPendingView() {
                         className="admin-input w-full"
                       />
                     </label>
-                    <label className="block">
-                      <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">Tempo estimado (horas)</span>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={form.estimatedDeliveryTime}
-                        onChange={(event) => updateForm(order.id, { estimatedDeliveryTime: event.target.value })}
-                        disabled={feeAlreadyNotified}
-                        className="admin-input w-full"
-                      />
-                    </label>
+                    <div className="block">
+                      <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">Tempo estimado</span>
+                      <div className="grid grid-cols-[1fr_1fr] gap-2">
+                        <label className="block">
+                          <span className="sr-only">Horas</span>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              max="72"
+                              step="1"
+                              value={estimatedDeliveryParts.hours}
+                              onChange={(event) => updateEstimatedDeliveryPart(order.id, "hours", event.target.value)}
+                              disabled={feeAlreadyNotified}
+                              className="admin-input w-full pr-14"
+                            />
+                            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[var(--color-text-secondary)]">
+                              h
+                            </span>
+                          </div>
+                        </label>
+                        <label className="block">
+                          <span className="sr-only">Minutos</span>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              max="59"
+                              step="5"
+                              value={estimatedDeliveryParts.minutes}
+                              onChange={(event) => updateEstimatedDeliveryPart(order.id, "minutes", event.target.value)}
+                              disabled={feeAlreadyNotified}
+                              className="admin-input w-full pr-16"
+                            />
+                            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[var(--color-text-secondary)]">
+                              min
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {ESTIMATED_DELIVERY_PRESETS.map((preset) => (
+                          <button
+                            key={preset.minutes}
+                            type="button"
+                            onClick={() => setEstimatedDeliveryPreset(order.id, preset.minutes)}
+                            disabled={feeAlreadyNotified}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              estimatedDeliveryParts.totalMinutes === preset.minutes
+                                ? "border-[#E8431A] bg-[rgba(232,67,26,0.16)] text-[#FF8066]"
+                                : "border-[var(--color-border)] bg-[var(--color-background-secondary)] text-[var(--color-text-secondary)] hover:border-[rgba(232,67,26,0.28)] hover:text-[var(--color-danger)]"
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <label className="block xl:col-span-2">
                       <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">Notas operacionais</span>
                       <textarea
