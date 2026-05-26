@@ -745,13 +745,22 @@ function SharedOrdersView({
                 key={card.key}
                 type="button"
                 onClick={() => setFilter("status", card.key)}
-                className={`admin-card p-5 text-left transition ${active ? "border-[#E8431A] bg-[#FFF0EC]" : ""}`}
+                aria-pressed={active}
+                className={[
+                  "admin-card relative overflow-hidden p-5 text-left transition",
+                  active
+                    ? "border-[#E8431A] bg-[rgba(232,67,26,0.10)] shadow-[0_0_0_1px_rgba(232,67,26,0.38),0_18px_45px_rgba(232,67,26,0.12)]"
+                    : "hover:border-[rgba(232,67,26,0.35)] hover:bg-white/[0.03]",
+                ].join(" ")}
               >
-                <p className="text-sm text-[var(--color-text-secondary)]">{card.label}</p>
-                <strong className="mt-3 block font-[family-name:var(--font-sora)] text-3xl text-[var(--color-text-primary)]">
+                {active ? (
+                  <span className="absolute inset-x-0 top-0 h-1 bg-[#E8431A]" />
+                ) : null}
+                <p className={`text-sm ${active ? "text-[#FFB39F]" : "text-[var(--color-text-secondary)]"}`}>{card.label}</p>
+                <strong className={`mt-3 block font-[family-name:var(--font-sora)] text-3xl ${active ? "text-white" : "text-[var(--color-text-primary)]"}`}>
                   {statValues[card.key]}
                 </strong>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{card.subtitle}</p>
+                <p className={`mt-2 text-sm ${active ? "text-white/80" : "text-[var(--color-text-secondary)]"}`}>{card.subtitle}</p>
               </button>
             );
           })}

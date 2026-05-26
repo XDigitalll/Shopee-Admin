@@ -12,9 +12,20 @@ const HISTORY_PAGE_SIZE = 5;
 
 const SOURCE_LABEL: Record<string, string> = {
   MANUAL: "Manual",
-  API: "API",
-  ADMIN_OVERRIDE: "Override admin",
+  API: "Sistema",
+  ADMIN_OVERRIDE: "Admin",
 };
+
+function isTestActor(value: string | null | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return Boolean(normalized?.endsWith(".test") || normalized?.endsWith("@example.com"));
+}
+
+function sourceLabel(rate: ExchangeRate | null | undefined) {
+  if (!rate) return "Sem taxa";
+  if (isTestActor(rate.createdBy)) return "Seed local";
+  return SOURCE_LABEL[rate.source] ?? rate.source;
+}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "Sem data";
@@ -36,6 +47,7 @@ function formatRate(value: number | null | undefined) {
 }
 
 function sourceClassName(source: string | null | undefined) {
+  if (source === "SEED_LOCAL") return "bg-[rgba(245,158,11,0.14)] text-[#b45309]";
   if (source === "API") return "bg-[rgba(37,99,235,0.12)] text-[#1d4ed8]";
   if (source === "ADMIN_OVERRIDE") return "bg-[rgba(232,67,26,0.12)] text-[var(--color-danger)]";
   return "bg-[rgba(22,163,74,0.12)] text-[#15803d]";
@@ -78,10 +90,16 @@ function RateCard({
           </p>
           <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Meticais por 1 {currency}</p>
         </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-bold ${sourceClassName(rate?.source)}`}>
-          {rate ? SOURCE_LABEL[rate.source] ?? rate.source : "Sem taxa"}
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${sourceClassName(isTestActor(rate?.createdBy) ? "SEED_LOCAL" : rate?.source)}`}>
+          {sourceLabel(rate)}
         </span>
       </div>
+
+      {isTestActor(rate?.createdBy) ? (
+        <div className="mt-4 rounded-2xl border border-[#FCD34D] bg-[#FFFBEB] px-4 py-3 text-sm font-semibold text-[#92400E]">
+          Atenção: esta taxa foi criada por utilizador de teste e não deve ser usada em produção.
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mt-4 rounded-2xl border border-[rgba(232,67,26,0.2)] bg-[rgba(232,67,26,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
@@ -95,7 +113,9 @@ function RateCard({
           </div>
           <div>
             <dt className="text-xs uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">Criado por</dt>
-            <dd className="mt-1 font-semibold text-[var(--color-text-primary)]">{rate?.createdBy || "Sistema"}</dd>
+            <dd className="mt-1 font-semibold text-[var(--color-text-primary)]">
+              {isTestActor(rate?.createdBy) ? "Seed local" : rate?.createdBy || "Sistema"}
+            </dd>
           </div>
           <div className="sm:col-span-2">
             <dt className="text-xs uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">Notas</dt>
@@ -373,15 +393,17 @@ export function ExchangeRatesPanel() {
                         {formatRate(row.rate)}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${sourceClassName(row.source)}`}>
-                          {SOURCE_LABEL[row.source] ?? row.source}
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${sourceClassName(isTestActor(row.createdBy) ? "SEED_LOCAL" : row.source)}`}>
+                          {sourceLabel(row)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <StatusChip active={row.active} />
                       </td>
                       <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatDate(row.createdAt)}</td>
-                      <td className="px-4 py-3 text-[var(--color-text-secondary)]">{row.createdBy || "Sistema"}</td>
+                      <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                        {isTestActor(row.createdBy) ? "Seed local" : row.createdBy || "Sistema"}
+                      </td>
                       <td className="max-w-[220px] px-4 py-3 text-[var(--color-text-secondary)]">
                         {row.notes || "Sem notas"}
                       </td>

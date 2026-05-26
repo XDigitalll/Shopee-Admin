@@ -99,6 +99,7 @@ type RevenueByType = {
 type CostBreakdown = {
   siteTax: number;
   externalCommission: number;
+  delivery: number;
   insurance: number;
   customs: number;
   operational: number;
@@ -113,6 +114,22 @@ type FinanceOverviewResponse = {
   methods: PaymentMethodStat[];
   revenueByType: RevenueByType;
   costBreakdown: CostBreakdown;
+};
+
+type PaymentSettingsMethod = "MPESA" | "EMOLA" | "BANK_TRANSFER" | "VISA_MANUAL";
+
+type PaymentSettings = {
+  id?: number;
+  method: PaymentSettingsMethod;
+  accountNumber?: string | null;
+  accountHolder?: string | null;
+  bankName?: string | null;
+  branch?: string | null;
+  active: boolean;
+  priority: number;
+  instructions?: string | null;
+  visible: boolean;
+  internalNotes?: string | null;
 };
 
 type TreasuryEntry = {
@@ -150,6 +167,16 @@ const TREASURY_ACCOUNTS = [
   "M-Pesa",
   "e-Mola",
 ];
+
+const PAYMENT_SETTING_META: Record<
+  PaymentSettingsMethod,
+  { label: string; accent: string; short: string }
+> = {
+  MPESA: { label: "M-Pesa", accent: "#639922", short: "M" },
+  EMOLA: { label: "eMola", accent: "#378ADD", short: "E" },
+  BANK_TRANSFER: { label: "Banco", accent: "#854F0B", short: "B" },
+  VISA_MANUAL: { label: "Cartão manual", accent: "#534AB7", short: "V" },
+};
 
 const AVATAR_COLORS = ["#E8431A", "#639922", "#378ADD", "#534AB7", "#854F0B"];
 
@@ -346,9 +373,9 @@ function BarChart({
             {items.map((item) => (
               <div
                 key={item.date}
-                className="flex flex-1 flex-col items-center"
+                className="flex h-full flex-1 flex-col items-center"
               >
-                <div className="flex w-full flex-1 items-end gap-0.5">
+                <div className="flex h-full w-full flex-1 items-end gap-0.5">
                   <div
                     className="flex-1 rounded-t-[6px] transition-all duration-700 ease-out"
                     style={{
@@ -1257,6 +1284,38 @@ const TREASURY_KIND_META: Record<
   },
 };
 
+function parseMoneyInput(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/[^\d,.-]/g, "");
+
+  if (!normalized) return Number.NaN;
+
+  const lastComma = normalized.lastIndexOf(",");
+  const lastDot = normalized.lastIndexOf(".");
+  const decimalSeparator =
+    lastComma > -1 || lastDot > -1 ? (lastComma > lastDot ? "," : ".") : "";
+  const separatorCount = (normalized.match(/[,.]/g) ?? []).length;
+  const lastSeparator = Math.max(lastComma, lastDot);
+  const digitsAfterSeparator =
+    lastSeparator > -1 ? normalized.slice(lastSeparator + 1).replace(/\D/g, "").length : 0;
+  const separatorIsThousandsOnly = separatorCount === 1 && digitsAfterSeparator === 3;
+
+  const parsed = decimalSeparator && !separatorIsThousandsOnly
+    ? normalized
+        .split("")
+        .filter((char, index) => {
+          if (char !== "," && char !== ".") return true;
+          return char === decimalSeparator && index === normalized.lastIndexOf(decimalSeparator);
+        })
+        .join("")
+        .replace(",", ".")
+    : normalized.replace(/[,.]/g, "");
+
+  return Number(parsed);
+}
+
 function CostBreakdownSection({
   data,
   isLoading,
@@ -1286,7 +1345,7 @@ function CostBreakdownSection({
 
   function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = parseFloat(amount.replace(",", "."));
+    const parsed = parseMoneyInput(amount);
     if (!label.trim()) {
       setFormError("Insere uma descrição.");
       return;
@@ -1316,10 +1375,6 @@ function CostBreakdownSection({
     setAmount("");
   }
 
-  function handleRemove(id: string) {
-    saveEntries(entries.filter((entry) => entry.id !== id));
-  }
-
   const totalTreasuryOut = entries.reduce((sum, entry) => sum + entry.amount, 0);
   const costItems = [
     {
@@ -1330,9 +1385,15 @@ function CostBreakdownSection({
     },
     {
       label: "Comissão de pedidos externos",
-      copy: "Comissão XDigital aplicada nas cotações de encomendas externas.",
+      copy: "Parcela da taxa do site gerada nas cotações externas pagas.",
       value: data?.externalCommission ?? 0,
       color: "#378ADD",
+    },
+    {
+      label: "Delivery",
+      copy: "Taxas de entrega cobradas em pedidos pagos e confirmados.",
+      value: data?.delivery ?? 0,
+      color: "#15803d",
     },
     {
       label: "Seguro e risco",
@@ -1354,7 +1415,8 @@ function CostBreakdownSection({
     },
   ];
 
-  const controlledBase = (data?.siteTax ?? 0) + (data?.externalCommission ?? 0);
+  const controlledBase =
+    (data?.siteTax ?? 0) + (data?.delivery ?? 0);
   const reservedCost =
     (data?.insurance ?? 0) + (data?.customs ?? 0) + (data?.operational ?? 0);
   const estimatedAvailable = controlledBase - reservedCost - totalTreasuryOut;
@@ -1370,9 +1432,9 @@ function CostBreakdownSection({
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {isLoading
-          ? Array.from({ length: 5 }).map((_, i) => (
+          ? Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="admin-card animate-pulse p-5">
                 <div className="h-20 rounded-xl bg-[var(--color-background-tertiary)]" />
               </div>
@@ -1401,7 +1463,7 @@ function CostBreakdownSection({
           {
             label: "Base controlada",
             value: controlledBase,
-            copy: "Taxa do site e comissões externas acumuladas.",
+            copy: "Taxa do site e delivery acumulados, sem duplicar detalhes internos.",
             tone: "text-[var(--color-text-primary)]",
           },
           {
@@ -1439,7 +1501,7 @@ function CostBreakdownSection({
             <SectionEyebrow>Registo</SectionEyebrow>
             <SectionTitle>Lançar retirada ou despesa</SectionTitle>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              Cada lançamento fica guardado localmente neste browser para apoiar fecho de caixa e controlo bancário.
+              Cada lançamento entra no histórico local de caixa para apoiar fecho, controlo bancário e revisão futura.
             </p>
           </div>
           <form onSubmit={handleAdd} className="space-y-3">
@@ -1579,26 +1641,234 @@ function CostBreakdownSection({
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-start gap-2">
-                    <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-[var(--color-text-primary)]">
-                      {formatMoney(entry.amount)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(entry.id)}
-                      className="rounded-lg p-1.5 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-background-tertiary)] hover:text-[var(--color-danger)]"
-                      aria-label="Remover"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
+                  <span className="shrink-0 font-[family-name:var(--font-sora)] text-sm font-semibold text-[var(--color-text-primary)]">
+                    {formatMoney(entry.amount)}
+                  </span>
                 </li>
               ))}
             </ul>
           )}
         </article>
+      </div>
+    </section>
+  );
+}
+
+function PaymentSettingsSection() {
+  const [settings, setSettings] = useState<PaymentSettings[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+
+  const loadSettings = useCallback(async () => {
+    setIsLoading(true);
+    setMessage(null);
+    try {
+      const payload = await adminApiFetch<PaymentSettings[]>("/api/admin/finance/payment-settings");
+      setSettings(payload);
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Nao foi possivel carregar contas de recebimento.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  function updateSetting(method: PaymentSettingsMethod, patch: Partial<PaymentSettings>) {
+    setSettings((current) =>
+      current.map((item) => (item.method === method ? { ...item, ...patch } : item))
+    );
+  }
+
+  async function saveSettings() {
+    setIsSaving(true);
+    setMessage(null);
+    try {
+      const payload = await adminApiFetch<PaymentSettings[]>("/api/admin/finance/payment-settings", {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      });
+      setSettings(payload);
+      setMessage({ tone: "success", text: "Contas de recebimento guardadas." });
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Nao foi possivel guardar contas de recebimento.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="admin-card p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <SectionEyebrow>Configurações de pagamento</SectionEyebrow>
+          <SectionTitle>Contas de recebimento</SectionTitle>
+          <p className="mt-1 max-w-2xl text-sm text-[var(--color-text-secondary)]">
+            Estes dados alimentam o checkout público. Métodos inactivos ou ocultos não aparecem para o cliente.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void saveSettings()}
+          disabled={isSaving || isLoading}
+          className="admin-button-danger disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSaving ? "A guardar..." : "Guardar configurações"}
+        </button>
+      </div>
+
+      {message && (
+        <div
+          className={`mt-4 rounded-[16px] border px-4 py-3 text-sm ${
+            message.tone === "success"
+              ? "border-[rgba(21,128,61,0.22)] bg-[rgba(21,128,61,0.08)] text-[#86efac]"
+              : "border-[rgba(232,67,26,0.22)] bg-[rgba(232,67,26,0.08)] text-[var(--color-danger)]"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-3">
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="h-72 animate-pulse rounded-[18px] bg-[var(--color-background-tertiary)]" />
+            ))
+          : settings.map((item) => {
+              const meta = PAYMENT_SETTING_META[item.method] ?? PAYMENT_SETTING_META.BANK_TRANSFER;
+              const isBank = item.method === "BANK_TRANSFER";
+              return (
+                <article key={item.method} className="rounded-[18px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+                        style={{ background: meta.accent }}
+                      >
+                        {meta.short}
+                      </span>
+                      <div>
+                        <h3 className="font-[family-name:var(--font-sora)] text-base font-semibold text-[var(--color-text-primary)]">
+                          {meta.label}
+                        </h3>
+                        <p className="text-xs text-[var(--color-text-secondary)]">
+                          Prioridade {item.priority ?? 99}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        item.active ? "bg-[#DCFCE7] text-[#166534]" : "bg-[rgba(148,163,184,0.16)] text-[var(--color-text-secondary)]"
+                      }`}
+                    >
+                      {item.active ? "Activo" : "Inactivo"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {isBank && (
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">Banco</span>
+                        <input
+                          value={item.bankName ?? ""}
+                          onChange={(event) => updateSetting(item.method, { bankName: event.target.value })}
+                          className="admin-input w-full text-sm"
+                          placeholder="Ex: BCI"
+                        />
+                      </label>
+                    )}
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">
+                        {isBank ? "NIB / Conta" : "Número"}
+                      </span>
+                      <input
+                        value={item.accountNumber ?? ""}
+                        onChange={(event) => updateSetting(item.method, { accountNumber: event.target.value })}
+                        className="admin-input w-full text-sm"
+                        placeholder={isBank ? "Conta ou NIB" : "84XXXXXXX"}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">Titular</span>
+                      <input
+                        value={item.accountHolder ?? ""}
+                        onChange={(event) => updateSetting(item.method, { accountHolder: event.target.value })}
+                        className="admin-input w-full text-sm"
+                        placeholder="ShopeeMz"
+                      />
+                    </label>
+                    {isBank && (
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">Agência</span>
+                        <input
+                          value={item.branch ?? ""}
+                          onChange={(event) => updateSetting(item.method, { branch: event.target.value })}
+                          className="admin-input w-full text-sm"
+                          placeholder="Opcional"
+                        />
+                      </label>
+                    )}
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">Instruções</span>
+                      <textarea
+                        value={item.instructions ?? ""}
+                        onChange={(event) => updateSetting(item.method, { instructions: event.target.value })}
+                        rows={3}
+                        className="admin-input min-h-[86px] w-full resize-none text-sm"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">Prioridade</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.priority ?? 99}
+                          onChange={(event) => updateSetting(item.method, { priority: Number(event.target.value || 99) })}
+                          className="admin-input w-full text-sm"
+                        />
+                      </label>
+                      <div className="space-y-2 pt-5">
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-primary)]">
+                          <input
+                            type="checkbox"
+                            checked={item.active}
+                            onChange={(event) => updateSetting(item.method, { active: event.target.checked })}
+                          />
+                          Activo
+                        </label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-primary)]">
+                          <input
+                            type="checkbox"
+                            checked={item.visible}
+                            onChange={(event) => updateSetting(item.method, { visible: event.target.checked })}
+                          />
+                          Mostrar ao cliente
+                        </label>
+                      </div>
+                    </div>
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">Observações internas</span>
+                      <input
+                        value={item.internalNotes ?? ""}
+                        onChange={(event) => updateSetting(item.method, { internalNotes: event.target.value })}
+                        className="admin-input w-full text-sm"
+                        placeholder="Notas para auditoria futura"
+                      />
+                    </label>
+                  </div>
+                </article>
+              );
+            })}
       </div>
     </section>
   );
@@ -1739,6 +2009,8 @@ export function FinanceView() {
       )}
 
       <ExchangeRatesPanel />
+
+      <PaymentSettingsSection />
 
       <MetricCards data={stats} isLoading={isLoading} />
 
