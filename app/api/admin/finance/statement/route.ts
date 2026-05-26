@@ -6,6 +6,7 @@ type BackendStats = {
   totalRevenue?: number;
   todayRevenue?: number;
   totalCommission?: number;
+  totalDelivery?: number;
   totalOrders?: number;
 };
 
@@ -13,6 +14,7 @@ type BackendDashboard = {
   internalSales?: number;
   externalSales?: number;
   totalSiteRevenue?: number;
+  totalDeliveryRevenue?: number;
   totalEstimatedMargin?: number;
 };
 
@@ -63,6 +65,7 @@ export async function GET(request: NextRequest) {
 
   const totalRevenue = Number(stats.totalRevenue ?? 0);
   const totalCommission = Number(stats.totalCommission ?? dashboard.totalSiteRevenue ?? 0);
+  const totalDelivery = Number(dashboard.totalDeliveryRevenue ?? stats.totalDelivery ?? 0);
   const totalOrders = Number(stats.totalOrders ?? 0);
   const internalSales = Number(dashboard.internalSales ?? 0);
   const externalSales = Number(dashboard.externalSales ?? 0);
@@ -104,6 +107,10 @@ export async function GET(request: NextRequest) {
           <strong>${money(totalCommission)}</strong>
         </div>
         <div class="card">
+          <p>Delivery</p>
+          <strong>${money(totalDelivery)}</strong>
+        </div>
+        <div class="card">
           <p>Vendas internas</p>
           <strong>${money(internalSales)}</strong>
         </div>
@@ -120,6 +127,7 @@ export async function GET(request: NextRequest) {
           ${metricRow("Receita de hoje", money(Number(stats.todayRevenue ?? 0)))}
           ${metricRow("Margem estimada", money(estimatedMargin))}
           ${metricRow("Taxa do site", money(Number(costs.totalSiteTax ?? 0)))}
+          ${metricRow("Delivery", money(totalDelivery))}
           ${metricRow("Comissao externa", money(Number(costs.totalExternalCommission ?? 0)))}
           ${metricRow("Seguro e risco", money(Number(costs.totalInsurance ?? 0)))}
           ${metricRow("Alfandegas", money(Number(costs.totalCustoms ?? 0)))}

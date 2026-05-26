@@ -24,14 +24,7 @@ const STATUS_CARDS = [
   { key: "WAITING_CUSTOMER", label: "Aguardando cliente", statKey: "waitingCustomer" },
   { key: "WAITING_PAYMENT", label: "Pagamento", statKey: "waitingPayment" },
   { key: "TO_PURCHASE", label: "Comprar fornecedor", statKey: "toPurchase" },
-] as const;
-
-const STATUS_PILLS = [
-  { key: "QUOTE_ANALYSIS", label: "Por analisar" },
-  { key: "WAITING_CUSTOMER", label: "Aguardando cliente" },
-  { key: "WAITING_PAYMENT", label: "Pagamento" },
-  { key: "TO_PURCHASE", label: "Comprar fornecedor" },
-  { key: "ARCHIVED", label: "Historico" },
+  { key: "ARCHIVED", label: "Historico", statKey: "archived" },
 ] as const;
 
 const STORE_OPTIONS = [
@@ -468,7 +461,7 @@ export function ExternalQuotesManagementView() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {STATUS_CARDS.map((card) => {
           const active = filters.status === card.key;
           const value = Number(stats?.[card.statKey] ?? 0);
@@ -477,12 +470,17 @@ export function ExternalQuotesManagementView() {
               key={card.key}
               type="button"
               onClick={() => setFilters((current) => ({ ...current, status: card.key, page: 0 }))}
-              className={`admin-card p-5 text-left transition ${
-                active ? "border-[#E8431A] bg-[#FFF0E6]" : ""
-              }`}
+              aria-pressed={active}
+              className={[
+                "admin-card relative overflow-hidden p-5 text-left transition",
+                active
+                  ? "border-[#E8431A] bg-[rgba(232,67,26,0.10)] shadow-[0_0_0_1px_rgba(232,67,26,0.38),0_18px_45px_rgba(232,67,26,0.12)]"
+                  : "hover:border-[rgba(232,67,26,0.35)] hover:bg-white/[0.03]",
+              ].join(" ")}
             >
-              <p className="text-sm text-[var(--color-text-secondary)]">{card.label}</p>
-              <strong className="mt-3 block font-[family-name:var(--font-sora)] text-3xl text-[var(--color-text-primary)]">
+              {active ? <span className="absolute inset-x-0 top-0 h-1 bg-[#E8431A]" /> : null}
+              <p className={`text-sm ${active ? "text-[#FFB39F]" : "text-[var(--color-text-secondary)]"}`}>{card.label}</p>
+              <strong className={`mt-3 block font-[family-name:var(--font-sora)] text-3xl ${active ? "text-white" : "text-[var(--color-text-primary)]"}`}>
                 {value}
               </strong>
             </button>
@@ -492,24 +490,7 @@ export function ExternalQuotesManagementView() {
 
       <section className="admin-card p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {STATUS_PILLS.map((pill) => (
-              <button
-                key={pill.key}
-                type="button"
-                onClick={() => setFilters((current) => ({ ...current, status: pill.key, page: 0 }))}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                  filters.status === pill.key
-                    ? "border-[#E8431A] bg-[#FFF0E6] text-[#E8431A]"
-                    : "border-[var(--color-border)] bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center xl:ml-auto">
             {isRefreshing ? (
               <span className="text-sm text-[var(--color-text-secondary)]">A actualizar...</span>
             ) : null}

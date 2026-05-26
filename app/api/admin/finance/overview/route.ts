@@ -283,6 +283,7 @@ export async function GET(request: NextRequest) {
     costBreakdown: {
       siteTax: Number(costBreakdown.totalSiteTax ?? 0),
       externalCommission: Number(costBreakdown.totalExternalCommission ?? 0),
+      delivery: totalDelivery,
       insurance: Number(costBreakdown.totalInsurance ?? 0),
       customs: Number(costBreakdown.totalCustoms ?? 0),
       operational: Number(costBreakdown.totalOperationalCost ?? 0),
