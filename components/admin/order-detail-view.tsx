@@ -197,6 +197,15 @@ function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) 
   return humanizeOrderStatus(step);
 }
 
+function isPickupReadyForCollection(detail: ExternalOrderDetail) {
+  const status = detail.status;
+  if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    return true;
+  }
+
+  return ["READY_FOR_FULFILLMENT", "PICKING", "PREPARING"].includes(detail.operationalStatus);
+}
+
 function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean): DetailAction | null {
   const status = detail.status;
   const paymentValidated = isPaymentValidated(detail.payment.status);
@@ -217,7 +226,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
       return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
     }
 
-    if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    if (isPickupReadyForCollection(detail)) {
       if (cashOnDelivery && !paymentValidated) {
         return { label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" };
       }
@@ -290,7 +299,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
     if (status === "PAID") {
       actions.push({ label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" });
     }
-    if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    if (isPickupReadyForCollection(detail)) {
       if (cashOnDelivery && !paymentValidated) {
         actions.push({ label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" });
       } else {

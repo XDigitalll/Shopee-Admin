@@ -118,6 +118,24 @@ function getOperationalStatus(order: AdminOrderListItem | null) {
   return String(order?.orderStatus || order?.fulfillmentStatus || order?.status || "");
 }
 
+function isPickupReadyForCollection(order: AdminOrderListItem) {
+  const status = getOperationalStatus(order);
+  if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    return true;
+  }
+
+  if (!["READY_FOR_FULFILLMENT", "PICKING", "PREPARING"].includes(status)) {
+    return false;
+  }
+
+  return (order.trackingDetailSteps ?? []).some((step) => {
+    const key = String(step.key ?? "").toUpperCase();
+    const label = String(step.label ?? "").toLowerCase();
+    const currentOrDone = step.state === "CURRENT" || step.state === "COMPLETED";
+    return currentOrDone && (key.includes("PICKUP") || label.includes("levantamento") || label.includes("levantar"));
+  });
+}
+
 function paymentQueueForOrder(status: string) {
   if (status === "PAYMENT_UNDER_REVIEW") return "UNDER_REVIEW";
   if (status === "PAYMENT_REJECTED") return "REJECTED";
@@ -220,7 +238,7 @@ function OrdersDrawer({
         return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
       }
 
-      if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+      if (isPickupReadyForCollection(orderItem)) {
         if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus)) {
           return { label: "Confirmar cobrança e levantamento", action: "collect-and-close", targetStatus: "DELIVERED" };
         }
