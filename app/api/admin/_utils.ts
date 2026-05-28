@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
 import { XSRF_COOKIE, XSRF_HEADER } from "@/lib/admin/csrf";
+import { getBackendUrl } from "@/lib/admin/backend-url";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+const BACKEND_URL = getBackendUrl();
 
 function getToken(request: NextRequest) {
   const header = request.headers.get("authorization");

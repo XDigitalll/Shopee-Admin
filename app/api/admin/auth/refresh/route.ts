@@ -2,8 +2,9 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_REFRESH_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
 import { forwardXsrfCookie } from "@/app/api/admin/_utils";
+import { getBackendUrl } from "@/lib/admin/backend-url";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+const BACKEND_URL = getBackendUrl();
 const isSecure = process.env.NODE_ENV === "production";
 
 function adminCookieOpts(httpOnly: boolean, maxAge: number) {
