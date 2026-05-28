@@ -81,7 +81,7 @@ async function isSupportedImageBySignature(file: File) {
     header[9] === 0x45 &&
     header[10] === 0x42 &&
     header[11] === 0x50;
-  return isJpeg || isPng || isWebp || file.type.startsWith("image/");
+  return isJpeg || isPng || isWebp;
 }
 
 // Constants 
@@ -100,9 +100,16 @@ const PRESET_COLORS = [
   { name: "Rosa", hex: "#EC4899" },
 ];
 
-const ACCEPTED_IMAGE_INPUT = "image/*,.jpg,.jpeg,.png,.webp";
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ACCEPTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+const ACCEPTED_IMAGE_INPUT = ACCEPTED_IMAGE_TYPES.join(",");
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
-const INVALID_IMAGE_MESSAGE = "Esta imagem parece inválida ou corrompida. Usa outro ficheiro de imagem.";
+const INVALID_IMAGE_MESSAGE = "Formato invalido. Envie JPG, PNG ou WebP.";
+
+function hasAllowedImageMetadata(file: File) {
+  const extension = `.${file.name.split(".").pop()?.toLowerCase() || ""}`;
+  return ACCEPTED_IMAGE_TYPES.includes(file.type) && ACCEPTED_IMAGE_EXTENSIONS.includes(extension);
+}
 
 // Local types 
 
@@ -702,7 +709,9 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
       const checks = await Promise.all(
         selected.map(async (file) => ({
           file,
-          valid: file.size <= MAX_IMAGE_SIZE_BYTES && await isSupportedImageBySignature(file),
+          valid: file.size <= MAX_IMAGE_SIZE_BYTES
+            && hasAllowedImageMetadata(file)
+            && await isSupportedImageBySignature(file),
         }))
       );
       const arr = checks.filter((item) => item.valid).map((item) => item.file);
@@ -1019,8 +1028,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   function handleNewVariantImageFile(file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Formato invalido. Carrega um ficheiro de imagem.");
+    if (!hasAllowedImageMetadata(file)) {
+      alert(INVALID_IMAGE_MESSAGE);
       return;
     }
     if (file.size > 8 * 1024 * 1024) {
@@ -1153,8 +1162,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   function handleBuilderImageFile(rowId: string, file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setBuilderFeedback({ type: "error", message: "Formato invalido. Carrega um ficheiro de imagem." });
+    if (!hasAllowedImageMetadata(file)) {
+      setBuilderFeedback({ type: "error", message: INVALID_IMAGE_MESSAGE });
       return;
     }
     if (file.size > 8 * 1024 * 1024) {
@@ -1345,9 +1354,8 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
 
   function handleEditImageFile(file: File | null) {
     if (!file) return;
-    const allowed = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif", "image/bmp", "image/tiff"];
-    if (!allowed.includes(file.type)) {
-      alert("Formato inválido. Use JPEG, PNG ou WebP.");
+    if (!hasAllowedImageMetadata(file)) {
+      alert(INVALID_IMAGE_MESSAGE);
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -2905,7 +2913,7 @@ export function ProductFormView({ productId }: ProductFormViewProps) {
                       )}
                     </div>
                     <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                      Aceita ficheiros de imagem comuns: JPG, PNG, WebP, GIF, BMP, TIFF, SVG e outros suportados pelo navegador.
+                      Aceita apenas JPG, PNG ou WebP.
                     </p>
                     {newVariantImagePreview && (
                       <div className="mt-3 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-2">

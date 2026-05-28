@@ -24,6 +24,17 @@ const EMPTY: Omit<Banner, "id"> = {
   active: true,
 };
 
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ACCEPTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+function isAllowedImageFile(file: File) {
+  const extension = `.${file.name.split(".").pop()?.toLowerCase() || ""}`;
+  return ACCEPTED_IMAGE_TYPES.includes(file.type)
+    && ACCEPTED_IMAGE_EXTENSIONS.includes(extension)
+    && file.size <= MAX_IMAGE_SIZE_BYTES;
+}
+
 function BannerIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" {...props}>
@@ -155,6 +166,10 @@ export default function BannersPage() {
   }
 
   async function handleImageFile(file: File) {
+    if (!isAllowedImageFile(file)) {
+      setError("Formato invalido. Envie JPG, PNG ou WebP com ate 10MB.");
+      return;
+    }
     setUploadingImage(true);
     setError("");
     try {
@@ -358,7 +373,7 @@ export default function BannersPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={ACCEPTED_IMAGE_TYPES.join(",")}
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];

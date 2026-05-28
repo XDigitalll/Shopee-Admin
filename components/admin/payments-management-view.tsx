@@ -140,7 +140,13 @@ function riskChips(flags: string[] = []) {
 }
 
 function difference(submission: PaymentSubmission) {
-  return Number(submission.amount ?? 0) - Number(submission.expectedAmount ?? 0);
+  if (submission.differenceAmount !== null && submission.differenceAmount !== undefined) return Number(submission.differenceAmount);
+  return Number(submission.declaredAmount ?? submission.amount ?? 0) - Number(submission.expectedAmount ?? 0);
+}
+
+function hasAmountMismatch(submission: PaymentSubmission | null) {
+  if (!submission) return false;
+  return Boolean(submission.amountMismatch) || Math.abs(difference(submission)) > 0.0001 || submission.riskFlags?.includes("AMOUNT_MISMATCH");
 }
 
 function proofKind(submission: PaymentSubmission) {
@@ -155,20 +161,23 @@ const EMPTY_ALLOWED_ACTIONS = {
   canStartReview: false,
   canReopenReview: false,
   canApprove: false,
+  canApproveWithMismatch: false,
   canReject: false,
   canMarkSuspect: false,
   canRequestNewProof: false,
 };
 
-type PaymentDrawerAction = "review" | "reopen-review" | "approve" | "reject" | "flag" | "request-new-proof";
+type PaymentDrawerAction = "review" | "reopen-review" | "approve" | "approve-with-mismatch" | "reject" | "flag" | "request-new-proof";
 
 function allowedActionsFor(submission: PaymentSubmission | null) {
   if (!submission) return EMPTY_ALLOWED_ACTIONS;
   if (submission.allowedActions) return submission.allowedActions;
+  const mismatch = hasAmountMismatch(submission);
   return {
     canStartReview: submission.status === "SUBMITTED",
     canReopenReview: submission.status === "FLAGGED" || submission.status === "SUSPICIOUS",
-    canApprove: submission.status === "UNDER_REVIEW",
+    canApprove: submission.status === "UNDER_REVIEW" && !mismatch,
+    canApproveWithMismatch: submission.status === "UNDER_REVIEW" && mismatch,
     canReject: submission.status === "UNDER_REVIEW" || submission.status === "FLAGGED" || submission.status === "SUSPICIOUS",
     canMarkSuspect: submission.status === "UNDER_REVIEW",
     canRequestNewProof: ["UNDER_REVIEW", "REJECTED", "FLAGGED", "SUSPICIOUS"].includes(submission.status),
@@ -469,6 +478,8 @@ function SubmissionDrawer({
   const reviewLoadingLabel = allowed.canReopenReview ? "A reabrir..." : "A iniciar...";
   const reviewReasonKey = allowed.canReopenReview ? "canReopenReview" : "canStartReview";
   const canApprove = allowed.canApprove && canDecide;
+  const amountMismatch = hasAmountMismatch(submission);
+  const canApproveWithMismatch = Boolean(allowed.canApproveWithMismatch) && canDecide;
   const canReject = allowed.canReject && canDecide;
   const canMarkSuspect = allowed.canMarkSuspect;
   const canRequestNewProof = allowed.canRequestNewProof && canDecide;
@@ -525,6 +536,16 @@ function SubmissionDrawer({
               <p className="mt-3 rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-secondary)]">
                 {stateHint(submission)}
               </p>
+              {amountMismatch ? (
+                <div className="mt-4 rounded-2xl border border-[#FCA5A5] bg-[#FEF2F2] px-4 py-3 text-sm text-[#991B1B]">
+                  <p className="font-black">O valor informado nao corresponde ao total do pedido.</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <span>Valor esperado: <strong>{formatMoney(submission.expectedAmount ?? 0)}</strong></span>
+                    <span>Valor declarado: <strong>{formatMoney(submission.declaredAmount ?? submission.amount ?? 0)}</strong></span>
+                    <span>Diferenca: <strong>{formatMoney(difference(submission))}</strong></span>
+                  </div>
+                </div>
+              ) : null}
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Info label="Pedido" value={submission.orderCode || `#${submission.orderId}`} />
                 <Info label="Tipo" value={submission.orderType === "EXTERNAL" ? "EXT" : submission.orderType === "INTERNAL" ? "INT" : submission.orderType} />
@@ -536,7 +557,7 @@ function SubmissionDrawer({
                 <Info label="Email" value={submission.customerEmail} />
                 <Info label="Cidade" value={submission.customerCity} />
                 <Info label="Valor esperado" value={formatMoney(submission.expectedAmount ?? 0)} />
-                <Info label="Valor enviado" value={formatMoney(submission.amount ?? 0)} />
+                <Info label="Valor enviado" value={formatMoney(submission.declaredAmount ?? submission.amount ?? 0)} />
                 <Info label="Diferenca" value={formatMoney(difference(submission))} />
                 <Info label="Metodo" value={humanizePaymentMethod(submission.paymentMethod)} />
                 <Info label="Telefone" value={submission.payerPhone} />
@@ -629,6 +650,18 @@ function SubmissionDrawer({
                   tone="danger"
                   onClick={() => onAction("approve")}
                 />
+                {amountMismatch ? (
+                  <ReviewActionButton
+                    label="Aprovar com divergencia"
+                    loadingLabel="A aprovar..."
+                    action="approve-with-mismatch"
+                    busyAction={busyAction}
+                    disabled={!canApproveWithMismatch}
+                    reason={disabledReason("canApproveWithMismatch", submission, canDecide)}
+                    tone="danger"
+                    onClick={() => onAction("approve-with-mismatch")}
+                  />
+                ) : null}
                 <ReviewActionButton
                   label="Rejeitar"
                   loadingLabel="A rejeitar..."
@@ -877,10 +910,21 @@ export function PaymentsManagementView() {
   async function handleAction(action: PaymentDrawerAction) {
     if (!selectedPayment) return;
     setPaymentInlineError("");
-    if ((action === "reject" || action === "request-new-proof") && !note.trim()) {
+    if ((action === "reject" || action === "request-new-proof" || action === "approve-with-mismatch") && !note.trim()) {
+      if (action === "approve-with-mismatch") {
+        setPaymentInlineError("Indica o motivo para aprovar com divergencia.");
+        setFeedback({ tone: "error", message: "Indica o motivo para aprovar com divergencia." });
+        return;
+      }
       setPaymentInlineError(action === "reject" ? "Indica o motivo da rejeicao." : "Indica o motivo para pedir novo comprovativo.");
       setFeedback({ tone: "error", message: action === "reject" ? "Indica o motivo da rejeição." : "Indica o motivo para pedir novo comprovativo." });
       return;
+    }
+    if (action === "approve-with-mismatch") {
+      const ok = window.confirm("Este pagamento tem valor divergente. Confirmar aprovacao excepcional?");
+      if (!ok) return;
+      const secondOk = window.confirm("Segunda confirmacao: o motivo sera auditado e o pagamento sera aprovado apesar da divergencia.");
+      if (!secondOk) return;
     }
     const critical = action === "approve" || action === "reject" || action === "flag" || action === "request-new-proof";
     if (critical) {
@@ -911,6 +955,7 @@ export function PaymentsManagementView() {
         tone: "success",
         message:
           action === "approve" ? "Pagamento aprovado"
+            : action === "approve-with-mismatch" ? "Pagamento aprovado com divergencia"
             : action === "reject" ? "Pagamento rejeitado"
             : action === "flag" ? "Pagamento marcado como suspeito"
             : action === "request-new-proof" ? "Novo comprovativo solicitado"

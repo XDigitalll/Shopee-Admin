@@ -521,6 +521,7 @@ export type PaymentAllowedActions = {
   canStartReview: boolean;
   canReopenReview?: boolean;
   canApprove: boolean;
+  canApproveWithMismatch?: boolean;
   canReject: boolean;
   canMarkSuspect: boolean;
   canRequestNewProof: boolean;
@@ -556,6 +557,12 @@ export type PaymentSubmission = {
   itemCount?: number | null;
   orderCreatedAt?: string | null;
   expectedAmount: number | null;
+  declaredAmount?: number | null;
+  differenceAmount?: number | null;
+  amountMismatch?: boolean | null;
+  mismatchOverrideReason?: string | null;
+  mismatchApprovedBy?: string | null;
+  mismatchApprovedAt?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   customerCommunicationPhone?: string | null;

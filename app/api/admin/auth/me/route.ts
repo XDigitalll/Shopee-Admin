@@ -2,10 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
 import { forwardXsrfCookie } from "@/app/api/admin/_utils";
+import { getBackendUrl } from "@/lib/admin/backend-url";
 import { decodeJwtPayload } from "@/lib/admin/jwt";
 import { extractRoleCandidates, getPrimaryRole, normalizeRole } from "@/lib/admin/roles";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+const BACKEND_URL = getBackendUrl();
 
 type BackendProfile = Record<string, unknown> & {
   role?: unknown;

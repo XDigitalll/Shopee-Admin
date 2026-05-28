@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Como configurar ambiente local
+
+1. Copie `.env.example` para `.env.local`.
+2. Ajuste `BACKEND_URL`, `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_CLIENT_URL` para o seu localhost.
+3. Preencha valores reais apenas no ficheiro local.
+4. Nunca commite passwords, tokens, API keys ou ficheiros `.env`.
+
 ## Getting Started
 
 First, run the development server:
