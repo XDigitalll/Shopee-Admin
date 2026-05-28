@@ -21,6 +21,9 @@ const TRANSACTIONS_PAGE_SIZE = 5;
 
 type FinanceStats = {
   totalRevenue: number;
+  grossRevenue: number;
+  discountsGranted: number;
+  netRevenue: number;
   todayRevenue: number;
   totalRevenueDelta: number;
   commissionsEarned: number;
@@ -75,6 +78,37 @@ type FinanceKPIs = {
   avgQuoteTimeTrend: "up" | "down" | "neutral";
   cancelledOrders: number;
   cancelledOrdersTrend: "up" | "down" | "neutral";
+  grossRevenue: number;
+  discountsGranted: number;
+  netRevenue: number;
+  averageDiscountRate: number;
+};
+
+type FinancialDiscountRecord = {
+  id: number;
+  orderId: number;
+  orderCode: string;
+  customerName: string;
+  customerEmail: string;
+  couponCode: string | null;
+  discountType: "PERCENTAGE" | "FIXED_AMOUNT" | null;
+  discountAmount: number;
+  subtotalBeforeDiscount: number;
+  totalAfterDiscount: number;
+  appliedAt: string;
+  source: "COUPON" | "ADMIN_ADJUSTMENT" | "PROMOTION" | "SYSTEM";
+  status: "APPLIED" | "REVERSED" | "CANCELLED_ORDER";
+};
+
+type FinancialDiscountSummary = {
+  totalToday: number;
+  totalMonth: number;
+  totalApplied: number;
+  averageDiscount: number;
+  grossRevenue: number;
+  netRevenue: number;
+  averageDiscountRate: number;
+  topCoupons: Array<{ couponCode: string; usageCount: number; totalDiscount: number }>;
 };
 
 type TopClient = {
@@ -984,6 +1018,119 @@ function PaymentMethods({
   );
 }
 
+function discountStatusLabel(status: FinancialDiscountRecord["status"]) {
+  if (status === "APPLIED") return "Aplicado";
+  if (status === "CANCELLED_ORDER") return "Pedido cancelado";
+  return "Revertido";
+}
+
+function discountSourceLabel(source: FinancialDiscountRecord["source"]) {
+  if (source === "COUPON") return "Cupão";
+  if (source === "ADMIN_ADJUSTMENT") return "Ajuste admin";
+  if (source === "PROMOTION") return "Promoção";
+  return "Sistema";
+}
+
+function DiscountsSection({
+  summary,
+  records,
+  isLoading,
+}: {
+  summary: FinancialDiscountSummary | null;
+  records: FinancialDiscountRecord[] | null;
+  isLoading: boolean;
+}) {
+  const cards = [
+    { label: "Descontos hoje", value: formatMoney(summary?.totalToday ?? 0) },
+    { label: "Descontos no mês", value: formatMoney(summary?.totalMonth ?? 0) },
+    { label: "Desconto médio", value: formatMoney(summary?.averageDiscount ?? 0) },
+    { label: "Taxa média", value: `${Number(summary?.averageDiscountRate ?? 0).toFixed(1)}%` },
+  ];
+
+  return (
+    <section className="admin-card p-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <SectionEyebrow>Auditoria</SectionEyebrow>
+          <SectionTitle>Descontos</SectionTitle>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            Registo financeiro permanente de cupões e ajustes aplicados no checkout.
+          </p>
+        </div>
+        <div className="rounded-[16px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-right">
+          <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">Receita líquida</p>
+          <strong className="font-[family-name:var(--font-sora)] text-xl text-[var(--color-text-primary)]">
+            {formatMoney(summary?.netRevenue ?? 0)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        {cards.map((card) => (
+          <div key={card.label} className="rounded-[16px] bg-[var(--color-background-tertiary)] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">{card.label}</p>
+            <p className="mt-2 font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">
+              {isLoading ? "..." : card.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 overflow-x-auto rounded-[18px] border border-[var(--color-border)]">
+        <table className="w-full min-w-[860px] text-left text-sm">
+          <thead className="bg-[var(--color-background-tertiary)] text-xs uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">
+            <tr>
+              <th className="px-4 py-3">Data</th>
+              <th className="px-4 py-3">Pedido</th>
+              <th className="px-4 py-3">Cliente</th>
+              <th className="px-4 py-3">Cupão</th>
+              <th className="px-4 py-3">Subtotal</th>
+              <th className="px-4 py-3">Desconto</th>
+              <th className="px-4 py-3">Total final</th>
+              <th className="px-4 py-3">Estado</th>
+              <th className="px-4 py-3">Origem</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border)]">
+            {isLoading
+              ? Array.from({ length: 3 }).map((_, index) => (
+                  <tr key={index}>
+                    <td colSpan={9} className="px-4 py-4">
+                      <div className="h-6 animate-pulse rounded bg-[var(--color-background-tertiary)]" />
+                    </td>
+                  </tr>
+                ))
+              : (records ?? []).map((record) => (
+                  <tr key={record.id}>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                      {record.appliedAt ? new Date(record.appliedAt).toLocaleDateString("pt-PT") : "-"}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-[var(--color-text-primary)]">{record.orderCode}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-[var(--color-text-primary)]">{record.customerName || "Cliente"}</p>
+                      <p className="text-xs text-[var(--color-text-secondary)]">{record.customerEmail}</p>
+                    </td>
+                    <td className="px-4 py-3">{record.couponCode ?? "-"}</td>
+                    <td className="px-4 py-3">{formatMoney(record.subtotalBeforeDiscount)}</td>
+                    <td className="px-4 py-3 font-semibold text-[var(--color-danger)]">- {formatMoney(record.discountAmount)}</td>
+                    <td className="px-4 py-3">{formatMoney(record.totalAfterDiscount)}</td>
+                    <td className="px-4 py-3">{discountStatusLabel(record.status)}</td>
+                    <td className="px-4 py-3">{discountSourceLabel(record.source)}</td>
+                  </tr>
+                ))}
+          </tbody>
+        </table>
+      </div>
+
+      {!isLoading && !records?.length && (
+        <p className="mt-4 rounded-[16px] border border-dashed border-[var(--color-border-strong)] px-4 py-5 text-center text-sm text-[var(--color-text-secondary)]">
+          Nenhum desconto financeiro registado ainda.
+        </p>
+      )}
+    </section>
+  );
+}
+
 // Revenue Breakdown
 
 function RevenueBreakdown({ data, isLoading }: { data: FinanceStats | null; isLoading: boolean }) {
@@ -1888,12 +2035,18 @@ export function FinanceView() {
   const [methods, setMethods] = useState<PaymentMethodStat[] | null>(null);
   const [revenueByType, setRevenueByType] = useState<RevenueByType | null>(null);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [discountSummary, setDiscountSummary] = useState<FinancialDiscountSummary | null>(null);
+  const [discountRecords, setDiscountRecords] = useState<FinancialDiscountRecord[] | null>(null);
 
   const loadAll = useCallback(async (p: FinancePeriod) => {
     setIsLoading(true);
     setError("");
     try {
-      const payload = await adminApiFetch<FinanceOverviewResponse>(`/api/admin/finance/overview?period=${p}`);
+      const [payload, discountsPayload, discountSummaryPayload] = await Promise.all([
+        adminApiFetch<FinanceOverviewResponse>(`/api/admin/finance/overview?period=${p}`),
+        adminApiFetch<FinancialDiscountRecord[]>("/api/admin/finance/discounts?size=25"),
+        adminApiFetch<FinancialDiscountSummary>("/api/admin/finance/discounts/summary"),
+      ]);
 
       setStats(payload.stats);
       setChart(payload.chart);
@@ -1903,6 +2056,8 @@ export function FinanceView() {
       setMethods(payload.methods);
       setRevenueByType(payload.revenueByType);
       setCostBreakdown(payload.costBreakdown);
+      setDiscountRecords(discountsPayload);
+      setDiscountSummary(discountSummaryPayload);
     } catch (e) {
       setError(
         e instanceof Error
@@ -2008,11 +2163,9 @@ export function FinanceView() {
         </div>
       )}
 
-      <ExchangeRatesPanel />
-
-      <PaymentSettingsSection />
-
       <MetricCards data={stats} isLoading={isLoading} />
+
+      <DiscountsSection summary={discountSummary} records={discountRecords} isLoading={isLoading} />
 
       <RevenueBreakdown data={stats} isLoading={isLoading} />
 
@@ -2033,6 +2186,10 @@ export function FinanceView() {
       <PaymentMethods methods={methods} isLoading={isLoading} />
 
       <CostBreakdownSection data={costBreakdown} isLoading={isLoading} />
+
+      <ExchangeRatesPanel />
+
+      <PaymentSettingsSection />
 
       <GuidanceSections />
     </div>

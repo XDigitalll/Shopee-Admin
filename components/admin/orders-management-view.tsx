@@ -114,26 +114,12 @@ function isInternalDeliveryOrder(order: AdminOrderListItem | null) {
   return order?.type === "INTERNAL" && order?.deliveryMethod !== "STORE_PICKUP";
 }
 
-function getOperationalStatus(order: AdminOrderListItem | null) {
-  return String(order?.orderStatus || order?.fulfillmentStatus || order?.status || "");
+function hasAllowedAction(order: AdminOrderListItem | null, action: string) {
+  return Boolean(order?.allowedActions?.includes(action));
 }
 
-function isPickupReadyForCollection(order: AdminOrderListItem) {
-  const status = getOperationalStatus(order);
-  if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
-    return true;
-  }
-
-  if (!["READY_FOR_FULFILLMENT", "PICKING", "PREPARING"].includes(status)) {
-    return false;
-  }
-
-  return (order.trackingDetailSteps ?? []).some((step) => {
-    const key = String(step.key ?? "").toUpperCase();
-    const label = String(step.label ?? "").toLowerCase();
-    const currentOrDone = step.state === "CURRENT" || step.state === "COMPLETED";
-    return currentOrDone && (key.includes("PICKUP") || label.includes("levantamento") || label.includes("levantar"));
-  });
+function getOperationalStatus(order: AdminOrderListItem | null) {
+  return String(order?.orderStatus || order?.fulfillmentStatus || order?.status || "");
 }
 
 function paymentQueueForOrder(status: string) {
@@ -234,11 +220,11 @@ function OrdersDrawer({
     const status = getOperationalStatus(orderItem);
 
     if (isPickupOrder(orderItem)) {
-      if (status === "PAID") {
-        return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
+      if (hasAllowedAction(orderItem, "MARK_READY_FOR_PICKUP")) {
+        return { label: "Marcar pronto para levantamento", action: "mark-ready-for-delivery" };
       }
 
-      if (isPickupReadyForCollection(orderItem)) {
+      if (hasAllowedAction(orderItem, "CONFIRM_PICKUP")) {
         if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus)) {
           return { label: "Confirmar cobrança e levantamento", action: "collect-and-close", targetStatus: "DELIVERED" };
         }
@@ -360,7 +346,7 @@ function OrdersDrawer({
       await adminApiFetch(`/api/admin/orders/${order.id}/mark-ready-for-delivery`, {
         method: "PATCH",
       });
-      onFeedback({ message: "Pedido marcado como pronto para entrega.", tone: "success" });
+      onFeedback({ message: order.deliveryMethod === "STORE_PICKUP" ? "Pedido marcado como pronto para levantamento." : "Pedido marcado como pronto para entrega.", tone: "success" });
       onActionComplete();
     });
   }

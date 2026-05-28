@@ -69,6 +69,7 @@ type BackendOrder = {
   primaryActionLabel?: string | null;
   primaryActionEndpoint?: string | null;
   primaryActionMethod?: string | null;
+  allowedActions?: string[] | null;
   trackingSummarySteps?: TrackingStep[] | null;
   trackingDetailSteps?: TrackingStep[] | null;
 };
@@ -145,6 +146,7 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     primaryActionLabel: order.primaryActionLabel ?? null,
     primaryActionEndpoint: order.primaryActionEndpoint ?? null,
     primaryActionMethod: order.primaryActionMethod ?? null,
+    allowedActions: order.allowedActions ?? [],
     trackingSummarySteps: order.trackingSummarySteps ?? null,
     trackingDetailSteps: order.trackingDetailSteps ?? null,
   };

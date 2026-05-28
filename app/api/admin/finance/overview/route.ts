@@ -4,6 +4,9 @@ import { fetchBackend, jsonError, parseBackendJson, relayAuthFailure } from "@/a
 
 type BackendStats = {
   totalRevenue?: number;
+  grossRevenue?: number;
+  discountsGranted?: number;
+  netRevenue?: number;
   todayRevenue?: number;
   revenueGrowth?: number;
   totalOrders?: number;
@@ -43,6 +46,10 @@ type BackendKPIs = {
   cancellationRate?: number;
   externalRevenueShare?: number;
   pendingPaymentsCount?: number;
+  grossRevenue?: number;
+  discountsGranted?: number;
+  netRevenue?: number;
+  averageDiscountRate?: number;
 };
 
 type BackendChartItem = {
@@ -202,6 +209,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     stats: {
       totalRevenue,
+      grossRevenue: Number(stats.grossRevenue ?? kpis.grossRevenue ?? totalRevenue),
+      discountsGranted: Number(stats.discountsGranted ?? kpis.discountsGranted ?? 0),
+      netRevenue: Number(stats.netRevenue ?? kpis.netRevenue ?? totalRevenue),
       todayRevenue,
       totalRevenueDelta: Number(growth.toFixed(2)),
       commissionsEarned: commission,
@@ -263,6 +273,10 @@ export async function GET(request: NextRequest) {
       avgQuoteTimeTrend: "neutral",
       cancelledOrders: Number(kpis.pendingPaymentsCount ?? 0),
       cancelledOrdersTrend: "neutral",
+      grossRevenue: Number(kpis.grossRevenue ?? stats.grossRevenue ?? totalRevenue),
+      discountsGranted: Number(kpis.discountsGranted ?? stats.discountsGranted ?? 0),
+      netRevenue: Number(kpis.netRevenue ?? stats.netRevenue ?? totalRevenue),
+      averageDiscountRate: Number(kpis.averageDiscountRate ?? 0),
     },
     topClients: topClients.slice(0, 4).map((client, index) => ({
       rank: index + 1,
