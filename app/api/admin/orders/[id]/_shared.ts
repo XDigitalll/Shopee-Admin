@@ -100,6 +100,8 @@ type BackendOrderDetail = {
   sourceStore?: string | null;
   orderDate?: string | null;
   totalAmount?: number | null;
+  totalBeforeDiscount?: number | null;
+  totalAfterDiscount?: number | null;
   suggestedBaseAmount?: number | null;
   baseAmount?: number | null;
   commissionAmount?: number | null;
@@ -124,6 +126,11 @@ type BackendOrderDetail = {
 
 function getOrderNumber(order: Pick<BackendOrderDetail, "id" | "code" | "orderCode">) {
   return order.code || order.orderCode || `#${order.id}`;
+}
+
+function finalOrderTotal(order: Pick<BackendOrderDetail, "totalAmount" | "totalAfterDiscount">) {
+  const discounted = Number(order.totalAfterDiscount ?? 0);
+  return discounted > 0 ? discounted : Number(order.totalAmount ?? 0);
 }
 
 type BackendPaymentDetail = {
@@ -555,7 +562,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
   const trackingCode = trackingMeta.trackingCode;
   const payment: OrderPaymentDetail = {
     id: paymentPayload?.id ?? null,
-    amount: Number(paymentPayload?.amount ?? order.totalAmount ?? 0),
+    amount: Number(paymentPayload?.amount ?? finalOrderTotal(order)),
     method: paymentPayload?.method ?? null,
     status: paymentPayload?.status ?? null,
     transactionId: paymentPayload?.transactionId ?? null,
@@ -598,9 +605,11 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     requestScreenshotUrl: externalOrder ? order.requestScreenshotUrl ?? "" : "",
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
-    totalAmount: Number(order.totalAmount ?? 0),
+    totalAmount: finalOrderTotal(order),
+    totalBeforeDiscount: order.totalBeforeDiscount ?? null,
     couponCode: order.couponCode ?? null,
     discountAmount: Number(order.discountAmount ?? 0),
+    totalAfterDiscount: order.totalAfterDiscount ?? null,
     suggestedBaseAmount,
     externalItems,
     latestQuoteSentAt: externalOrder ? historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null : null,
@@ -627,7 +636,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
         id: item.id,
         number: getOrderNumber(item),
         status: item.id === order.id ? effectiveOrderStatus : item.status ?? "UNDER_REVIEW",
-        totalAmount: Number(item.totalAmount ?? 0),
+        totalAmount: finalOrderTotal(item),
         createdAt: item.orderDate ?? new Date().toISOString(),
       })),
     customerId,
