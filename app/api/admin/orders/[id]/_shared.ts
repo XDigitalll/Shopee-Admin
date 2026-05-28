@@ -6,8 +6,6 @@ import {
   parseBackendJson,
   relayAuthFailure,
 } from "@/app/api/admin/_utils";
-import { getOrderNotes, getTrackingMeta } from "@/lib/admin/order-meta-store";
-import { getQuoteDraft } from "@/lib/admin/quote-drafts";
 import type {
   AuditLogItem,
   ExternalOrderDetail,
@@ -102,6 +100,8 @@ type BackendOrderDetail = {
   sourceStore?: string | null;
   orderDate?: string | null;
   totalAmount?: number | null;
+  totalBeforeDiscount?: number | null;
+  totalAfterDiscount?: number | null;
   suggestedBaseAmount?: number | null;
   baseAmount?: number | null;
   commissionAmount?: number | null;
@@ -126,6 +126,11 @@ type BackendOrderDetail = {
 
 function getOrderNumber(order: Pick<BackendOrderDetail, "id" | "code" | "orderCode">) {
   return order.code || order.orderCode || `#${order.id}`;
+}
+
+function finalOrderTotal(order: Pick<BackendOrderDetail, "totalAmount" | "totalAfterDiscount">) {
+  const discounted = Number(order.totalAfterDiscount ?? 0);
+  return discounted > 0 ? discounted : Number(order.totalAmount ?? 0);
 }
 
 type BackendPaymentDetail = {
@@ -445,11 +450,13 @@ function mapAuditHistory(items: AuditLogItem[] | null | undefined): OrderHistory
 }
 
 export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
-  const [orderResponse, historyResponse, paymentResponse, timelineResponse] = await Promise.all([
+  const [orderResponse, historyResponse, paymentResponse, timelineResponse, trackingResponse, notesResponse] = await Promise.all([
     fetchBackend(request, `/admin/orders/filters?orderId=${encodeURIComponent(id)}&page=0&size=1`),
     fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/quotes`),
     fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/payment`),
     fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/timeline`),
+    fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/tracking`),
+    fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/notes`),
   ]);
 
   await Promise.all([
@@ -474,12 +481,25 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
   const timelinePayload = timelineResponse.ok
     ? await parseBackendJson<AuditLogItem[]>(timelineResponse)
     : [];
+  const trackingPayload = trackingResponse.ok
+    ? await parseBackendJson<{ trackingCode?: string; carrier?: string; estimatedDelivery?: string; trackingUrl?: string; history?: { id: string; at: string; description: string }[] }>(trackingResponse)
+    : null;
+  const notesPayload = notesResponse.ok
+    ? await parseBackendJson<{ id: string; content: string; author: string; createdAt: string }[]>(notesResponse)
+    : [];
   const order = orderPayload?.content?.[0];
   const externalOrder = order ? isExternalOrder(order) : false;
 
   if (!order) {
     return { error: jsonError("Pedido não encontrado.", 404) };
   }
+
+  const quoteDraftResponse = externalOrder
+    ? await fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/quote-draft`)
+    : null;
+  const quoteDraftPayload = quoteDraftResponse?.ok
+    ? await parseBackendJson<import("@/lib/admin/types").ExternalOrderDraft>(quoteDraftResponse)
+    : null;
 
   const [recentOrdersResponse, customerLookupResponse] = await Promise.all([
     fetchBackend(
@@ -532,11 +552,17 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
   const externalItems = enrichExternalItems(rawExternalItems, productsById);
   const customerId =
     customerLookupPayload.find((item) => item.id != null)?.id ?? null;
-  const trackingMeta = getTrackingMeta(id);
+  const trackingMeta = {
+    trackingCode: trackingPayload?.trackingCode ?? "",
+    carrier: (trackingPayload?.carrier ?? "") as "DHL" | "FEDEX" | "CTT" | "OTHER" | "",
+    estimatedDelivery: trackingPayload?.estimatedDelivery ?? "",
+    trackingUrl: trackingPayload?.trackingUrl ?? "",
+    history: trackingPayload?.history ?? [],
+  };
   const trackingCode = trackingMeta.trackingCode;
   const payment: OrderPaymentDetail = {
     id: paymentPayload?.id ?? null,
-    amount: Number(paymentPayload?.amount ?? order.totalAmount ?? 0),
+    amount: Number(paymentPayload?.amount ?? finalOrderTotal(order)),
     method: paymentPayload?.method ?? null,
     status: paymentPayload?.status ?? null,
     transactionId: paymentPayload?.transactionId ?? null,
@@ -579,13 +605,15 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     requestScreenshotUrl: externalOrder ? order.requestScreenshotUrl ?? "" : "",
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
-    totalAmount: Number(order.totalAmount ?? 0),
+    totalAmount: finalOrderTotal(order),
+    totalBeforeDiscount: order.totalBeforeDiscount ?? null,
     couponCode: order.couponCode ?? null,
     discountAmount: Number(order.discountAmount ?? 0),
+    totalAfterDiscount: order.totalAfterDiscount ?? null,
     suggestedBaseAmount,
     externalItems,
     latestQuoteSentAt: externalOrder ? historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null : null,
-    quoteDraft: externalOrder ? getQuoteDraft(id) ?? (order.activeQuote?.productPrice != null
+    quoteDraft: externalOrder ? (quoteDraftPayload ?? (order.activeQuote?.productPrice != null
       ? {
           baseAmount: Number(order.activeQuote.productPrice),
           shippingFee: Number(order.activeQuote.shippingFee ?? 0),
@@ -600,7 +628,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
           notes: "",
           validityDate: "",
         }
-      : null) : null,
+      : null)) : null,
     recentCustomerOrders: (recentOrdersPayload.content ?? [])
       .filter((item) => item.id !== order.id)
       .slice(0, 3)
@@ -608,7 +636,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
         id: item.id,
         number: getOrderNumber(item),
         status: item.id === order.id ? effectiveOrderStatus : item.status ?? "UNDER_REVIEW",
-        totalAmount: Number(item.totalAmount ?? 0),
+        totalAmount: finalOrderTotal(item),
         createdAt: item.orderDate ?? new Date().toISOString(),
       })),
     customerId,
@@ -660,7 +688,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
       trackingMeta.trackingUrl ||
       (trackingCode ? `https://www.google.com/search?q=${encodeURIComponent(trackingCode)}` : null),
     payment,
-    internalNotes: getOrderNotes(id),
+    internalNotes: notesPayload ?? [],
   };
 
   return {

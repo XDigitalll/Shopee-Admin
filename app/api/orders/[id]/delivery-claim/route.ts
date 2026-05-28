@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchBackend, jsonError, relayAuthFailure } from "@/app/api/admin/_utils";
-import { saveDeliveryAssignment, saveDeliveryAssignmentSnapshot } from "@/lib/admin/delivery-meta-store";
 
 type RouteContext = {
   params: Promise<{
@@ -37,44 +36,5 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const assignedDriver = (await response.json().catch(() => null)) as AssignedDriverPayload | null;
   const driverId = assignedDriver?.id ?? "";
 
-  saveDeliveryAssignment(Number(id), {
-    driverId,
-    driverName: assignedDriver?.name ?? "Estafeta",
-    driverEmail: assignedDriver?.email ?? null,
-    driverPhone: assignedDriver?.phone ?? null,
-  });
-
-  const snapshot = await fetchPendingSnapshot(request, Number(id)).catch(() => null);
-  if (snapshot) {
-    saveDeliveryAssignmentSnapshot(Number(id), {
-      ...snapshot,
-      driverId,
-      driverName: assignedDriver?.name ?? "Estafeta",
-      driverEmail: assignedDriver?.email ?? null,
-      driverPhone: assignedDriver?.phone ?? null,
-      assignedDriverId: driverId,
-      assignedDriverName: assignedDriver?.name ?? "Estafeta",
-      assignedDriverEmail: assignedDriver?.email ?? null,
-      assignedDriverPhone: assignedDriver?.phone ?? null,
-    });
-  }
-
   return NextResponse.json({ ok: true, driverId, driver: assignedDriver });
-}
-
-async function fetchPendingSnapshot(request: NextRequest, orderId: number) {
-  const response = await fetchBackend(request, "/admin/delivery/pending");
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = (await response.json().catch(() => null)) as unknown;
-  const list = Array.isArray(payload)
-    ? payload
-    : payload && typeof payload === "object" && Array.isArray((payload as { content?: unknown[] }).content)
-      ? (payload as { content: unknown[] }).content
-      : [];
-
-  const found = list.find((item) => item && typeof item === "object" && Number((item as { id?: unknown }).id) === orderId);
-  return found && typeof found === "object" ? (found as Record<string, unknown>) : null;
 }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchBackend, jsonError, relayAuthFailure } from "@/app/api/admin/_utils";
-import { saveDeliveryPricing } from "@/lib/admin/delivery-meta-store";
 
 type RouteContext = {
   params: Promise<{
@@ -49,12 +48,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       response.status,
     );
   }
-
-  saveDeliveryPricing(Number(id), {
-    deliveryFee,
-    estimatedDeliveryHours: estimatedDeliveryTime,
-    notes,
-  });
 
   return NextResponse.json({ ok: true });
 }

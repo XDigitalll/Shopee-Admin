@@ -6,7 +6,6 @@ import {
   parseBackendJson,
   relayAuthFailure,
 } from "@/app/api/admin/_utils";
-import { clearQuoteDraft } from "@/lib/admin/quote-drafts";
 import type { QuoteSubmissionPayload } from "@/lib/admin/types";
 
 type RouteContext = {
@@ -73,6 +72,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError(errorText || `Não foi possível ${action} a cotação.`, response.status);
   }
 
-  clearQuoteDraft(id);
+  // Clear the persisted draft asynchronously — best effort
+  void fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/quote-draft`, { method: "DELETE" });
   return NextResponse.json(await response.json().catch(() => null));
 }

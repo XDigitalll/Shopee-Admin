@@ -321,8 +321,10 @@ export type ExternalOrderDetail = {
   sourceStore: string;
   createdAt: string;
   totalAmount: number;
+  totalBeforeDiscount?: number | null;
   couponCode?: string | null;
   discountAmount?: number | null;
+  totalAfterDiscount?: number | null;
   suggestedBaseAmount: number;
   externalItems: ExternalOrderLineItem[];
   latestQuoteSentAt: string | null;

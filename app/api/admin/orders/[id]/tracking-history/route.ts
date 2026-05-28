@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { fetchBackend, jsonError, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 import { fetchOrderDetailBundle } from "@/app/api/admin/orders/[id]/_shared";
-import { getTrackingHistory } from "@/lib/admin/order-meta-store";
 import type { TrackingHistoryEntry } from "@/lib/admin/types";
 
 type RouteContext = {
@@ -12,13 +12,22 @@ type RouteContext = {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
-  const result = await fetchOrderDetailBundle(request, id);
 
-  if ("error" in result) {
-    return result.error;
+  const [bundleResult, trackingResponse] = await Promise.all([
+    fetchOrderDetailBundle(request, id),
+    fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/tracking`),
+  ]);
+  await relayAuthFailure(trackingResponse);
+
+  if ("error" in bundleResult) {
+    return bundleResult.error;
   }
 
-  const deliveryFlow = (result.history ?? [])
+  const trackingPayload = trackingResponse.ok
+    ? await parseBackendJson<{ history?: { id: string; at: string; description: string }[] }>(trackingResponse)
+    : null;
+
+  const deliveryFlow = (bundleResult.history ?? [])
     .filter((entry) =>
       ["Pedido em trânsito", "Pedido chegou a nossa sede", "Saiu para entrega", "Pedido entregue"].includes(
         entry.label
@@ -32,7 +41,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       })
     );
 
-  const manualUpdates = getTrackingHistory(id).map(
+  const manualUpdates = (trackingPayload?.history ?? []).map(
     (entry): TrackingHistoryEntry => ({
       id: entry.id,
       date: entry.at,

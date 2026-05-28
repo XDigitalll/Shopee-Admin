@@ -38,6 +38,10 @@ type BackendOrder = {
   type?: "EXTERNAL" | "INTERNAL";
   deliveryMethod?: "DELIVERY" | "STORE_PICKUP" | null;
   totalAmount?: number;
+  totalBeforeDiscount?: number | null;
+  discountAmount?: number | null;
+  totalAfterDiscount?: number | null;
+  couponCode?: string | null;
   status?: string;
   orderStatus?: string | null;
   operationalStatusLabel?: string | null;
@@ -87,6 +91,11 @@ function getInitials(name: string) {
     .join("") || "CL";
 }
 
+function finalOrderTotal(order: Pick<BackendOrder, "totalAmount" | "totalAfterDiscount">) {
+  const discounted = Number(order.totalAfterDiscount ?? 0);
+  return discounted > 0 ? discounted : Number(order.totalAmount ?? 0);
+}
+
 function mapPriority(order: BackendOrder) {
   const operationalStatus = order.orderStatus ?? order.status;
   const uiStatus = resolveUiOrderStatus(operationalStatus, order.type ?? "INTERNAL");
@@ -117,7 +126,7 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     customerEmail: order.customerEmail ?? "",
     customerInitials: getInitials(customer),
     type: order.type ?? "INTERNAL",
-    totalAmount: Number(order.totalAmount ?? 0),
+    totalAmount: finalOrderTotal(order),
     status: operationalStatus,
     orderStatus: operationalStatus,
     operationalStatusLabel: order.operationalStatusLabel ?? null,
@@ -165,7 +174,7 @@ function mapRecentOrder(order: BackendOrder): RecentOrder {
     number: getOrderNumber(order),
     customer: order.customerFullName || order.customerEmail || "Cliente nao identificado",
     type: order.type ?? "INTERNAL",
-    totalAmount: Number(order.totalAmount ?? 0),
+    totalAmount: finalOrderTotal(order),
     status: resolveCustomerOrderStage(rawStatus),
     createdAt: order.orderDate ?? new Date().toISOString(),
     actionLabel: order.type === "EXTERNAL" ? "Ver proposta" : "Abrir pedido",
@@ -186,7 +195,7 @@ function mapPendingQuote(order: BackendOrder): PendingQuote {
     customer: order.customerFullName || order.customerEmail || "Cliente sem nome",
     store: order.sourceStore || "Loja externa",
     itemCount: itemCount || 1,
-    estimatedValue: Number(order.activeQuote?.finalAmountMzn ?? order.totalAmount ?? 0),
+    estimatedValue: Number(order.activeQuote?.finalAmountMzn ?? finalOrderTotal(order)),
     externalUrl: order.externalCartUrl ?? null,
   };
 }
