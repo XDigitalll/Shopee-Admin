@@ -104,6 +104,7 @@ export type AdminOrderListItem = {
   primaryActionLabel?: string | null;
   primaryActionEndpoint?: string | null;
   primaryActionMethod?: string | null;
+  allowedActions?: string[];
   trackingSummarySteps?: TrackingStep[] | null;
   trackingDetailSteps?: TrackingStep[] | null;
 };
@@ -308,6 +309,7 @@ export type ExternalOrderDetail = {
   actionRequired: boolean;
   nextActionLabel: string | null;
   nextActionModule: string | null;
+  allowedActions?: string[];
   isArchived: boolean;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
   urgentRequest: boolean;
@@ -319,6 +321,8 @@ export type ExternalOrderDetail = {
   sourceStore: string;
   createdAt: string;
   totalAmount: number;
+  couponCode?: string | null;
+  discountAmount?: number | null;
   suggestedBaseAmount: number;
   externalItems: ExternalOrderLineItem[];
   latestQuoteSentAt: string | null;

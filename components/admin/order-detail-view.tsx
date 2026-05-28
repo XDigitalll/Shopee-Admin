@@ -41,11 +41,11 @@ const EXTERNAL_STATUS_STEPS = [
 
 const PICKUP_STATUS_STEPS = [
   "CREATED",
-  "UNDER_REVIEW",
-  "QUOTED",
   "PENDING_PAYMENT",
-  "TO_PURCHASE",
-  "ORDERED",
+  "PAYMENT_SUBMITTED",
+  "PAYMENT_UNDER_REVIEW",
+  "PAID",
+  "READY_FOR_DELIVERY",
   "DELIVERED",
 ] as const;
 
@@ -66,7 +66,7 @@ type DetailAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "focus-tracking" | "validate-payment" | "collect-and-deliver" | "cancel-order" | "mark-status" | "handoff";
+      action: "focus-tracking" | "validate-payment" | "collect-and-deliver" | "cancel-order" | "mark-status" | "mark-ready-for-delivery" | "handoff";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
       targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT";
     };
@@ -114,6 +114,10 @@ function isCashOnPickup(detail: ExternalOrderDetail) {
   return isPickupOrder(detail) && detail.payment.method === "CASH_ON_DELIVERY";
 }
 
+function hasAllowedAction(detail: ExternalOrderDetail | null, action: string) {
+  return Boolean(detail?.allowedActions?.includes(action));
+}
+
 function buildTotals(detail: ExternalOrderDetail) {
   const subtotal = detail.itemSubtotal;
   const freight = detail.additionalCosts.freight;
@@ -141,7 +145,7 @@ function normalizeTrackingStatus(detail: ExternalOrderDetail | null): TrackableS
   if (!detail) return "";
 
   if (isPickupOrder(detail) && ["IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
-    return "ORDERED";
+    return "READY_FOR_DELIVERY";
   }
 
   if (isInternalDeliveryOrder(detail)) {
@@ -184,8 +188,10 @@ function getCurrentStepIndex(
 
 function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) {
   if (detail && isPickupOrder(detail)) {
-    if (step === "TO_PURCHASE") return "Pago";
-    if (step === "ORDERED") return "Pronto para levantar";
+    if (step === "PAID") return "Pagamento aprovado";
+    if (step === "PAYMENT_SUBMITTED") return "Pagamento submetido";
+    if (step === "PAYMENT_UNDER_REVIEW") return "Pagamento em análise";
+    if (step === "READY_FOR_DELIVERY") return "Pronto para levantamento";
     if (step === "DELIVERED") return "Levantado";
   }
   if (detail && isInternalDeliveryOrder(detail)) {
@@ -213,11 +219,11 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
   }
 
   if (pickupOrder) {
-    if (status === "PAID") {
-      return { label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" };
+    if (hasAllowedAction(detail, "MARK_READY_FOR_PICKUP")) {
+      return { label: "Marcar pronto para levantamento", action: "mark-ready-for-delivery" };
     }
 
-    if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    if (hasAllowedAction(detail, "CONFIRM_PICKUP")) {
       if (cashOnDelivery && !paymentValidated) {
         return { label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" };
       }
@@ -287,10 +293,10 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
   }
 
   if (pickupOrder) {
-    if (status === "PAID") {
-      actions.push({ label: "Marcar pronto para levantamento", action: "mark-status", targetStatus: "ORDERED" });
+    if (hasAllowedAction(detail, "MARK_READY_FOR_PICKUP")) {
+      actions.push({ label: "Marcar pronto para levantamento", action: "mark-ready-for-delivery" });
     }
-    if (["ORDERED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"].includes(status)) {
+    if (hasAllowedAction(detail, "CONFIRM_PICKUP")) {
       if (cashOnDelivery && !paymentValidated) {
         actions.push({ label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" });
       } else {
@@ -461,6 +467,14 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         await adminApiFetch(`/api/admin/orders/${detail.id}/status`, {
           method: "PUT",
           body: JSON.stringify({ status: targetStatus }),
+        });
+        await refreshData();
+        return;
+      }
+
+      if (action === "mark-ready-for-delivery") {
+        await adminApiFetch(`/api/admin/orders/${detail.id}/mark-ready-for-delivery`, {
+          method: "PATCH",
         });
         await refreshData();
         return;
@@ -748,7 +762,10 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <div className="flex items-center justify-between"><span>Entrega</span><strong>{formatMoney(totals.localDelivery)}</strong></div>
                 ) : null}
                 {totals.discount > 0 ? (
-                  <div className="flex items-center justify-between"><span>Desconto</span><strong>- {formatMoney(totals.discount)}</strong></div>
+                  <div className="flex items-center justify-between">
+                    <span>Desconto aplicado{detail.couponCode ? `: ${detail.couponCode}` : ""}</span>
+                    <strong>- {formatMoney(totals.discount)}</strong>
+                  </div>
                 ) : null}
               </div>
               <div className="my-4 h-px bg-[var(--color-border)]" />
@@ -847,7 +864,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-5 text-sm">
                     <p className="font-medium text-[var(--color-text-secondary)]">Estado do levantamento</p>
                     <p className="mt-3 text-[var(--color-text-primary)]">
-                      {currentStatus === "ORDERED"
+                      {currentStatus === "READY_FOR_DELIVERY"
                         ? "Pedido pronto para o cliente levantar."
                         : currentStatus === "DELIVERED"
                           ? "Levantamento confirmado."

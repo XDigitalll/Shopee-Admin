@@ -87,6 +87,7 @@ type BackendOrderDetail = {
   quoteQueueStatus?: ExternalOrderDetail["quoteQueueStatus"] | null;
   nextActionLabel?: string | null;
   nextActionModule?: string | null;
+  allowedActions?: string[] | null;
   isArchived?: boolean | null;
   actionRequired?: {
     required?: boolean;
@@ -105,6 +106,7 @@ type BackendOrderDetail = {
   baseAmount?: number | null;
   commissionAmount?: number | null;
   deliveryFee?: number | null;
+  couponCode?: string | null;
   discountAmount?: number | null;
   activeQuote?: {
     quotedAt?: string | null;
@@ -566,6 +568,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     actionRequired: Boolean(order.actionRequired?.required && order.actionRequired?.module === "EXTERNAL_QUOTES"),
     nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
     nextActionModule: order.nextActionModule ?? order.actionRequired?.module ?? null,
+    allowedActions: order.allowedActions ?? [],
     isArchived: Boolean(order.isArchived ?? order.quoteQueueStatus === "ARCHIVED"),
     deliveryMethod: order.deliveryMethod ?? null,
     urgentRequest: Boolean(order.urgent),
@@ -577,6 +580,8 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
     totalAmount: Number(order.totalAmount ?? 0),
+    couponCode: order.couponCode ?? null,
+    discountAmount: Number(order.discountAmount ?? 0),
     suggestedBaseAmount,
     externalItems,
     latestQuoteSentAt: externalOrder ? historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null : null,

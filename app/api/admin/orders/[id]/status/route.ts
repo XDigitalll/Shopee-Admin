@@ -30,7 +30,7 @@ function hasReachedTarget(currentStatus: string, targetStatus: string) {
 }
 
 const ALLOWED_TARGETS = ["ORDERED", "PURCHASED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
-const ALLOWED_PROGRESSION = ["PAID", "TO_PURCHASE", "ORDERED", "PURCHASED", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
+const ALLOWED_PROGRESSION = ["PAID", "TO_PURCHASE", "ORDERED", "PURCHASED", "IN_TRANSIT", "ARRIVED", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
@@ -56,12 +56,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return jsonError("Nao foi possivel carregar o estado atual do pedido.", detailResponse.status);
   }
 
-  const detailPayload = await parseBackendJson<{ content?: Array<{ status?: string | null; orderStatus?: string | null; fulfillmentStatus?: string | null }> }>(
+  const detailPayload = await parseBackendJson<{ content?: Array<{ status?: string | null; orderStatus?: string | null; fulfillmentStatus?: string | null; deliveryMethod?: string | null }> }>(
     detailResponse
   );
   const currentOrder = detailPayload?.content?.[0];
   let currentStatus = String(currentOrder?.orderStatus ?? currentOrder?.fulfillmentStatus ?? currentOrder?.status ?? "");
   const targetStatus = String(body?.status);
+  if (currentOrder?.deliveryMethod === "STORE_PICKUP" && targetStatus === "DELIVERED" && currentStatus !== "READY_FOR_DELIVERY") {
+    return jsonError("Este pedido ainda nao pode ser levantado porque o pagamento nao foi aprovado ou o pedido nao esta pronto para levantamento.", 400);
+  }
   if (!ALLOWED_PROGRESSION.includes(currentStatus as (typeof ALLOWED_PROGRESSION)[number])) {
     return jsonError("O estado atual do pedido nao suporta esta transicao administrativa.", 400);
   }
