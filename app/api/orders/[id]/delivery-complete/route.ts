@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchBackend, jsonError, relayAuthFailure } from "@/app/api/admin/_utils";
-import { markDeliveryCompleted } from "@/lib/admin/delivery-meta-store";
 
 type RouteContext = {
   params: Promise<{
@@ -38,6 +37,5 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 
-  const meta = markDeliveryCompleted(Number(id));
-  return NextResponse.json({ ok: true, deliveredAt: meta.deliveredAt });
+  return NextResponse.json({ ok: true });
 }

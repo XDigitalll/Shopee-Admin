@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchBackend, jsonError, relayAuthFailure } from "@/app/api/admin/_utils";
-import { addDeliveryIssue } from "@/lib/admin/delivery-meta-store";
 
 type RouteContext = {
   params: Promise<{
@@ -52,11 +51,5 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } catch {
   }
 
-  addDeliveryIssue(Number(id), { type, note });
-
-  return NextResponse.json({
-    ok: true,
-    type,
-    note,
-  });
+  return NextResponse.json({ ok: true, type, note });
 }

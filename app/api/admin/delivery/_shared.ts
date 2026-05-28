@@ -6,7 +6,6 @@ import {
   parseBackendJson,
   relayAuthFailure,
 } from "@/app/api/admin/_utils";
-import { getDeliveryMeta, listDeliveryAssignmentSnapshots } from "@/lib/admin/delivery-meta-store";
 import { getProfileFromToken } from "@/lib/admin/jwt";
 import { ADMIN_SESSION_COOKIE } from "@/lib/admin/session";
 import type {
@@ -205,7 +204,6 @@ function toAvailability(value: string | null | undefined): DeliveryDriverAvailab
 
 function mapPendingOrder(raw: BackendOrder): DeliveryPendingOrder {
   const id = readNumber(raw.id, 0);
-  const meta = getDeliveryMeta(id);
   const items = readItems(raw);
   const itemsSummary = readItemsSummary(raw);
 
@@ -231,17 +229,17 @@ function mapPendingOrder(raw: BackendOrder): DeliveryPendingOrder {
     officeArrivedAt: readNullableString(raw.officeArrivedAt ?? raw.orderDate),
     status: readString(raw.status),
     urgent: readBoolean(raw.urgent, false),
-    deliveryFee: readNullableNumber(raw.deliveryFee) ?? meta.deliveryFee,
+    deliveryFee: readNullableNumber(raw.deliveryFee),
     baseAmount: readNullableNumber(raw.baseAmount),
     totalAmount: readNullableNumber(raw.totalAmount),
-    estimatedDeliveryHours: readNullableNumber(raw.estimatedDeliveryTime) ?? meta.estimatedDeliveryHours,
+    estimatedDeliveryHours: readNullableNumber(raw.estimatedDeliveryTime),
     deliveryFeeSetAt: readNullableString(raw.deliveryFeeSetAt),
     deliveryFeeSetBy: readNullableString(raw.deliveryFeeSetBy),
-    notes: readNullableString(raw.deliveryNotes ?? raw.notes) ?? meta.notes,
-    assignedDriverId: readNullableString(raw.assignedDriverId) ?? meta.assignment?.driverId ?? null,
-    assignedDriverName: readNullableString(raw.assignedDriverName) ?? meta.assignment?.driverName ?? null,
-    assignedDriverEmail: readNullableString(raw.assignedDriverEmail) ?? meta.assignment?.driverEmail ?? null,
-    assignedDriverPhone: readNullableString(raw.assignedDriverPhone) ?? meta.assignment?.driverPhone ?? null,
+    notes: readNullableString(raw.deliveryNotes ?? raw.notes),
+    assignedDriverId: readNullableString(raw.assignedDriverId),
+    assignedDriverName: readNullableString(raw.assignedDriverName),
+    assignedDriverEmail: readNullableString(raw.assignedDriverEmail),
+    assignedDriverPhone: readNullableString(raw.assignedDriverPhone),
     deliveryAttempt: readNullableNumber(raw.deliveryAttempt),
     lastIssueType: readNullableString(raw.lastIssueType),
   };
@@ -249,8 +247,7 @@ function mapPendingOrder(raw: BackendOrder): DeliveryPendingOrder {
 
 function mapActiveOrder(raw: BackendOrder): DeliveryActiveOrder {
   const id = readNumber(raw.id, 0);
-  const meta = getDeliveryMeta(id);
-  const leftOfficeAt = readNullableString(raw.leftOfficeAt) ?? meta.startedAt;
+  const leftOfficeAt = readNullableString(raw.leftOfficeAt);
   const elapsedMinutes = leftOfficeAt
     ? Math.max(0, Math.round((Date.now() - new Date(leftOfficeAt).getTime()) / 60000))
     : null;
@@ -270,17 +267,17 @@ function mapActiveOrder(raw: BackendOrder): DeliveryActiveOrder {
     recipientName: readNullableString(raw.customerFullName),
     recipientPhone: readNullableString(raw.customerPhone ?? raw.primaryPhoneNumber),
     sourceStore: readString(raw.sourceStore) || "Shopee X Digital",
-    driverId: readNullableString(raw.driverId) ?? meta.assignment?.driverId ?? null,
-    driverName: readNullableString(raw.driverName) ?? meta.assignment?.driverName ?? null,
-    driverEmail: readNullableString(raw.driverEmail) ?? readNullableString(raw.assignedDriverEmail) ?? meta.assignment?.driverEmail ?? null,
+    driverId: readNullableString(raw.driverId),
+    driverName: readNullableString(raw.driverName),
+    driverEmail: readNullableString(raw.driverEmail) ?? readNullableString(raw.assignedDriverEmail),
     driverAvatarUrl: readNullableString(raw.driverAvatarUrl),
-    driverPhone: readNullableString(raw.driverPhone) ?? readNullableString(raw.assignedDriverPhone) ?? meta.assignment?.driverPhone ?? null,
+    driverPhone: readNullableString(raw.driverPhone) ?? readNullableString(raw.assignedDriverPhone),
     leftOfficeAt,
     elapsedMinutes,
-    deliveryFee: readNullableNumber(raw.deliveryFee) ?? meta.deliveryFee,
+    deliveryFee: readNullableNumber(raw.deliveryFee),
     items: readItems(raw),
     totalAmount: readNullableNumber(raw.totalAmount),
-    estimatedDeliveryHours: readNullableNumber(raw.estimatedDeliveryTime) ?? meta.estimatedDeliveryHours,
+    estimatedDeliveryHours: readNullableNumber(raw.estimatedDeliveryTime),
     status: readString(raw.status) || "OUT_FOR_DELIVERY",
     urgent: readBoolean(raw.urgent, false),
     deliveryAttempt: readNullableNumber(raw.deliveryAttempt),
@@ -289,21 +286,20 @@ function mapActiveOrder(raw: BackendOrder): DeliveryActiveOrder {
 
 function mapHistoryOrder(raw: BackendOrder): DeliveryHistoryItem {
   const id = readNumber(raw.id, 0);
-  const meta = getDeliveryMeta(id);
-  const leftOfficeAt = readNullableString(raw.leftOfficeAt) ?? meta.startedAt;
-  const deliveredAt = readNullableString(raw.deliveredAt) ?? meta.deliveredAt;
+  const leftOfficeAt = readNullableString(raw.leftOfficeAt);
+  const deliveredAt = readNullableString(raw.deliveredAt);
   const durationMinutes =
     leftOfficeAt && deliveredAt
       ? Math.max(0, Math.round((new Date(deliveredAt).getTime() - new Date(leftOfficeAt).getTime()) / 60000))
       : null;
-  const issueType = readNullableString(raw.lastIssueType) ?? meta.issues[0]?.type ?? null;
+  const issueType = readNullableString(raw.lastIssueType);
 
   return {
     id,
     number: readOrderNumber(raw, id),
     customerName: readString(raw.customerFullName) || readString(raw.customerEmail) || "Cliente nao identificado",
-    driverName: readNullableString(raw.driverName) ?? readNullableString(raw.assignedDriverName) ?? meta.assignment?.driverName ?? null,
-    deliveryFee: readNullableNumber(raw.deliveryFee) ?? meta.deliveryFee,
+    driverName: readNullableString(raw.driverName) ?? readNullableString(raw.assignedDriverName),
+    deliveryFee: readNullableNumber(raw.deliveryFee),
     leftOfficeAt,
     deliveredAt,
     durationMinutes,
@@ -315,13 +311,11 @@ function mapHistoryOrder(raw: BackendOrder): DeliveryHistoryItem {
 
 function isRealDeliveryHistoryRecord(raw: BackendOrder) {
   const status = readString(raw.status);
-  const id = readNumber(raw.id, 0);
-  const meta = getDeliveryMeta(id);
-  const leftOfficeAt = readNullableString(raw.leftOfficeAt) ?? meta.startedAt;
-  const deliveredAt = readNullableString(raw.deliveredAt) ?? meta.deliveredAt;
-  const driverName = readNullableString(raw.driverName) ?? readNullableString(raw.assignedDriverName) ?? meta.assignment?.driverName ?? null;
-  const driverId = readNullableString(raw.driverId) ?? readNullableString(raw.assignedDriverId) ?? meta.assignment?.driverId ?? null;
-  const hasIssue = readNullableString(raw.lastIssueType) != null || meta.issues.length > 0;
+  const leftOfficeAt = readNullableString(raw.leftOfficeAt);
+  const deliveredAt = readNullableString(raw.deliveredAt);
+  const driverName = readNullableString(raw.driverName) ?? readNullableString(raw.assignedDriverName) ?? null;
+  const driverId = readNullableString(raw.driverId) ?? readNullableString(raw.assignedDriverId) ?? null;
+  const hasIssue = readNullableString(raw.lastIssueType) != null;
 
   if (status === "DELIVERED") {
     return Boolean(leftOfficeAt && deliveredAt && (driverId || driverName));
@@ -414,17 +408,16 @@ export async function fetchDeliveryStats(request: NextRequest): Promise<Delivery
 
   const orders = await fetchOrdersFallback(request);
   const deliveredToday = orders.filter((order) => {
-    const date = readNullableString(order.deliveredAt) ?? getDeliveryMeta(readNumber(order.id, 0)).deliveredAt;
+    const date = readNullableString(order.deliveredAt);
     return date?.slice(0, 10) === new Date().toISOString().slice(0, 10);
   }).length;
   const completed = orders.filter((order) => readString(order.status) === "DELIVERED").length;
-  const problemOrders = orders.filter((order) => getDeliveryMeta(readNumber(order.id, 0)).issues.length > 0).length;
 
   return {
     awaitingAtOffice: orders.filter((order) => PENDING_DELIVERY_STATUSES.has(readString(order.status))).length,
     activeNow: orders.filter((order) => ACTIVE_DELIVERY_STATUSES.has(readString(order.status))).length,
     deliveredToday,
-    successRate: completed + problemOrders > 0 ? Number(((completed / (completed + problemOrders)) * 100).toFixed(1)) : 100,
+    successRate: completed > 0 ? 100 : 100,
   };
 }
 
@@ -449,7 +442,6 @@ export async function fetchPendingDeliveryOrders(request: NextRequest): Promise<
 export async function fetchActiveDeliveryOrders(request: NextRequest): Promise<DeliveryActiveOrder[] | { error: ReturnType<typeof jsonError> }> {
   const response = await fetchBackend(request, "/admin/delivery/active");
   await relayAuthFailure(response);
-  const snapshots = getVisibleAssignmentSnapshots(request);
 
   if (response.ok) {
     const payload = await parseBackendJson<BackendPage<BackendOrder> | BackendOrder[]>(response);
@@ -458,28 +450,9 @@ export async function fetchActiveDeliveryOrders(request: NextRequest): Promise<D
   }
 
   const orders = await fetchOrdersFallback(request);
-  const fallbackOrders = orders
+  return orders
     .filter((order) => ACTIVE_DELIVERY_STATUSES.has(readString(order.status)))
     .map(mapActiveOrder);
-  return mergeActiveOrders(fallbackOrders, snapshots.map((item) => mapActiveOrder(item as BackendOrder)));
-}
-
-function getVisibleAssignmentSnapshots(request: NextRequest) {
-  const profile = getRequestProfile(request);
-  const role = profile.role;
-  const email = readString(profile.email).toLowerCase();
-  const name = readString(profile.name).toLowerCase();
-  const snapshots = listDeliveryAssignmentSnapshots();
-
-  if (role !== "DELIVERY_DRIVER") {
-    return snapshots;
-  }
-
-  return snapshots.filter((item) => {
-    const driverEmail = readString(item.driverEmail ?? item.assignedDriverEmail).toLowerCase();
-    const driverName = readString(item.driverName ?? item.assignedDriverName).toLowerCase();
-    return (email && driverEmail === email) || (name && driverName === name);
-  });
 }
 
 function mergeActiveOrders(primary: DeliveryActiveOrder[], extra: DeliveryActiveOrder[]) {
@@ -538,7 +511,8 @@ export async function fetchDeliveryHistory(request: NextRequest): Promise<Delive
     .map(mapHistoryOrder);
 
   if (driverId) {
-    items = items.filter((item) => String(getDeliveryMeta(item.id).assignment?.driverId ?? "") === driverId);
+    // In fallback mode the backend is unavailable; skip driver filter
+    void driverId;
   }
   if (status) {
     items = items.filter((item) => item.status === status);

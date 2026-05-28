@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 
 import { fetchBackend, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 import { fetchOrderDetailBundle } from "@/app/api/admin/orders/[id]/_shared";
-import { getQuoteDraft } from "@/lib/admin/quote-drafts";
 import type {
   AdminQuoteDetail,
   AdminQuoteListItem,
@@ -185,7 +184,7 @@ async function fetchExternalOrders(request: NextRequest) {
 }
 
 function buildQuoteCardBase(order: BackendOrder) {
-  const hasDraft = Boolean(getQuoteDraft(String(order.id)));
+  const hasDraft = false;
   const status = normalizeQuoteStatus(order, hasDraft);
   const quoteQueueStatus = order.quoteQueueStatus ?? (
     status === "REJECTED" ? "ARCHIVED" : status === "SENT" ? "WAITING_CUSTOMER" : "QUOTE_ANALYSIS"
@@ -308,7 +307,7 @@ export async function getQuoteDetail(request: NextRequest, id: string) {
   }
 
   const detail = detailBundle.detail;
-  const hasDraft = Boolean(getQuoteDraft(id));
+  const hasDraft = Boolean(detail.quoteDraft);
   const status = normalizeQuoteStatus(
     {
       id: detail.id,

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchBackend, jsonError, relayAuthFailure } from "@/app/api/admin/_utils";
-import { saveDeliveryAssignment, saveDeliveryAssignmentSnapshot } from "@/lib/admin/delivery-meta-store";
 
 type RouteContext = {
   params: Promise<{
@@ -51,55 +50,5 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   const assignedDriver = (await response.json().catch(() => null)) as AssignedDriverPayload | null;
   const assignedDriverId = assignedDriver?.id ?? driverId;
 
-  saveDeliveryAssignment(Number(id), {
-    driverId: assignedDriverId,
-    driverName: assignedDriver?.name ?? "Estafeta atribuido",
-    driverEmail: assignedDriver?.email ?? null,
-    driverPhone: assignedDriver?.phone ?? null,
-  });
-
-  const orderSnapshot = await fetchAssignedOrderSnapshot(request, Number(id)).catch(() => null);
-  if (orderSnapshot) {
-    saveDeliveryAssignmentSnapshot(Number(id), {
-      ...orderSnapshot,
-      driverId: assignedDriverId,
-      driverName: assignedDriver?.name ?? "Estafeta atribuido",
-      driverEmail: assignedDriver?.email ?? null,
-      driverPhone: assignedDriver?.phone ?? null,
-      assignedDriverId,
-      assignedDriverName: assignedDriver?.name ?? "Estafeta atribuido",
-      assignedDriverEmail: assignedDriver?.email ?? null,
-      assignedDriverPhone: assignedDriver?.phone ?? null,
-    });
-  }
-
   return NextResponse.json({ ok: true, driverId: assignedDriverId, driver: assignedDriver });
-}
-
-async function fetchAssignedOrderSnapshot(request: NextRequest, orderId: number) {
-  const responses = await Promise.allSettled([
-    fetchBackend(request, "/admin/delivery/active"),
-    fetchBackend(request, "/admin/delivery/pending"),
-  ]);
-
-  for (const result of responses) {
-    if (result.status !== "fulfilled" || !result.value.ok) {
-      continue;
-    }
-
-    const payload = (await result.value.json().catch(() => null)) as unknown;
-    const list = Array.isArray(payload)
-      ? payload
-      : payload && typeof payload === "object" && Array.isArray((payload as { content?: unknown[] }).content)
-        ? (payload as { content: unknown[] }).content
-        : [];
-    const found = list.find((item) => {
-      return item && typeof item === "object" && Number((item as { id?: unknown }).id) === orderId;
-    });
-    if (found && typeof found === "object") {
-      return found as Record<string, unknown>;
-    }
-  }
-
-  return null;
 }
