@@ -909,6 +909,13 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between"><span>Método</span><strong>{humanizePaymentMethod(detail.payment.method)}</strong></div>
+                <div className="flex items-center justify-between"><span>Provider</span><strong>{detail.payment.provider || "MANUAL"}</strong></div>
+                {detail.payment.providerReference ? (
+                  <div className="flex items-center justify-between gap-3"><span>Ref. gateway</span><strong className="break-all text-right">{detail.payment.providerReference}</strong></div>
+                ) : null}
+                {detail.payment.providerStatus ? (
+                  <div className="flex items-center justify-between"><span>Estado gateway</span><strong>{detail.payment.providerStatus}</strong></div>
+                ) : null}
                 <div className="flex items-center justify-between"><span>Referência</span><strong>{detail.payment.transactionId || "Sem referência"}</strong></div>
                 <div className="flex items-center justify-between"><span>Data e hora</span><strong>{detail.payment.paymentDate ? new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.payment.paymentDate)) : "Não pago"}</strong></div>
                 <div className="flex items-center justify-between"><span>Valor pago</span><strong>{formatMoney(detail.payment.amount)}</strong></div>

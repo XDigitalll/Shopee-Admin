@@ -429,6 +429,11 @@ export type OrderPaymentDetail = {
   id: number | null;
   amount: number;
   method: string | null;
+  provider?: string | null;
+  providerReference?: string | null;
+  providerStatus?: string | null;
+  checkoutUrl?: string | null;
+  expectedAmount?: number | null;
   status: string | null;
   transactionId: string | null;
   payerName: string | null;
@@ -481,6 +486,11 @@ export type AdminPaymentListItem = {
   customerEmail: string | null;
   customerPhone: string | null;
   method: "MPESA" | "EMOLA" | "VISA" | "MASTERCARD" | string | null;
+  provider?: "MANUAL" | "PAYSUITE" | string | null;
+  providerReference?: string | null;
+  providerStatus?: string | null;
+  checkoutUrl?: string | null;
+  expectedAmount?: number | null;
   amount: number;
   submittedAt: string | null;
   reviewedAt: string | null;

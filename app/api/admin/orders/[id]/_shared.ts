@@ -137,6 +137,11 @@ type BackendPaymentDetail = {
   id?: number | null;
   amount?: number | null;
   method?: string | null;
+  provider?: string | null;
+  providerReference?: string | null;
+  providerStatus?: string | null;
+  checkoutUrl?: string | null;
+  expectedAmount?: number | null;
   status?: string | null;
   transactionId?: string | null;
   payerName?: string | null;
@@ -564,6 +569,11 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     id: paymentPayload?.id ?? null,
     amount: Number(paymentPayload?.amount ?? finalOrderTotal(order)),
     method: paymentPayload?.method ?? null,
+    provider: paymentPayload?.provider ?? null,
+    providerReference: paymentPayload?.providerReference ?? null,
+    providerStatus: paymentPayload?.providerStatus ?? null,
+    checkoutUrl: paymentPayload?.checkoutUrl ?? null,
+    expectedAmount: paymentPayload?.expectedAmount == null ? null : Number(paymentPayload.expectedAmount),
     status: paymentPayload?.status ?? null,
     transactionId: paymentPayload?.transactionId ?? null,
     payerName: paymentPayload?.payerName ?? null,
