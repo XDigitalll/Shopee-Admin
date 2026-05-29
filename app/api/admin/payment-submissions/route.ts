@@ -1,21 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonError } from "@/app/api/admin/_utils";
 
-import { fetchBackend, jsonError, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
+export async function GET(_request: NextRequest) {
+  return jsonError(
+    "Fila de submissões manuais desativada. O fluxo de pagamento é agora gerido exclusivamente pelo PaySuite.",
+    410
+  );
+}
 
-export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const response = await fetchBackend(request, `/admin/payment-submissions${url.search}`);
-  await relayAuthFailure(response);
-
-  const payload = await parseBackendJson<unknown>(response);
-
-  if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
-        ? payload.message
-        : "Nao foi possivel carregar as submissoes de pagamento.";
-    return jsonError(message, response.status);
-  }
-
-  return NextResponse.json(payload);
+export async function POST(_request: NextRequest) {
+  return jsonError(
+    "Submissões manuais de pagamento desativadas. Use o gateway PaySuite.",
+    410
+  );
 }

@@ -58,7 +58,6 @@ function DashboardIntro({
 }) {
   const pendingOrders = stats?.badges.orders ?? 0;
   const pendingQuotes = stats?.badges.quotes ?? 0;
-  const pendingPayments = stats?.badges.payments ?? 0;
 
   return (
     <section className="admin-card p-6">
@@ -88,12 +87,10 @@ function DashboardIntro({
                 {pendingQuotes}
               </strong>
             </div>
-            <div className="rounded-[22px] bg-[var(--color-background-tertiary)] p-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">Pagamentos por validar</p>
-              <strong className="mt-2 block font-[family-name:var(--font-sora)] text-3xl">
-                {pendingPayments}
-              </strong>
-            </div>
+            <a href="/admin/finance/paysuite" className="rounded-[22px] bg-[var(--color-background-tertiary)] p-4 block hover:bg-[var(--color-background-secondary)] transition">
+              <p className="text-sm text-[var(--color-text-secondary)]">Transações PaySuite</p>
+              <strong className="mt-2 block font-[family-name:var(--font-sora)] text-3xl text-[var(--color-danger)]">Ver →</strong>
+            </a>
           </div>
         </div>
 

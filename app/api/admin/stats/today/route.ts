@@ -21,22 +21,9 @@ type BackendDashboard = {
   externalDeliveryActiveOrders?: number | null;
 };
 
-type BackendPaymentStats = {
-  pendingValidationCount?: number | null;
-};
-
-type BackendPaymentSubmissionStats = {
-  submitted?: number | null;
-  underReview?: number | null;
-  suspicious?: number | null;
-  requestNewProof?: number | null;
-  pendingAttentionCount?: number | null;
-};
-
 type WorkQueueSummary = {
   orders?: number | null;
   externalQuotes?: number | null;
-  payments?: number | null;
   delivery?: number | null;
   customers?: number | null;
 };
@@ -57,38 +44,20 @@ async function getOrderBadges(request: NextRequest) {
     return {
       orders: Number(queue.orders ?? 0),
       quotes: Number(queue.externalQuotes ?? 0),
-      payments: Number(queue.payments ?? 0),
       delivery: Number(queue.delivery ?? 0),
     };
   }
 
-  const [dashboardResponse, paymentStatsResponse, paymentQueueResponse] = await Promise.all([
+  const [dashboardResponse] = await Promise.all([
     fetchBackend(request, "/admin/dashboard"),
-    fetchBackend(request, "/admin/payments/stats"),
-    fetchBackend(request, "/admin/payment-submissions/queues"),
   ]);
-  await Promise.all([
-    relayAuthFailure(dashboardResponse),
-    relayAuthFailure(paymentStatsResponse),
-    relayAuthFailure(paymentQueueResponse),
-  ]);
+  await relayAuthFailure(dashboardResponse);
 
   if (!dashboardResponse.ok) {
     return getDeliveryOnlyBadges(request);
   }
 
   const payload = await parseBackendJson<BackendDashboard>(dashboardResponse);
-  const paymentStatsPayload = paymentStatsResponse.ok
-    ? await parseBackendJson<BackendPaymentStats>(paymentStatsResponse)
-    : null;
-  const paymentQueuePayload = paymentQueueResponse.ok
-    ? await parseBackendJson<BackendPaymentSubmissionStats>(paymentQueueResponse)
-    : null;
-  const paymentQueueCount = Number(paymentQueuePayload?.pendingAttentionCount ?? 0) ||
-    Number(paymentQueuePayload?.submitted ?? 0) +
-    Number(paymentQueuePayload?.underReview ?? 0) +
-    Number(paymentQueuePayload?.suspicious ?? 0);
-
   const deliveryBadges = await getDeliveryOnlyBadges(request);
 
   return {
@@ -100,11 +69,6 @@ async function getOrderBadges(request: NextRequest) {
       Number(payload?.externalCreatedOrders ?? 0) +
       Number(payload?.externalUnderReviewOrders ?? 0) +
       Number(payload?.externalQuotedOrders ?? 0),
-    payments: paymentQueueCount || Number(
-      paymentStatsPayload?.pendingValidationCount ??
-      payload?.internalPendingPaymentOrders ??
-      0
-    ),
     delivery: deliveryBadges.delivery,
   };
 }
@@ -116,12 +80,7 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
   ]);
 
   if ("error" in pendingResult || "error" in activeResult) {
-    return {
-      orders: 0,
-      quotes: 0,
-      payments: 0,
-      delivery: 0,
-    };
+    return { orders: 0, quotes: 0, delivery: 0 };
   }
 
   const deliveryIds = new Set([
@@ -129,12 +88,7 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
     ...activeResult.map((order) => order.id),
   ]);
 
-  return {
-    orders: 0,
-    quotes: 0,
-    payments: 0,
-    delivery: deliveryIds.size,
-  };
+  return { orders: 0, quotes: 0, delivery: deliveryIds.size };
 }
 
 export async function GET(request: NextRequest) {

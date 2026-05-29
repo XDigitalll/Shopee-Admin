@@ -11,7 +11,6 @@ import type { TodayStatsResponse } from "@/lib/admin/types";
 const emptyCounters = {
   orders: 0,
   quotes: 0,
-  payments: 0,
   delivery: 0,
 };
 

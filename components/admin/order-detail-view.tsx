@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -42,8 +41,6 @@ const EXTERNAL_STATUS_STEPS = [
 const PICKUP_STATUS_STEPS = [
   "CREATED",
   "PENDING_PAYMENT",
-  "PAYMENT_SUBMITTED",
-  "PAYMENT_UNDER_REVIEW",
   "PAID",
   "READY_FOR_DELIVERY",
   "DELIVERED",
@@ -66,7 +63,7 @@ type DetailAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "focus-tracking" | "validate-payment" | "collect-and-deliver" | "cancel-order" | "mark-status" | "mark-ready-for-delivery" | "handoff";
+      action: "focus-tracking" | "collect-and-deliver" | "cancel-order" | "mark-status" | "mark-ready-for-delivery" | "handoff";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
       targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT";
     };
@@ -90,16 +87,8 @@ const STATUS_THEME: Record<string, string> = {
   FAILED: "bg-[#FCEBEB] text-[#791F1F]",
 };
 
-function isPaymentValidated(status: string | null | undefined) {
-  return String(status ?? "") === "SUCCESS";
-}
-
 function isClosedOrderStatus(status: string | null | undefined) {
   return ["CANCELLED", "FAILED", "DELIVERED"].includes(String(status ?? ""));
-}
-
-function canValidatePayment(detail: ExternalOrderDetail) {
-  return !isClosedOrderStatus(detail.status) && String(detail.payment.status ?? "") === "PENDING";
 }
 
 function isPickupOrder(detail: ExternalOrderDetail) {
@@ -110,9 +99,6 @@ function isInternalDeliveryOrder(detail: ExternalOrderDetail) {
   return detail.type === "INTERNAL" && detail.deliveryMethod !== "STORE_PICKUP";
 }
 
-function isCashOnPickup(detail: ExternalOrderDetail) {
-  return isPickupOrder(detail) && detail.payment.method === "CASH_ON_DELIVERY";
-}
 
 function hasAllowedAction(detail: ExternalOrderDetail | null, action: string) {
   return Boolean(detail?.allowedActions?.includes(action));
@@ -188,9 +174,7 @@ function getCurrentStepIndex(
 
 function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) {
   if (detail && isPickupOrder(detail)) {
-    if (step === "PAID") return "Pagamento aprovado";
-    if (step === "PAYMENT_SUBMITTED") return "Pagamento submetido";
-    if (step === "PAYMENT_UNDER_REVIEW") return "Pagamento em análise";
+    if (step === "PAID") return "Pagamento confirmado";
     if (step === "READY_FOR_DELIVERY") return "Pronto para levantamento";
     if (step === "DELIVERED") return "Levantado";
   }
@@ -205,8 +189,6 @@ function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) 
 
 function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean): DetailAction | null {
   const status = detail.status;
-  const paymentValidated = isPaymentValidated(detail.payment.status);
-  const cashOnDelivery = detail.payment.method === "CASH_ON_DELIVERY";
   const pickupOrder = isPickupOrder(detail);
 
   if (status === "UNDER_REVIEW" || (detail.type === "EXTERNAL" && status === "CREATED")) {
@@ -214,7 +196,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
   }
   if (status === "PENDING_PAYMENT") {
     return isSuperAdmin
-      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+      ? { label: "Ver transação PaySuite", href: `/admin/finance/paysuite` }
       : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
   }
 
@@ -222,15 +204,9 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
     if (hasAllowedAction(detail, "MARK_READY_FOR_PICKUP")) {
       return { label: "Marcar pronto para levantamento", action: "mark-ready-for-delivery" };
     }
-
     if (hasAllowedAction(detail, "CONFIRM_PICKUP")) {
-      if (cashOnDelivery && !paymentValidated) {
-        return { label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" };
-      }
-
       return { label: "Confirmar levantamento", action: "mark-status", targetStatus: "DELIVERED" };
     }
-
     return null;
   }
 
@@ -243,13 +219,9 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
     if (status === "ORDERED" || status === "ARRIVED") {
       return { label: "Iniciar entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" };
     }
-    if (status === "OUT_FOR_DELIVERY" && cashOnDelivery && !paymentValidated) {
-      return { label: "Confirmar cobrança e entrega", action: "collect-and-deliver", targetStatus: "DELIVERED" };
-    }
     if (status === "OUT_FOR_DELIVERY") {
       return { label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" };
     }
-
     return null;
   }
 
@@ -267,9 +239,6 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
       ? { label: "Ver em entregas", href: "/admin/delivery" }
       : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
   }
-  if (status === "OUT_FOR_DELIVERY" && cashOnDelivery && !paymentValidated) {
-    return { label: "Confirmar cobrança e entrega", action: "collect-and-deliver", targetStatus: "DELIVERED" };
-  }
   if (status === "OUT_FOR_DELIVERY") {
     return { label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" };
   }
@@ -278,8 +247,6 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
 
 function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
   const status = detail.status;
-  const paymentValidated = isPaymentValidated(detail.payment.status);
-  const cashOnDelivery = detail.payment.method === "CASH_ON_DELIVERY";
   const pickupOrder = isPickupOrder(detail);
   const actions: DetailAction[] = [];
 
@@ -288,7 +255,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
   }
   if (status === "PENDING_PAYMENT") {
     actions.push(isSuperAdmin
-      ? { label: "Ver em pagamentos", href: `/admin/payments?orderId=${detail.id}` }
+      ? { label: "Ver transação PaySuite", href: `/admin/finance/paysuite` }
       : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" });
   }
 
@@ -297,14 +264,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
       actions.push({ label: "Marcar pronto para levantamento", action: "mark-ready-for-delivery" });
     }
     if (hasAllowedAction(detail, "CONFIRM_PICKUP")) {
-      if (cashOnDelivery && !paymentValidated) {
-        actions.push({ label: "Confirmar cobrança e levantamento", action: "collect-and-deliver", targetStatus: "DELIVERED" });
-      } else {
-        actions.push({ label: "Confirmar levantamento", action: "mark-status", targetStatus: "DELIVERED" });
-      }
-    }
-    if (cashOnDelivery && !paymentValidated) {
-      actions.push({ label: "Confirmar cobrança no levantamento", action: "validate-payment" });
+      actions.push({ label: "Confirmar levantamento", action: "mark-status", targetStatus: "DELIVERED" });
     }
   } else if (isInternalDeliveryOrder(detail)) {
     if (status === "PAID") {
@@ -315,14 +275,8 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
     if (status === "ORDERED" || status === "ARRIVED") {
       actions.push({ label: "Iniciar entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" });
     }
-    if (status === "OUT_FOR_DELIVERY" && cashOnDelivery && !paymentValidated) {
-      actions.push({ label: "Confirmar cobrança e entrega", action: "collect-and-deliver", targetStatus: "DELIVERED" });
-    }
-    if (status === "OUT_FOR_DELIVERY" && (!cashOnDelivery || paymentValidated)) {
+    if (status === "OUT_FOR_DELIVERY") {
       actions.push({ label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" });
-    }
-    if (cashOnDelivery && !paymentValidated) {
-      actions.push({ label: "Confirmar cobrança na entrega", action: "validate-payment" });
     }
   } else {
     if (status === "TO_PURCHASE" || status === "PAID") {
@@ -342,14 +296,8 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
         ? { label: "Ver em entregas", href: "/admin/delivery" }
         : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" });
     }
-    if (status === "OUT_FOR_DELIVERY" && cashOnDelivery && !paymentValidated) {
-      actions.push({ label: "Confirmar cobrança e entrega", action: "collect-and-deliver", targetStatus: "DELIVERED" });
-    }
-    if (status === "OUT_FOR_DELIVERY" && (!cashOnDelivery || paymentValidated)) {
+    if (status === "OUT_FOR_DELIVERY") {
       actions.push({ label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" });
-    }
-    if (cashOnDelivery && !paymentValidated) {
-      actions.push({ label: "Confirmar cobrança na entrega", action: "validate-payment" });
     }
   }
 
@@ -370,7 +318,6 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [internalNote, setInternalNote] = useState("");
   const [notes, setNotes] = useState<InternalOrderNote[]>([]);
   const [error, setError] = useState("");
-  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -443,11 +390,6 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
     setError("");
     try {
-      if (action === "validate-payment") {
-        router.push(`/admin/payments?orderId=${detail.id}`);
-        return;
-      }
-
       if (action === "handoff") {
         if (!targetQueue) {
           throw new Error("Fila destino em falta para handoff.");
@@ -481,7 +423,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       }
 
       if (action === "collect-and-deliver") {
-        router.push(`/admin/payments?orderId=${detail.id}`);
+        router.push(`/admin/finance/paysuite`);
         return;
       }
 
@@ -540,7 +482,6 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   }
 
   const pickupOrder = isPickupOrder(detail);
-  const cashOnPickup = isCashOnPickup(detail);
   const externalOrder = detail.type === "EXTERNAL";
 
   return (
@@ -922,31 +863,17 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 <div className="flex items-center justify-between"><span>Estado</span><strong>{detail.payment.status || "Sem validação"}</strong></div>
               </div>
               <div className="flex flex-col gap-3">
-                {detail.payment.receiptUrl ? (
-                  <button type="button" onClick={() => setReceiptModalOpen(true)} className="admin-button-muted">
-                    Ver comprovativo
-                  </button>
-                ) : null}
-                {cashOnPickup && !isClosedOrderStatus(detail.status) && !isPaymentValidated(detail.payment.status) ? (
-                  <div className="rounded-2xl border border-[#F1D7A8] bg-[#FFF5D8] px-4 py-3 text-sm text-[#7A5712]">
-                    Cobrar {formatMoney(detail.totalAmount)} ao cliente antes de concluir o levantamento.
-                  </div>
-                ) : null}
-                {!pickupOrder && detail.payment.method === "CASH_ON_DELIVERY" && !isClosedOrderStatus(detail.status) && !isPaymentValidated(detail.payment.status) ? (
-                  <div className="rounded-2xl border border-[#F1D7A8] bg-[#FFF5D8] px-4 py-3 text-sm text-[#7A5712]">
-                    Cobrar {formatMoney(detail.totalAmount)} ao cliente antes de fechar a entrega.
-                  </div>
-                ) : null}
-                {canValidatePayment(detail) ? (
-                  isSuperAdmin ? (
-                    <button type="button" onClick={() => router.push(`/admin/payments?orderId=${detail.id}`)} className="admin-button-danger">
-                      Ver em pagamentos
+                {detail.payment.checkoutUrl ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">Checkout URL</p>
+                    <button
+                      type="button"
+                      onClick={() => void navigator.clipboard.writeText(detail.payment.checkoutUrl ?? "")}
+                      className="admin-button-muted w-full justify-center"
+                    >
+                      Copiar link de pagamento
                     </button>
-                  ) : (
-                    <button type="button" onClick={() => startTransition(async () => runAction("handoff", undefined, "PAYMENTS"))} className="admin-button-danger">
-                      Enviar para equipa de pagamentos
-                    </button>
-                  )
+                  </div>
                 ) : null}
                 {detail.payment.notes ? (
                   <div className="rounded-2xl bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
@@ -1041,13 +968,6 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </aside>
       </div>
 
-      {receiptModalOpen && detail.payment.receiptUrl ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={() => setReceiptModalOpen(false)}>
-          <div className="max-w-3xl overflow-hidden rounded-[28px] bg-white" onClick={(event) => event.stopPropagation()}>
-            <Image src={detail.payment.receiptUrl} alt="Comprovativo" width={1400} height={1800} className="max-h-[80vh] w-full object-contain" />
-          </div>
-        </div>
-      ) : null}
       <AdminConfirmDialog
         open={cancelDialogOpen}
         title="Cancelar pedido?"
