@@ -1,5 +1,5 @@
-import { PaymentsManagementView } from "@/components/admin/payments-management-view";
+import { redirect } from "next/navigation";
 
 export default function PaymentsPage() {
-  return <PaymentsManagementView />;
+  redirect("/admin/finance/paysuite");
 }

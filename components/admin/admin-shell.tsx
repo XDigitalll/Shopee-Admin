@@ -16,7 +16,6 @@ export function AdminShell({
   counters: {
     orders: number;
     quotes: number;
-    payments: number;
     delivery: number;
   };
 }) {

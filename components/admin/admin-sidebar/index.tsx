@@ -29,7 +29,6 @@ import {
 type SidebarCounters = {
   orders: number;
   quotes: number;
-  payments: number;
   delivery: number;
 };
 
@@ -71,7 +70,6 @@ const sections = [
       },
       { module: "orders", label: "Pedidos", href: "/admin/orders", icon: OrdersIcon, counterKey: "orders" },
       { module: "quotes", label: "Cotacoes externas", href: "/admin/external-quotes", icon: QuoteIcon, counterKey: "quotes" },
-      { module: "payments", label: "Pagamentos", href: "/admin/payments", icon: WalletIcon, counterKey: "payments" },
     ] satisfies SidebarItem[],
   },
   {
@@ -88,6 +86,7 @@ const sections = [
     items: [
       { module: "customers", label: "Clientes", href: "/admin/customers", icon: UsersIcon },
       { module: "finance", label: "Finanças", href: "/admin/finance", icon: ChartIcon },
+      { module: "finance", label: "Transações PaySuite", href: "/admin/finance/paysuite", icon: WalletIcon, indent: true },
       { module: "coupons", label: "Cupões", href: "/admin/coupons", icon: WalletIcon, roles: ["FINANCE_MANAGER", "CRM_MANAGER", "ADMIN", "SUPER_ADMIN"] },
     ] satisfies SidebarItem[],
   },

@@ -1,47 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonError } from "@/app/api/admin/_utils";
 
-import { fetchBackend, jsonErrorPayload, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
+const GONE_MESSAGE =
+  "Submissões manuais de pagamento foram desativadas. O fluxo de pagamento é agora gerido exclusivamente pelo PaySuite.";
 
-type RouteContext = {
-  params: Promise<{
-    path: string[];
-  }>;
-};
-
-function backendPath(path: string[]) {
-  return `/admin/payment-submissions/${path.map(encodeURIComponent).join("/")}`;
+export async function GET(_request: NextRequest) {
+  return jsonError(GONE_MESSAGE, 410);
 }
 
-async function forward(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  const url = new URL(request.url);
-  const target = `${backendPath(path)}${url.search}`;
-  const init: RequestInit = { method: request.method };
-
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.text();
-  }
-
-  const response = await fetchBackend(request, target, init);
-  await relayAuthFailure(response);
-
-  const payload = await parseBackendJson<unknown>(response);
-
-  if (!response.ok) {
-    return jsonErrorPayload(payload, response.status, "Nao foi possivel processar a submissao de pagamento.");
-  }
-
-  return NextResponse.json(payload);
+export async function POST(_request: NextRequest) {
+  return jsonError(GONE_MESSAGE, 410);
 }
 
-export async function GET(request: NextRequest, context: RouteContext) {
-  return forward(request, context);
+export async function PATCH(_request: NextRequest) {
+  return jsonError(GONE_MESSAGE, 410);
 }
 
-export async function POST(request: NextRequest, context: RouteContext) {
-  return forward(request, context);
-}
-
-export async function PATCH(request: NextRequest, context: RouteContext) {
-  return forward(request, context);
+export async function PUT(_request: NextRequest) {
+  return jsonError(GONE_MESSAGE, 410);
 }
