@@ -74,7 +74,7 @@ function AdminActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled || busy}
-      className="w-full rounded-xl border px-4 py-3 text-left text-sm font-semibold transition hover:bg-[var(--color-background-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="w-full rounded-xl border border-[var(--color-border)] px-4 py-3 text-left text-sm font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-tertiary)] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {busy ? busyLabel : label}
     </button>
@@ -119,10 +119,10 @@ function DetailDrawer({
         className="absolute inset-0 bg-black/30"
         aria-label="Fechar"
       />
-      <aside className="relative ml-auto flex h-full w-full max-w-lg flex-col overflow-y-auto bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h2 className="text-base font-semibold">Transação PaySuite</h2>
-          <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-background-secondary)]">
+      <aside className="relative ml-auto flex h-full w-full max-w-lg flex-col overflow-y-auto bg-[var(--color-background-secondary)] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4">
+          <h2 className="text-base font-semibold text-[var(--color-text-primary)]">Transação PaySuite</h2>
+          <button type="button" onClick={onClose} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-tertiary)]">
             Fechar
           </button>
         </div>
@@ -143,7 +143,7 @@ function DetailDrawer({
           {/* Pedido / Cliente */}
           <section>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Pedido</p>
-            <div className="space-y-2 rounded-xl bg-[var(--color-background-secondary)] p-4 text-sm">
+            <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Pedido" value={item.orderNumber || String(item.orderId)} />
               <Row label="Cliente" value={item.customerName || "—"} />
               {item.customerEmail ? <Row label="Email" value={item.customerEmail} /> : null}
@@ -154,7 +154,7 @@ function DetailDrawer({
           {/* Valores */}
           <section>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Valores</p>
-            <div className="space-y-2 rounded-xl bg-[var(--color-background-secondary)] p-4 text-sm">
+            <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Valor esperado" value={formatMoney(item.expectedAmount ?? item.amount)} />
               <Row label="Valor recebido" value={formatMoney(item.amount)} />
               {item.expectedAmount && item.expectedAmount !== item.amount ? (
@@ -166,7 +166,7 @@ function DetailDrawer({
           {/* PaySuite */}
           <section>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">PaySuite</p>
-            <div className="space-y-2 rounded-xl bg-[var(--color-background-secondary)] p-4 text-sm">
+            <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Provider" value={item.provider || "PAYSUITE"} />
               <Row label="Referência" value={item.providerReference || "—"} />
               <Row label="Estado gateway" value={item.providerStatus || "—"} />
@@ -178,13 +178,13 @@ function DetailDrawer({
           {item.checkoutUrl ? (
             <section>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Checkout URL</p>
-              <div className="rounded-xl bg-[var(--color-background-secondary)] p-4">
+              <div className="rounded-xl bg-[var(--color-background-tertiary)] p-4">
                 <p className="break-all text-xs text-[var(--color-text-secondary)]">{item.checkoutUrl}</p>
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     onClick={() => void navigator.clipboard.writeText(item.checkoutUrl ?? "")}
-                    className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-white"
+                    className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-secondary)]"
                   >
                     Copiar URL
                   </button>
@@ -192,7 +192,7 @@ function DetailDrawer({
                     href={item.checkoutUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-white"
+                    className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-secondary)]"
                   >
                     Abrir checkout
                   </a>
@@ -204,7 +204,7 @@ function DetailDrawer({
           {/* Datas */}
           <section>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Datas</p>
-            <div className="space-y-2 rounded-xl bg-[var(--color-background-secondary)] p-4 text-sm">
+            <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Iniciado em" value={fmt(item.submittedAt)} />
               <Row label="Confirmado em" value={fmt(item.paymentDate ?? item.reviewedAt)} />
             </div>
@@ -254,7 +254,7 @@ function DetailDrawer({
           {/* View order link */}
           <a
             href={`/admin/orders/${item.orderId}`}
-            className="block w-full rounded-xl border px-4 py-3 text-center text-sm font-semibold hover:bg-[var(--color-background-secondary)]"
+            className="block w-full rounded-xl border border-[var(--color-border)] px-4 py-3 text-center text-sm font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-tertiary)]"
           >
             Ver detalhe do pedido →
           </a>
@@ -268,7 +268,7 @@ function Row({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="text-[var(--color-text-secondary)]">{label}</span>
-      <strong className="text-right">{value}</strong>
+      <strong className="text-right text-[var(--color-text-primary)]">{value}</strong>
     </div>
   );
 }
@@ -369,8 +369,8 @@ export function PaySuiteTransactionsView() {
               className="rounded-xl border px-3 py-1.5 text-xs font-semibold transition"
               style={{
                 background: period === opt.key ? "var(--color-danger)" : undefined,
-                color: period === opt.key ? "#fff" : undefined,
-                borderColor: period === opt.key ? "var(--color-danger)" : undefined,
+                color: period === opt.key ? "#fff" : "var(--color-text-primary)",
+                borderColor: period === opt.key ? "var(--color-danger)" : "var(--color-border-strong)",
               }}
             >
               {opt.label}
@@ -390,7 +390,7 @@ export function PaySuiteTransactionsView() {
       </div>
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 overflow-x-auto rounded-xl border bg-[var(--color-background-secondary)] p-1">
+      <div className="flex gap-1 overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-1">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.key}
@@ -398,8 +398,9 @@ export function PaySuiteTransactionsView() {
             onClick={() => setStatusFilter(tab.key)}
             className="flex-shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition"
             style={{
-              background: statusFilter === tab.key ? "#fff" : undefined,
-              boxShadow: statusFilter === tab.key ? "0 1px 3px rgba(0,0,0,0.1)" : undefined,
+              background: statusFilter === tab.key ? "var(--color-danger)" : undefined,
+              color: statusFilter === tab.key ? "#fff" : "var(--color-text-primary)",
+              boxShadow: statusFilter === tab.key ? "0 1px 3px rgba(0,0,0,0.18)" : undefined,
             }}
           >
             {tab.label}
@@ -484,7 +485,7 @@ export function PaySuiteTransactionsView() {
               type="button"
               disabled={page === 0}
               onClick={() => setPage((p) => p - 1)}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-tertiary)] disabled:opacity-40"
             >
               Anterior
             </button>
@@ -495,7 +496,7 @@ export function PaySuiteTransactionsView() {
               type="button"
               disabled={page >= totalPages - 1}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-primary)] transition hover:bg-[var(--color-background-tertiary)] disabled:opacity-40"
             >
               Seguinte
             </button>
