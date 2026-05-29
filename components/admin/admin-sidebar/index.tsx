@@ -335,12 +335,8 @@ export function AdminSidebar({
               className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F97316] shadow-[0_0_0_4px_rgba(249,115,22,0.16),0_0_14px_rgba(249,115,22,0.7)] outline-none ring-offset-2 ring-offset-[#111827] focus:ring-2 focus:ring-[#FDBA74]"
             />
           ) : null}
-          {typeof count === "number" ? (
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                count > 0 ? "bg-[#E8431A] text-white" : "bg-white/10 text-white/80"
-              }`}
-            >
+          {typeof count === "number" && count > 0 ? (
+            <span className="rounded-full bg-[#E8431A] px-2 py-0.5 text-[11px] font-semibold text-white">
               {count}
             </span>
           ) : null}
