@@ -17,6 +17,7 @@ export function AdminShell({
     orders: number;
     quotes: number;
     delivery: number;
+    orphanOrders: number;
   };
 }) {
   const pathname = usePathname();
