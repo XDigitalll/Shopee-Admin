@@ -7,6 +7,11 @@ import type { AdminPaymentListItem, AdminPaymentsPageResponse } from "@/lib/admi
 
 type AdminAction = "resend" | "recreate" | "sync";
 
+type SyncResult = {
+  status?: string;
+  providerStatus?: string;
+};
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type StatusFilter = "ALL" | "PENDING" | "CONFIRMED" | "FAILED" | "MISMATCH";
@@ -17,13 +22,14 @@ type PeriodFilter = "TODAY" | "7D" | "30D" | "ALL";
 function paymentStatusBadge(item: AdminPaymentListItem) {
   const s = item.status;
   const ps = (item.providerStatus ?? "").toLowerCase();
-  if (s === "VALIDATED" || ps.includes("success") || ps.includes("paid") || ps.includes("completed")) {
+  // Accept both "SUCCESS" (backend enum) and "VALIDATED" (legacy display label).
+  if (s === "SUCCESS" || s === "VALIDATED" || ps.includes("success") || ps.includes("paid") || ps.includes("completed")) {
     return { label: "Confirmado", bg: "#DCFCE7", color: "#166534" };
   }
-  if (s === "REJECTED" || ps.includes("fail") || ps.includes("cancel") || ps.includes("declin")) {
+  if (s === "FAILED" || s === "REJECTED" || ps.includes("fail") || ps.includes("cancel") || ps.includes("declin")) {
     return { label: "Falhado", bg: "#FEE2E2", color: "#991B1B" };
   }
-  if (s === "CANCELLED" || ps.includes("mismatch") || ps.includes("amount")) {
+  if (s === "AMOUNT_MISMATCH" || s === "LATE_PAYMENT" || s === "CANCELLED" || ps.includes("mismatch") || ps.includes("amount")) {
     return { label: "Divergente", bg: "#EDE9FE", color: "#6D28D9" };
   }
   return { label: "Pendente", bg: "#FEF3C7", color: "#92400E" };
@@ -48,9 +54,9 @@ function matchesStatusFilter(item: AdminPaymentListItem, filter: StatusFilter): 
   const ps = (item.providerStatus ?? "").toLowerCase();
   const s = item.status;
   if (filter === "PENDING") return s === "PENDING" && !ps.includes("fail") && !ps.includes("success");
-  if (filter === "CONFIRMED") return s === "VALIDATED" || ps.includes("success") || ps.includes("paid");
-  if (filter === "FAILED") return s === "REJECTED" || ps.includes("fail") || ps.includes("cancel");
-  if (filter === "MISMATCH") return s === "CANCELLED" || ps.includes("mismatch") || ps.includes("amount");
+  if (filter === "CONFIRMED") return s === "SUCCESS" || s === "VALIDATED" || ps.includes("success") || ps.includes("paid");
+  if (filter === "FAILED") return s === "FAILED" || s === "REJECTED" || ps.includes("fail") || ps.includes("cancel");
+  if (filter === "MISMATCH") return s === "AMOUNT_MISMATCH" || s === "LATE_PAYMENT" || s === "CANCELLED" || ps.includes("mismatch") || ps.includes("amount");
   return true;
 }
 
@@ -98,13 +104,28 @@ function DetailDrawer({
     setBusyAction(action);
     setActionError(null);
     try {
+      if (action === "sync") {
+        const result = await adminApiFetch<SyncResult>(`/api/admin/payments/${item.id}/sync`, { method: "POST" });
+        const st = result?.status ?? "";
+        if (st === "SUCCESS") {
+          onActionSuccess("Pagamento confirmado e pedido atualizado.");
+        } else if (st === "PENDING" || st === "") {
+          // Gateway still pending — show a neutral message, not a success toast.
+          setActionError("Pagamento ainda pendente na PaySuite. Nenhuma alteração foi feita.");
+        } else if (st === "FAILED" || st === "AMOUNT_MISMATCH" || st === "LATE_PAYMENT") {
+          setActionError("Pagamento rejeitado ou com divergência na PaySuite. Estado: " + st);
+        } else {
+          onActionSuccess("Estado sincronizado: " + st);
+        }
+        return;
+      }
+
       await adminApiFetch(`/api/admin/payments/${item.id}/${action}`, { method: "POST" });
-      const messages: Record<AdminAction, string> = {
+      const messages: Record<Exclude<AdminAction, "sync">, string> = {
         resend: "Link de pagamento reenviado.",
         recreate: "Pagamento recriado com sucesso.",
-        sync: "Estado sincronizado com PaySuite.",
       };
-      onActionSuccess(messages[action]);
+      onActionSuccess(messages[action as Exclude<AdminAction, "sync">]);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Erro ao executar a ação.");
     } finally {
@@ -169,7 +190,15 @@ function DetailDrawer({
             <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Provider" value={item.provider || "PAYSUITE"} />
               <Row label="Referência" value={item.providerReference || "—"} />
-              <Row label="Estado gateway" value={item.providerStatus || "—"} />
+              <Row
+                label="Estado gateway"
+                value={
+                  item.status === "SUCCESS" || item.status === "VALIDATED"
+                    ? "Confirmado (completed)"
+                    : (item.providerStatus || "—")
+                }
+              />
+              <Row label="Estado local" value={item.status || "—"} />
               <Row label="Transação" value={item.transactionId || "—"} />
             </div>
           </section>
