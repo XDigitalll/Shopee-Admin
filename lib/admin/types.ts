@@ -26,6 +26,7 @@ export type TodayStatsResponse = {
     orders: number;
     quotes: number;
     delivery: number;
+    orphanOrders: number;
   };
 };
 

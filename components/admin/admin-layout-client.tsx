@@ -12,6 +12,7 @@ const emptyCounters = {
   orders: 0,
   quotes: 0,
   delivery: 0,
+  orphanOrders: 0,
 };
 
 function InnerLayout({ children }: { children: React.ReactNode }) {
