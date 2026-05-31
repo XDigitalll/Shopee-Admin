@@ -99,6 +99,7 @@ function DetailDrawer({
   const badge = paymentStatusBadge(item);
   const [busyAction, setBusyAction] = useState<AdminAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<"recreate" | null>(null);
 
   async function runAction(action: AdminAction) {
     setBusyAction(action);
@@ -258,13 +259,41 @@ function DetailDrawer({
                 disabled={busyAction !== null}
                 onClick={() => void runAction("resend")}
               />
-              <AdminActionButton
-                label="Recriar pagamento"
-                busyLabel="A recriar..."
-                busy={busyAction === "recreate"}
-                disabled={busyAction !== null}
-                onClick={() => void runAction("recreate")}
-              />
+              {pendingConfirm === "recreate" ? (
+                <div className="rounded-xl border border-[#FECACA] bg-[#FFF5F5] px-4 py-3 space-y-3">
+                  <p className="text-sm font-black text-[#991B1B]">Confirmar recriação de pagamento</p>
+                  <p className="text-xs leading-5 text-[#7F1D1D]">
+                    Isto vai criar uma <strong>nova transação PaySuite</strong>. Se o cliente já pagou
+                    a transação anterior, pode ser cobrado duas vezes. Usa esta ação apenas se a
+                    transação anterior estiver definitivamente expirada ou cancelada.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busyAction !== null}
+                      onClick={() => { setPendingConfirm(null); void runAction("recreate"); }}
+                      className="rounded-lg bg-[#DC2626] px-4 py-2 text-xs font-black text-white disabled:opacity-40"
+                    >
+                      {busyAction === "recreate" ? "A recriar..." : "Sim, recriar pagamento"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingConfirm(null)}
+                      className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-xs font-semibold text-[var(--color-text-primary)]"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <AdminActionButton
+                  label="Recriar pagamento"
+                  busyLabel="A recriar..."
+                  busy={busyAction === "recreate"}
+                  disabled={busyAction !== null}
+                  onClick={() => setPendingConfirm("recreate")}
+                />
+              )}
               <AdminActionButton
                 label="Sincronizar estado com PaySuite"
                 busyLabel="A sincronizar..."
