@@ -95,6 +95,11 @@ type BackendOrderDetail = {
   externalCartUrl?: string | null;
   requestInputType?: "LINK" | "DESCRIPTION" | null;
   productDetails?: string | null;
+  originalRawMessage?: string | null;
+  cleanDescription?: string | null;
+  cleanedTitle?: string | null;
+  detectedLinks?: string[] | null;
+  promotionalTextRemoved?: boolean | null;
   requestedQuantity?: number | null;
   requestScreenshotUrl?: string | null;
   sourceStore?: string | null;
@@ -611,6 +616,11 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     externalCartUrl: externalOrder ? order.externalCartUrl ?? "" : "",
     requestInputType: externalOrder ? order.requestInputType ?? null : null,
     productDetails: externalOrder ? order.productDetails ?? "" : "",
+    originalRawMessage: externalOrder ? order.originalRawMessage ?? "" : "",
+    cleanDescription: externalOrder ? order.cleanDescription ?? order.productDetails ?? "" : "",
+    cleanedTitle: externalOrder ? order.cleanedTitle ?? "" : "",
+    detectedLinks: externalOrder ? order.detectedLinks ?? [] : [],
+    promotionalTextRemoved: externalOrder ? Boolean(order.promotionalTextRemoved) : false,
     requestedQuantity: externalOrder ? Number(order.requestedQuantity ?? 1) : 0,
     requestScreenshotUrl: externalOrder ? order.requestScreenshotUrl ?? "" : "",
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",

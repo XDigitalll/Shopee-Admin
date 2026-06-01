@@ -316,6 +316,11 @@ export type ExternalOrderDetail = {
   externalCartUrl: string;
   requestInputType: "LINK" | "DESCRIPTION" | null;
   productDetails: string;
+  originalRawMessage: string;
+  cleanDescription: string;
+  cleanedTitle: string;
+  detectedLinks: string[];
+  promotionalTextRemoved: boolean;
   requestedQuantity: number;
   requestScreenshotUrl: string;
   sourceStore: string;

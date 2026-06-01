@@ -586,7 +586,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 <div className="rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Detalhes</p>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-primary)]">
-                    {detail.productDetails || "Sem detalhes escritos; valida pelo link ou screenshot."}
+                    {detail.cleanDescription || detail.productDetails || "Sem detalhes escritos; valida pelo link ou screenshot."}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3">
@@ -628,6 +628,30 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   Abrir link
                 </a>
               </div>
+              {detail.detectedLinks?.length ? (
+                <div className="mt-3 rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                    Links detectados
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {detail.detectedLinks.map((link) => (
+                      <a key={link} href={link} target="_blank" rel="noreferrer" className="block truncate text-sm font-semibold text-[var(--color-danger)]">
+                        {link}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {detail.originalRawMessage ? (
+                <details className="mt-3 rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                    Ver mensagem original
+                  </summary>
+                  <p className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-sm text-[var(--color-text-secondary)]">
+                    {detail.originalRawMessage}
+                  </p>
+                </details>
+              ) : null}
               <div className="mt-4 rounded-2xl bg-[#EAF4FF] px-4 py-3 text-sm text-[#113A64]">
                 Usa o link, os detalhes e o screenshot como a mesma fonte do pedido antes de fechar a cotacao.
               </div>
