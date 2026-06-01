@@ -20,7 +20,7 @@ type PeriodFilter = "TODAY" | "7D" | "30D" | "ALL";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function paymentStatusBadge(item: AdminPaymentListItem) {
-  const s = item.status;
+  const s: string = item.status ?? "";
   const ps = (item.providerStatus ?? "").toLowerCase();
   // Accept both "SUCCESS" (backend enum) and "VALIDATED" (legacy display label).
   if (s === "SUCCESS" || s === "VALIDATED" || ps.includes("success") || ps.includes("paid") || ps.includes("completed")) {
@@ -52,7 +52,7 @@ function fmt(dt: string | null | undefined) {
 function matchesStatusFilter(item: AdminPaymentListItem, filter: StatusFilter): boolean {
   if (filter === "ALL") return true;
   const ps = (item.providerStatus ?? "").toLowerCase();
-  const s = item.status;
+  const s: string = item.status ?? "";
   if (filter === "PENDING") return s === "PENDING" && !ps.includes("fail") && !ps.includes("success");
   if (filter === "CONFIRMED") return s === "SUCCESS" || s === "VALIDATED" || ps.includes("success") || ps.includes("paid");
   if (filter === "FAILED") return s === "FAILED" || s === "REJECTED" || ps.includes("fail") || ps.includes("cancel");
@@ -195,7 +195,7 @@ function DetailDrawer({
               <Row
                 label="Estado gateway"
                 value={
-                  item.status === "SUCCESS" || item.status === "VALIDATED"
+                  String(item.status ?? "") === "SUCCESS" || item.status === "VALIDATED"
                     ? "Confirmado (completed)"
                     : (item.providerStatus || "—")
                 }
