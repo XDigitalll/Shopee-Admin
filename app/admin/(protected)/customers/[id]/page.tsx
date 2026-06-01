@@ -712,6 +712,18 @@ export default function CustomerDetailPage() {
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Contacto de comunicação</p>
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">Telefone principal</span>
+                <span className="font-semibold text-[var(--color-text-primary)]">{customer.phoneNumber ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">WhatsApp associado</span>
+                <span className="font-semibold text-[var(--color-text-primary)]">{customer.whatsappPhoneNumber ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">Email</span>
+                <span className="max-w-[180px] truncate font-semibold text-[var(--color-text-primary)]">{customer.email || "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">Telefone comunicação</span>
                 <span className="font-semibold text-[var(--color-text-primary)]">
                   {customer.effectiveCommunicationPhone ?? customer.phoneNumber ?? "—"}
@@ -744,11 +756,30 @@ export default function CustomerDetailPage() {
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">Canal preferido</span>
+                <span className="rounded-full bg-[var(--color-background-secondary)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-secondary)]">
+                  {customer.preferredContactChannel ?? "WEBSITE"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">WhatsApp = Principal?</span>
                 <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${customer.whatsappSameAsPrimary !== false ? "bg-[#EAF3DE] text-[#173404]" : "bg-[#FEF3C7] text-[#7B3C00]"}`}>
                   {customer.whatsappSameAsPrimary !== false ? <CheckIcon className="h-2.5 w-2.5" /> : <XIcon className="h-2.5 w-2.5" />}
                   {customer.whatsappSameAsPrimary !== false ? "Sim" : "Não"}
                 </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-tertiary)]">WhatsApp preparado</span>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${customer.whatsappPhoneNumber ? "bg-[#EAF3DE] text-[#173404]" : "bg-[var(--color-background-secondary)] text-[var(--color-text-tertiary)]"}`}>
+                  {customer.whatsappPhoneNumber ? <CheckIcon className="h-2.5 w-2.5" /> : <XIcon className="h-2.5 w-2.5" />}
+                  {customer.whatsappPhoneNumber ? (customer.whatsappVerified ? "Ativo/verificado" : "Preparado") : "Não preparado"}
+                </span>
+              </div>
+              <div className="rounded-[12px] bg-[var(--color-background-secondary)] p-3">
+                <p className="font-semibold text-[var(--color-text-primary)]">Histórico WhatsApp</p>
+                <p className="mt-1 text-[var(--color-text-tertiary)]">
+                  {customer.lastWhatsappInteractionAt ? `Última interação: ${fmtDateTime(customer.lastWhatsappInteractionAt)}` : "Sem interações registadas por enquanto."}
+                </p>
               </div>
             </div>
           </div>

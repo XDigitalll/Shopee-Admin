@@ -893,8 +893,15 @@ export type AdminCustomer = {
   profileIncomplete: boolean;
   accountStatus: "GUEST" | "INCOMPLETO" | "VERIFICADO";
   // Communication channel fields
+  customerCode: string | null;
+  whatsappPhoneNumber: string | null;
+  whatsappVerified: boolean;
+  whatsappOptIn: boolean;
+  whatsappLinkedAt: string | null;
+  lastWhatsappInteractionAt: string | null;
+  preferredContactChannel: "WEBSITE" | "WHATSAPP" | "EMAIL" | "PHONE" | null;
   communicationPhone: string | null;
-  communicationChannel: "WHATSAPP" | "TELEGRAM" | "PHONE" | "EMAIL" | null;
+  communicationChannel: "WEBSITE" | "WHATSAPP" | "TELEGRAM" | "PHONE" | "EMAIL" | null;
   communicationVerified: boolean | null;
   whatsappSameAsPrimary: boolean | null;
   effectiveCommunicationPhone: string | null;
