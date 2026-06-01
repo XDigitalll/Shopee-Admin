@@ -116,7 +116,8 @@ function DetailDrawer({
         } else if (st === "FAILED" || st === "AMOUNT_MISMATCH" || st === "LATE_PAYMENT") {
           setActionError("Pagamento rejeitado ou com divergência na PaySuite. Estado: " + st);
         } else {
-          onActionSuccess("Estado sincronizado: " + st);
+          // Unknown status from gateway — never treat as success. Surface it for manual review.
+          setActionError("Estado inesperado recebido do gateway: \"" + st + "\". Verifique manualmente antes de avançar o pedido.");
         }
         return;
       }
