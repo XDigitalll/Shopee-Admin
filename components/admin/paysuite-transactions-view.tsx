@@ -14,7 +14,7 @@ type SyncResult = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type StatusFilter = "ALL" | "PENDING" | "CONFIRMED" | "FAILED" | "MISMATCH";
+type StatusFilter = "ALL" | "PENDING" | "CONFIRMED" | "FAILED" | "MISMATCH" | "CANCELLED";
 type PeriodFilter = "TODAY" | "7D" | "30D" | "ALL";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -26,10 +26,13 @@ function paymentStatusBadge(item: AdminPaymentListItem) {
   if (s === "SUCCESS" || s === "VALIDATED" || ps.includes("success") || ps.includes("paid") || ps.includes("completed")) {
     return { label: "Confirmado", bg: "#DCFCE7", color: "#166534" };
   }
+  if (s === "CANCELLED" || ps.includes("cancel")) {
+    return { label: "Cancelada", bg: "#E5E7EB", color: "#374151" };
+  }
   if (s === "FAILED" || s === "REJECTED" || ps.includes("fail") || ps.includes("cancel") || ps.includes("declin")) {
     return { label: "Falhado", bg: "#FEE2E2", color: "#991B1B" };
   }
-  if (s === "AMOUNT_MISMATCH" || s === "LATE_PAYMENT" || s === "CANCELLED" || ps.includes("mismatch") || ps.includes("amount")) {
+  if (s === "AMOUNT_MISMATCH" || s === "LATE_PAYMENT" || ps.includes("mismatch") || ps.includes("amount")) {
     return { label: "Divergente", bg: "#EDE9FE", color: "#6D28D9" };
   }
   return { label: "Pendente", bg: "#FEF3C7", color: "#92400E" };
@@ -53,10 +56,11 @@ function matchesStatusFilter(item: AdminPaymentListItem, filter: StatusFilter): 
   if (filter === "ALL") return true;
   const ps = (item.providerStatus ?? "").toLowerCase();
   const s: string = item.status ?? "";
-  if (filter === "PENDING") return s === "PENDING" && !ps.includes("fail") && !ps.includes("success");
+  if (filter === "PENDING") return s === "PENDING" && !ps.includes("fail") && !ps.includes("success") && !ps.includes("cancel");
   if (filter === "CONFIRMED") return s === "SUCCESS" || s === "VALIDATED" || ps.includes("success") || ps.includes("paid");
-  if (filter === "FAILED") return s === "FAILED" || s === "REJECTED" || ps.includes("fail") || ps.includes("cancel");
-  if (filter === "MISMATCH") return s === "AMOUNT_MISMATCH" || s === "LATE_PAYMENT" || s === "CANCELLED" || ps.includes("mismatch") || ps.includes("amount");
+  if (filter === "FAILED") return s === "FAILED" || s === "REJECTED" || ps.includes("fail") || ps.includes("declin");
+  if (filter === "MISMATCH") return s === "AMOUNT_MISMATCH" || s === "LATE_PAYMENT" || ps.includes("mismatch") || ps.includes("amount");
+  if (filter === "CANCELLED") return s === "CANCELLED" || ps.includes("cancel");
   return true;
 }
 
@@ -100,6 +104,7 @@ function DetailDrawer({
   const [busyAction, setBusyAction] = useState<AdminAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<"recreate" | null>(null);
+  const isCancelled = String(item.status ?? "") === "CANCELLED" || String(item.providerStatus ?? "").toLowerCase().includes("cancel");
 
   async function runAction(action: AdminAction) {
     setBusyAction(action);
@@ -253,6 +258,13 @@ function DetailDrawer({
             </div>
           ) : null}
 
+          {isCancelled ? (
+            <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#374151]">
+              <p className="mb-1 text-xs font-semibold uppercase">Motivo</p>
+              Cancelada por cancelamento do pedido.
+            </div>
+          ) : null}
+
           {/* Admin actions */}
           <section>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Ações</p>
@@ -261,7 +273,7 @@ function DetailDrawer({
                 label="Reenviar link de pagamento"
                 busyLabel="A reenviar..."
                 busy={busyAction === "resend"}
-                disabled={busyAction !== null}
+                disabled={busyAction !== null || isCancelled}
                 onClick={() => void runAction("resend")}
               />
               {pendingConfirm === "recreate" ? (
@@ -295,7 +307,7 @@ function DetailDrawer({
                   label="Recriar pagamento"
                   busyLabel="A recriar..."
                   busy={busyAction === "recreate"}
-                  disabled={busyAction !== null}
+                  disabled={busyAction !== null || isCancelled}
                   onClick={() => setPendingConfirm("recreate")}
                 />
               )}
@@ -303,7 +315,7 @@ function DetailDrawer({
                 label="Sincronizar estado com PaySuite"
                 busyLabel="A sincronizar..."
                 busy={busyAction === "sync"}
-                disabled={busyAction !== null}
+                disabled={busyAction !== null || isCancelled}
                 onClick={() => void runAction("sync")}
               />
             </div>
@@ -344,6 +356,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: "CONFIRMED", label: "Confirmados" },
   { key: "FAILED", label: "Falhados" },
   { key: "MISMATCH", label: "Divergentes" },
+  { key: "CANCELLED", label: "Canceladas" },
 ];
 
 const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string }> = [
@@ -374,6 +387,7 @@ export function PaySuiteTransactionsView() {
       if (statusFilter === "PENDING") params.set("status", "PENDING");
       if (statusFilter === "CONFIRMED") params.set("status", "VALIDATED");
       if (statusFilter === "FAILED") params.set("status", "REJECTED");
+      if (statusFilter === "CANCELLED") params.set("status", "CANCELLED");
 
       const data = await adminApiFetch<AdminPaymentsPageResponse>(`/api/admin/payments?${params.toString()}`);
       const items = data.content ?? [];
@@ -409,7 +423,7 @@ export function PaySuiteTransactionsView() {
   const feesToday = allPayments
     .filter((p) => p.status === "VALIDATED" && p.paymentDate?.startsWith(new Date().toISOString().slice(0, 10)))
     .reduce((sum, p) => sum + (p.providerFee ?? 0), 0);
-  const pendingCount = allPayments.filter((p) => p.status === "PENDING").length;
+  const pendingCount = allPayments.filter((p) => matchesStatusFilter(p, "PENDING")).length;
   const totalRevenue = allPayments.filter((p) => p.status === "VALIDATED").reduce((sum, p) => sum + (p.amount ?? 0), 0);
   const totalProviderFees = allPayments.filter((p) => p.status === "VALIDATED").reduce((sum, p) => sum + (p.providerFee ?? 0), 0);
   const totalNetRevenue = allPayments.filter((p) => p.status === "VALIDATED").reduce((sum, p) => sum + (p.providerNetAmount ?? p.amount ?? 0), 0);
