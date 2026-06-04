@@ -35,6 +35,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     body: JSON.stringify({
       role: typeof incoming?.role === "string" ? incoming.role : undefined,
       roles: Array.isArray(incoming?.roles) ? incoming.roles : undefined,
+      active: typeof incoming?.active === "boolean" ? incoming.active : undefined,
     }),
   });
 
@@ -50,7 +51,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
-  const response = await fetchBackend(request, `/api/super-admin/admins/${encodeURIComponent(id)}`, {
+  const response = await fetchBackend(request, `/super-admin/admins/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 

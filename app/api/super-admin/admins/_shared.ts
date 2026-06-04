@@ -49,7 +49,7 @@ function readNumber(value: unknown, fallback = 0) {
 
 function normalizeStatus(value: unknown, active: boolean, suspended: boolean): ManagedAdminStatus {
   const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
-  if (normalized === "ACTIVE" || normalized === "INACTIVE" || normalized === "SUSPENDED") {
+  if (normalized === "ACTIVE" || normalized === "INACTIVE" || normalized === "SUSPENDED" || normalized === "BLOCKED") {
     return normalized;
   }
   if (suspended) {
@@ -187,7 +187,9 @@ export function mapManagedAdmin(value: unknown): ManagedAdmin {
   const active = readBoolean(raw.active, !protectedAccount);
   const suspended = readBoolean(raw.suspended, false);
   const currentUser = readBoolean(raw.currentUser, false);
-  const derivedStatus = protectedAccount ? "ACTIVE" : active ? "ACTIVE" : "INACTIVE";
+  const accountLocked = readBoolean(raw.accountLocked, false);
+  const derivedStatus = accountLocked ? "BLOCKED" : active ? "ACTIVE" : "INACTIVE";
+  const status = normalizeStatus(raw.status, derivedStatus === "ACTIVE", suspended);
 
   return {
     id: String(raw.id ?? raw.adminId ?? raw.userId ?? ""),
@@ -200,8 +202,8 @@ export function mapManagedAdmin(value: unknown): ManagedAdmin {
       readNullableString(raw.phoneNumber) ||
       readNullableString(raw.telephone),
     role,
-    status: normalizeStatus(raw.status, derivedStatus === "ACTIVE", suspended),
-    active: derivedStatus === "ACTIVE",
+    status,
+    active: status === "ACTIVE",
     suspended,
     createdAt:
       readNullableString(raw.createdAt) ||
