@@ -27,6 +27,10 @@ type BackendTransaction = {
   customerName?: string;
   method?: string;
   amount?: number;
+  providerFee?: number | null;
+  providerNetAmount?: number | null;
+  providerFeePercentage?: number | null;
+  providerTransactionType?: string | null;
   status?: string;
   date?: string | null;
   transactionId?: string | null;
@@ -44,6 +48,15 @@ type BackendOrder = {
     id?: number | null;
     amount?: number;
     method?: string | null;
+    provider?: string | null;
+    providerReference?: string | null;
+    providerStatus?: string | null;
+    checkoutUrl?: string | null;
+    expectedAmount?: number | null;
+    providerFee?: number | null;
+    providerNetAmount?: number | null;
+    providerFeePercentage?: number | null;
+    providerTransactionType?: string | null;
     status?: string | null;
     transactionId?: string | null;
     payerName?: string | null;
@@ -68,6 +81,15 @@ function mapItem(item: Partial<AdminPaymentListItem>): AdminPaymentListItem {
     customerEmail: item.customerEmail ?? null,
     customerPhone: item.customerPhone ?? null,
     method: item.method ?? null,
+    provider: item.provider ?? null,
+    providerReference: item.providerReference ?? null,
+    providerStatus: item.providerStatus ?? null,
+    checkoutUrl: item.checkoutUrl ?? null,
+    expectedAmount: item.expectedAmount == null ? null : Number(item.expectedAmount),
+    providerFee: item.providerFee == null ? null : Number(item.providerFee),
+    providerNetAmount: item.providerNetAmount == null ? null : Number(item.providerNetAmount),
+    providerFeePercentage: item.providerFeePercentage == null ? null : Number(item.providerFeePercentage),
+    providerTransactionType: item.providerTransactionType ?? null,
     amount: Number(item.amount ?? 0),
     submittedAt: item.submittedAt ?? null,
     reviewedAt: item.reviewedAt ?? null,
@@ -147,6 +169,11 @@ function mapTransactionItem(item: BackendTransaction): AdminPaymentListItem {
     customerEmail: null,
     customerPhone: null,
     method: item.method ?? null,
+    provider: "PAYSUITE",
+    providerFee: item.providerFee == null ? null : Number(item.providerFee),
+    providerNetAmount: item.providerNetAmount == null ? null : Number(item.providerNetAmount),
+    providerFeePercentage: item.providerFeePercentage == null ? null : Number(item.providerFeePercentage),
+    providerTransactionType: item.providerTransactionType ?? null,
     amount: Number(item.amount ?? 0),
     submittedAt: item.date ?? null,
     reviewedAt: null,
@@ -226,6 +253,15 @@ function mapOrderPaymentItem(order: BackendOrder): AdminPaymentListItem | null {
     customerEmail: order.customerEmail ?? null,
     customerPhone: payment.payerPhone ?? order.primaryPhoneNumber ?? null,
     method: payment.method ?? null,
+    provider: payment.provider ?? null,
+    providerReference: payment.providerReference ?? null,
+    providerStatus: payment.providerStatus ?? null,
+    checkoutUrl: payment.checkoutUrl ?? null,
+    expectedAmount: payment.expectedAmount == null ? null : Number(payment.expectedAmount),
+    providerFee: payment.providerFee == null ? null : Number(payment.providerFee),
+    providerNetAmount: payment.providerNetAmount == null ? null : Number(payment.providerNetAmount),
+    providerFeePercentage: payment.providerFeePercentage == null ? null : Number(payment.providerFeePercentage),
+    providerTransactionType: payment.providerTransactionType ?? null,
     amount: Number(payment.amount ?? order.totalAmount ?? 0),
     submittedAt: payment.submittedAt ?? null,
     reviewedAt: payment.reviewedAt ?? null,

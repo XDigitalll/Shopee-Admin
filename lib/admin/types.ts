@@ -496,6 +496,10 @@ export type AdminPaymentListItem = {
   providerStatus?: string | null;
   checkoutUrl?: string | null;
   expectedAmount?: number | null;
+  providerFee?: number | null;
+  providerNetAmount?: number | null;
+  providerFeePercentage?: number | null;
+  providerTransactionType?: string | null;
   amount: number;
   submittedAt: string | null;
   reviewedAt: string | null;

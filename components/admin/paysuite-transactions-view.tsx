@@ -179,7 +179,10 @@ function DetailDrawer({
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Valores</p>
             <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Valor esperado" value={formatMoney(item.expectedAmount ?? item.amount)} />
-              <Row label="Valor recebido" value={formatMoney(item.amount)} />
+              <Row label="Valor pago pelo cliente" value={formatMoney(item.amount)} />
+              <Row label="Taxa PaySuite" value={formatMoney(item.providerFee ?? 0)} />
+              <Row label="Valor líquido recebido" value={formatMoney(item.providerNetAmount ?? item.amount)} />
+              <Row label="Percentagem da taxa" value={`${(item.providerFeePercentage ?? 0).toFixed(2)}%`} />
               {item.expectedAmount && item.expectedAmount !== item.amount ? (
                 <Row label="Diferença" value={formatMoney(Math.abs((item.expectedAmount ?? 0) - item.amount))} />
               ) : null}
@@ -202,6 +205,7 @@ function DetailDrawer({
               />
               <Row label="Estado local" value={item.status || "—"} />
               <Row label="Transação" value={item.transactionId || "—"} />
+              <Row label="Tipo da transação" value={item.providerTransactionType || "—"} />
             </div>
           </section>
 
@@ -402,12 +406,14 @@ export function PaySuiteTransactionsView() {
   const revenueToday = allPayments
     .filter((p) => p.status === "VALIDATED" && p.paymentDate?.startsWith(new Date().toISOString().slice(0, 10)))
     .reduce((sum, p) => sum + (p.amount ?? 0), 0);
+  const feesToday = allPayments
+    .filter((p) => p.status === "VALIDATED" && p.paymentDate?.startsWith(new Date().toISOString().slice(0, 10)))
+    .reduce((sum, p) => sum + (p.providerFee ?? 0), 0);
   const pendingCount = allPayments.filter((p) => p.status === "PENDING").length;
-  const failedCount = allPayments.filter((p) => p.status === "REJECTED").length;
   const totalRevenue = allPayments.filter((p) => p.status === "VALIDATED").reduce((sum, p) => sum + (p.amount ?? 0), 0);
-  const successRate = allPayments.length > 0
-    ? Math.round((allPayments.filter((p) => p.status === "VALIDATED").length / allPayments.length) * 100)
-    : 0;
+  const totalProviderFees = allPayments.filter((p) => p.status === "VALIDATED").reduce((sum, p) => sum + (p.providerFee ?? 0), 0);
+  const totalNetRevenue = allPayments.filter((p) => p.status === "VALIDATED").reduce((sum, p) => sum + (p.providerNetAmount ?? p.amount ?? 0), 0);
+  const averageFeePercentage = totalRevenue > 0 ? (totalProviderFees / totalRevenue) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -442,10 +448,10 @@ export function PaySuiteTransactionsView() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <DashCard label="Pendentes" value={String(pendingCount)} color="#D97706" />
         <DashCard label="Confirmados hoje" value={String(confirmedToday)} color="#059669" />
-        <DashCard label="Receita hoje" value={formatMoney(revenueToday)} color="#059669" />
-        <DashCard label="Receita total" value={formatMoney(totalRevenue)} color="#1D4ED8" />
-        <DashCard label="Taxa de sucesso" value={`${successRate}%`} color={successRate >= 80 ? "#059669" : "#D97706"} />
-        <DashCard label="Falhados" value={String(failedCount)} color={failedCount > 0 ? "#DC2626" : "#6B7280"} />
+        <DashCard label="Receita bruta hoje" value={formatMoney(revenueToday)} color="#1D4ED8" />
+        <DashCard label="Taxas PaySuite hoje" value={formatMoney(feesToday)} color="#D97706" />
+        <DashCard label="Receita líquida" value={formatMoney(totalNetRevenue)} color="#059669" />
+        <DashCard label="Taxa média gateway" value={`${averageFeePercentage.toFixed(2)}%`} color={averageFeePercentage > 0 ? "#D97706" : "#6B7280"} />
       </div>
 
       {/* Status filter tabs */}
@@ -496,7 +502,9 @@ export function PaySuiteTransactionsView() {
                   <th className="px-4 py-3">Pedido</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Método</th>
-                  <th className="px-4 py-3 text-right">Valor</th>
+                  <th className="px-4 py-3 text-right">Valor pago</th>
+                  <th className="px-4 py-3 text-right">Taxa PaySuite</th>
+                  <th className="px-4 py-3 text-right">Valor líquido</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3">Referência</th>
                   <th className="px-4 py-3">Iniciado</th>
@@ -516,6 +524,8 @@ export function PaySuiteTransactionsView() {
                       <td className="px-4 py-3">{p.customerName || "—"}</td>
                       <td className="px-4 py-3">{methodLabel(p.method)}</td>
                       <td className="px-4 py-3 text-right font-semibold">{formatMoney(p.amount)}</td>
+                      <td className="px-4 py-3 text-right text-[var(--color-text-secondary)]">{formatMoney(p.providerFee ?? 0)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-[#166534]">{formatMoney(p.providerNetAmount ?? p.amount)}</td>
                       <td className="px-4 py-3">
                         <span
                           className="rounded-full px-2 py-0.5 text-xs font-semibold"

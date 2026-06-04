@@ -7,6 +7,9 @@ type BackendStats = {
   grossRevenue?: number;
   discountsGranted?: number;
   netRevenue?: number;
+  providerFeesTotal?: number;
+  providerNetRevenue?: number;
+  averageProviderFeePercentage?: number;
   todayRevenue?: number;
   revenueGrowth?: number;
   totalOrders?: number;
@@ -49,6 +52,9 @@ type BackendKPIs = {
   grossRevenue?: number;
   discountsGranted?: number;
   netRevenue?: number;
+  providerFeesTotal?: number;
+  providerNetRevenue?: number;
+  averageProviderFeePercentage?: number;
   averageDiscountRate?: number;
 };
 
@@ -65,6 +71,10 @@ type BackendTransaction = {
   customerName?: string;
   method?: string;
   amount?: number;
+  providerFee?: number | null;
+  providerNetAmount?: number | null;
+  providerFeePercentage?: number | null;
+  providerTransactionType?: string | null;
   commission?: number | null;
   commissionAmount?: number | null;
   status?: string;
@@ -212,6 +222,9 @@ export async function GET(request: NextRequest) {
       grossRevenue: Number(stats.grossRevenue ?? kpis.grossRevenue ?? totalRevenue),
       discountsGranted: Number(stats.discountsGranted ?? kpis.discountsGranted ?? 0),
       netRevenue: Number(stats.netRevenue ?? kpis.netRevenue ?? totalRevenue),
+      providerFeesTotal: Number(stats.providerFeesTotal ?? kpis.providerFeesTotal ?? 0),
+      providerNetRevenue: Number(stats.providerNetRevenue ?? kpis.providerNetRevenue ?? totalRevenue),
+      averageProviderFeePercentage: Number(stats.averageProviderFeePercentage ?? kpis.averageProviderFeePercentage ?? 0),
       todayRevenue,
       totalRevenueDelta: Number(growth.toFixed(2)),
       commissionsEarned: commission,
@@ -251,6 +264,10 @@ export async function GET(request: NextRequest) {
       customer: tx.customerName ?? "",
       totalAmount: Number(tx.amount ?? 0),
       commission: Number(tx.commission ?? tx.commissionAmount ?? 0),
+      providerFee: Number(tx.providerFee ?? 0),
+      providerNetAmount: Number(tx.providerNetAmount ?? tx.amount ?? 0),
+      providerFeePercentage: Number(tx.providerFeePercentage ?? 0),
+      providerTransactionType: tx.providerTransactionType ?? null,
       paymentMethod: METHOD_LABELS[tx.method ?? ""] ?? (tx.method ?? ""),
       status: normalizeStatus(tx.status),
     })),
@@ -276,6 +293,9 @@ export async function GET(request: NextRequest) {
       grossRevenue: Number(kpis.grossRevenue ?? stats.grossRevenue ?? totalRevenue),
       discountsGranted: Number(kpis.discountsGranted ?? stats.discountsGranted ?? 0),
       netRevenue: Number(kpis.netRevenue ?? stats.netRevenue ?? totalRevenue),
+      providerFeesTotal: Number(kpis.providerFeesTotal ?? stats.providerFeesTotal ?? 0),
+      providerNetRevenue: Number(kpis.providerNetRevenue ?? stats.providerNetRevenue ?? totalRevenue),
+      averageProviderFeePercentage: Number(kpis.averageProviderFeePercentage ?? stats.averageProviderFeePercentage ?? 0),
       averageDiscountRate: Number(kpis.averageDiscountRate ?? 0),
     },
     topClients: topClients.slice(0, 4).map((client, index) => ({
