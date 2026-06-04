@@ -24,6 +24,9 @@ type FinanceStats = {
   grossRevenue: number;
   discountsGranted: number;
   netRevenue: number;
+  providerFeesTotal: number;
+  providerNetRevenue: number;
+  averageProviderFeePercentage: number;
   todayRevenue: number;
   totalRevenueDelta: number;
   commissionsEarned: number;
@@ -65,6 +68,10 @@ type FinanceTransaction = {
   customer: string;
   totalAmount: number;
   commission: number;
+  providerFee: number;
+  providerNetAmount: number;
+  providerFeePercentage: number;
+  providerTransactionType: string | null;
   paymentMethod: string;
   status: "PAID" | "PENDING" | "REFUNDED";
 };
@@ -81,6 +88,9 @@ type FinanceKPIs = {
   grossRevenue: number;
   discountsGranted: number;
   netRevenue: number;
+  providerFeesTotal: number;
+  providerNetRevenue: number;
+  averageProviderFeePercentage: number;
   averageDiscountRate: number;
 };
 
@@ -308,33 +318,37 @@ function MetricCards({
 
   const cards = [
     {
-      label: "Receita total",
+      label: "Receita bruta",
       value: formatMoney(data.totalRevenue),
       delta: data.totalRevenueDelta,
+      helper: null,
       Icon: WalletIcon,
       bg: "rgba(232,67,26,0.1)",
       fg: "#E8431A",
     },
     {
-      label: "Comissões ganhas",
-      value: formatMoney(data.commissionsEarned),
-      delta: data.commissionsEarnedDelta,
+      label: "Taxas PaySuite",
+      value: formatMoney(data.providerFeesTotal),
+      delta: null,
+      helper: `${data.averageProviderFeePercentage.toFixed(2)}% da receita bruta`,
       Icon: ChartIcon,
+      bg: "rgba(217,119,6,0.12)",
+      fg: "#D97706",
+    },
+    {
+      label: "Receita líquida",
+      value: formatMoney(data.providerNetRevenue),
+      delta: null,
+      helper: "Valor líquido recebido após taxas gateway",
+      Icon: WalletIcon,
       bg: "rgba(99,153,34,0.12)",
       fg: "#639922",
     },
     {
-      label: "Pedidos pagos",
-      value: new Intl.NumberFormat("pt-PT").format(data.paidOrders),
-      delta: data.paidOrdersDelta,
-      Icon: OrdersIcon,
-      bg: "rgba(232,67,26,0.1)",
-      fg: "#E8431A",
-    },
-    {
-      label: "Ticket médio",
-      value: formatMoney(data.avgTicket),
-      delta: data.avgTicketDelta,
+      label: "Taxa média gateway",
+      value: `${data.averageProviderFeePercentage.toFixed(2)}%`,
+      delta: null,
+      helper: "Média financeira PaySuite",
       Icon: UsersIcon,
       bg: "rgba(55,138,221,0.12)",
       fg: "#378ADD",
@@ -360,7 +374,11 @@ function MetricCards({
             {c.value}
           </h3>
           <div className="mt-3">
-            <DeltaChip value={c.delta} />
+            {c.delta === null ? (
+              <p className="text-xs font-semibold text-[var(--color-text-secondary)]">{c.helper}</p>
+            ) : (
+              <DeltaChip value={c.delta} />
+            )}
           </div>
         </article>
       ))}
