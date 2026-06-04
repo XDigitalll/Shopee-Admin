@@ -34,6 +34,7 @@ const STATUS_OPTIONS: Array<{ value: "ALL" | ManagedAdminStatus; label: string }
   { value: "ACTIVE", label: "Activo" },
   { value: "INACTIVE", label: "Inactivo" },
   { value: "SUSPENDED", label: "Suspenso" },
+  { value: "BLOCKED", label: "Bloqueado" },
 ];
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
@@ -172,6 +173,7 @@ function getRoleStyle(role: AdminRole | null) {
 function getStatusStyle(status: ManagedAdminStatus) {
   if (status === "ACTIVE") return { bg: "#EAF3DE", text: "#166534", label: "Activo" };
   if (status === "SUSPENDED") return { bg: "#FFF1F2", text: "#B42318", label: "Suspenso" };
+  if (status === "BLOCKED") return { bg: "#FEE2E2", text: "#991B1B", label: "Bloqueado" };
   return { bg: "#F3F4F6", text: "#4B5563", label: "Inactivo" };
 }
 
@@ -525,7 +527,7 @@ function SuspendModal({ admin, onClose, onConfirm }: { admin: ManagedAdmin; onCl
               <option value="24h">24 horas</option>
               <option value="7d">7 dias</option>
               <option value="30d">30 dias</option>
-              <option value="indefinido">Indefinido</option>
+              <option value="indefinite">Indefinido</option>
             </select>
           </div>
         </div>

@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
       password: typeof incoming?.password === "string" ? incoming.password : "",
       role: typeof incoming?.role === "string" ? incoming.role : "ADMIN",
       roles: Array.isArray(incoming?.roles) ? incoming.roles : undefined,
+      active: typeof incoming?.active === "boolean" ? incoming.active : undefined,
     }),
   });
 

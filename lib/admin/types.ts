@@ -947,7 +947,7 @@ export type CustomersPageResponse = {
   size: number;
 };
 
-export type ManagedAdminStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+export type ManagedAdminStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED" | "BLOCKED";
 
 export type ManagedAdminActivity = {
   id: string;
