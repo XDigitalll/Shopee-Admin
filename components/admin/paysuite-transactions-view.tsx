@@ -185,9 +185,9 @@ function DetailDrawer({
             <div className="space-y-2 rounded-xl bg-[var(--color-background-tertiary)] p-4 text-sm">
               <Row label="Valor esperado" value={formatMoney(item.expectedAmount ?? item.amount)} />
               <Row label="Valor pago pelo cliente" value={formatMoney(item.amount)} />
-              <Row label="Taxa PaySuite" value={formatMoney(item.providerFee ?? 0)} />
-              <Row label="Valor líquido recebido" value={formatMoney(item.providerNetAmount ?? item.amount)} />
-              <Row label="Percentagem da taxa" value={`${(item.providerFeePercentage ?? 0).toFixed(2)}%`} />
+              <Row label="Taxa PaySuite" value={formatProviderFee(item)} />
+              <Row label="Valor líquido recebido" value={formatProviderNetAmount(item)} />
+              <Row label="Percentagem da taxa" value={formatProviderFeePercentage(item)} />
               {item.expectedAmount && item.expectedAmount !== item.amount ? (
                 <Row label="Diferença" value={formatMoney(Math.abs((item.expectedAmount ?? 0) - item.amount))} />
               ) : null}
@@ -346,6 +346,18 @@ function Row({ label, value }: { label: string; value: string | number }) {
       <strong className="text-right text-[var(--color-text-primary)]">{value}</strong>
     </div>
   );
+}
+
+function formatProviderFee(item: AdminPaymentListItem) {
+  return item.providerFee == null ? "Não informado" : formatMoney(item.providerFee);
+}
+
+function formatProviderNetAmount(item: AdminPaymentListItem) {
+  return item.providerNetAmount == null ? "Não informado" : formatMoney(item.providerNetAmount);
+}
+
+function formatProviderFeePercentage(item: AdminPaymentListItem) {
+  return item.providerFeePercentage == null ? "Não informado" : `${item.providerFeePercentage.toFixed(2)}%`;
 }
 
 // ─── Main View ────────────────────────────────────────────────────────────────
@@ -538,8 +550,8 @@ export function PaySuiteTransactionsView() {
                       <td className="px-4 py-3">{p.customerName || "—"}</td>
                       <td className="px-4 py-3">{methodLabel(p.method)}</td>
                       <td className="px-4 py-3 text-right font-semibold">{formatMoney(p.amount)}</td>
-                      <td className="px-4 py-3 text-right text-[var(--color-text-secondary)]">{formatMoney(p.providerFee ?? 0)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-[#166534]">{formatMoney(p.providerNetAmount ?? p.amount)}</td>
+                      <td className="px-4 py-3 text-right text-[var(--color-text-secondary)]">{formatProviderFee(p)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-[#166534]">{formatProviderNetAmount(p)}</td>
                       <td className="px-4 py-3">
                         <span
                           className="rounded-full px-2 py-0.5 text-xs font-semibold"

@@ -16,6 +16,8 @@ type BackendPage<T> = {
   totalPages?: number;
 };
 
+const paysuiteFeePercentage = Number(process.env.PAYSUITE_FEE_PERCENTAGE ?? "6");
+
 function normalizePagePayload(
   payload: BackendPage<Partial<AdminPaymentListItem>> | Array<Partial<AdminPaymentListItem>> | null,
 ) {
@@ -40,9 +42,17 @@ function normalizePagePayload(
 }
 
 function mapItem(item: Partial<AdminPaymentListItem>): AdminPaymentListItem {
+  const amount = Number(item.amount ?? 0);
+  const provider = item.provider ?? null;
+  const providerReference = item.providerReference ?? null;
+  const status = String(item.status ?? "PENDING") as AdminPaymentListItem["status"];
+  const providerFee = resolveProviderFee(item, amount, provider, providerReference, status);
+  const providerNetAmount = resolveProviderNetAmount(item, amount, providerFee);
+  const providerFeePercentage = resolveProviderFeePercentage(item, amount, providerFee);
+
   return {
     id: Number(item.id ?? 0),
-    status: String(item.status ?? "PENDING") as AdminPaymentListItem["status"],
+    status,
     receiptSubmitted: Boolean(item.receiptSubmitted ?? false),
     orderId: Number(item.orderId ?? 0),
     orderNumber: String(item.orderNumber ?? ""),
@@ -51,16 +61,16 @@ function mapItem(item: Partial<AdminPaymentListItem>): AdminPaymentListItem {
     customerEmail: item.customerEmail ?? null,
     customerPhone: item.customerPhone ?? null,
     method: item.method ?? null,
-    provider: item.provider ?? null,
-    providerReference: item.providerReference ?? null,
+    provider,
+    providerReference,
     providerStatus: item.providerStatus ?? null,
     checkoutUrl: item.checkoutUrl ?? null,
     expectedAmount: item.expectedAmount == null ? null : Number(item.expectedAmount),
-    providerFee: item.providerFee == null ? null : Number(item.providerFee),
-    providerNetAmount: item.providerNetAmount == null ? null : Number(item.providerNetAmount),
-    providerFeePercentage: item.providerFeePercentage == null ? null : Number(item.providerFeePercentage),
+    providerFee,
+    providerNetAmount,
+    providerFeePercentage,
     providerTransactionType: item.providerTransactionType ?? null,
-    amount: Number(item.amount ?? 0),
+    amount,
     submittedAt: item.submittedAt ?? null,
     reviewedAt: item.reviewedAt ?? null,
     paymentDate: item.paymentDate ?? null,
@@ -71,6 +81,60 @@ function mapItem(item: Partial<AdminPaymentListItem>): AdminPaymentListItem {
     adminNote: item.adminNote ?? null,
     orderItems: item.orderItems ?? [],
   };
+}
+
+function isPaySuitePayment(provider: unknown, providerReference: unknown) {
+  return String(provider ?? "").toUpperCase() === "PAYSUITE" || Boolean(providerReference);
+}
+
+function isConfirmedStatus(status: AdminPaymentListItem["status"]) {
+  return status === "VALIDATED" || status === "SUCCESS";
+}
+
+function resolveProviderFee(
+  item: Partial<AdminPaymentListItem>,
+  amount: number,
+  provider: unknown,
+  providerReference: unknown,
+  status: AdminPaymentListItem["status"],
+) {
+  const rawFee = item.providerFee == null ? null : Number(item.providerFee);
+  if (rawFee != null && rawFee > 0) return rawFee;
+
+  const rawNet = item.providerNetAmount == null ? null : Number(item.providerNetAmount);
+  if (rawNet != null && rawNet > 0 && amount > rawNet) {
+    return roundMoney(amount - rawNet);
+  }
+
+  if (amount > 0 && isConfirmedStatus(status) && isPaySuitePayment(provider, providerReference) && paysuiteFeePercentage > 0) {
+    return roundMoney(amount * (paysuiteFeePercentage / 100));
+  }
+
+  return rawFee;
+}
+
+function resolveProviderNetAmount(item: Partial<AdminPaymentListItem>, amount: number, providerFee: number | null) {
+  const rawNet = item.providerNetAmount == null ? null : Number(item.providerNetAmount);
+  if (rawNet != null && rawNet > 0 && (providerFee == null || providerFee <= 0)) return rawNet;
+  if (providerFee != null && providerFee > 0) return roundMoney(Math.max(amount - providerFee, 0));
+  return rawNet;
+}
+
+function resolveProviderFeePercentage(
+  item: Partial<AdminPaymentListItem>,
+  amount: number,
+  providerFee: number | null,
+) {
+  const rawPercentage = item.providerFeePercentage == null ? null : Number(item.providerFeePercentage);
+  if (rawPercentage != null && rawPercentage > 0) return rawPercentage;
+  if (amount > 0 && providerFee != null && providerFee > 0) {
+    return Number(((providerFee / amount) * 100).toFixed(4));
+  }
+  return rawPercentage;
+}
+
+function roundMoney(value: number) {
+  return Number(value.toFixed(2));
 }
 
 export async function GET(request: NextRequest) {

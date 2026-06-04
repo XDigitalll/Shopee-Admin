@@ -282,19 +282,21 @@ export function AdminSidebar({
     };
   }, [profile, pathname]);
 
-  function renderNavItem(item: SidebarItem) {
+  function canShowNavItem(item: SidebarItem) {
     if (item.roles && !canPerform(profile, item.roles)) {
-      return null;
+      return false;
     }
+
+    return hasPermission(profile, item.module);
+  }
+
+  function renderNavItem(item: SidebarItem) {
+    if (!canShowNavItem(item)) return null;
 
     const isActive =
       item.href === "/admin"
         ? pathname === "/admin"
         : pathname === item.href || pathname.startsWith(`${item.href}/`);
-    const allowed = hasPermission(profile, item.module);
-    if (!allowed) {
-      return null;
-    }
     const count = item.counterKey ? counters[item.counterKey] : null;
     const isProductsItem = item.module === "products" && item.href === "/admin/products";
     const productAttentionCount = productAttention.count ?? 0;
@@ -369,6 +371,13 @@ export function AdminSidebar({
     );
   }
 
+  const visibleSections = sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(canShowNavItem),
+    }))
+    .filter((section) => section.items.length > 0);
+
   return (
     <aside className="admin-sidebar fixed inset-y-0 left-0 z-30 flex w-[220px] flex-col border-r border-white/5 bg-[#111827] text-white">
       <div className="border-b border-white/8 px-5 py-5">
@@ -386,7 +395,7 @@ export function AdminSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.title} className="mb-6">
             <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
               {section.title}
