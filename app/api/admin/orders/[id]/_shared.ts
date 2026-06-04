@@ -598,8 +598,8 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
   const detail: ExternalOrderDetail = {
     id: order.id,
     number: orderNumber,
-    customerName: order.customerFullName || order.customerEmail || "Cliente externo",
-    customerEmail: order.customerEmail ?? "",
+    customerName: order.customerFullName || displayCustomerEmail(order.customerEmail) || "Cliente externo",
+    customerEmail: displayCustomerEmail(order.customerEmail) ?? "Email não informado",
     customerPhone: order.primaryPhoneNumber ?? "Sem telefone",
     customerVerified: Boolean(order.customerEmail || order.primaryPhoneNumber),
     type: externalOrder ? "EXTERNAL" : "INTERNAL",
@@ -719,4 +719,10 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     ],
     initials: getInitials(detail.customerName),
   };
+}
+
+function displayCustomerEmail(email: string | null | undefined) {
+  const value = typeof email === "string" ? email.trim() : "";
+  if (!value || value.toLowerCase().endsWith("@xdigital.local")) return null;
+  return value;
 }

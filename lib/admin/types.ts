@@ -452,7 +452,7 @@ export type OrderPaymentDetail = {
   receiptUrl: string | null;
 };
 
-export type AdminPaymentStatusFilter = "ALL" | "PENDING" | "VALIDATED" | "REJECTED";
+export type AdminPaymentStatusFilter = "ALL" | "PENDING" | "VALIDATED" | "REJECTED" | "CANCELLED";
 
 export type AdminPaymentMethodFilter =
   | "ALL"
@@ -482,7 +482,7 @@ export type AdminPaymentOrderItem = {
 
 export type AdminPaymentListItem = {
   id: number;
-  status: "PENDING" | "VALIDATED" | "REJECTED" | "CANCELLED";
+  status: "PENDING" | "VALIDATED" | "SUCCESS" | "REJECTED" | "FAILED" | "AMOUNT_MISMATCH" | "LATE_PAYMENT" | "CANCELLED";
   receiptSubmitted: boolean;
   orderId: number;
   orderNumber: string;
