@@ -489,6 +489,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const selectedCurrency = isQuoteCurrency(draft.currency) ? draft.currency : "ZAR";
   const activeRateValue = Number(activeRate?.rate || 0);
   const manualRateValue = Number(draft.exchangeRate || 0);
+  const screenshotUrls = detail.requestScreenshotUrls.length
+    ? detail.requestScreenshotUrls
+    : detail.requestScreenshotUrl
+      ? [detail.requestScreenshotUrl]
+      : [];
   const canSendQuote =
     !isPending &&
     !isRateLoading &&
@@ -594,24 +599,29 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   <p className="mt-2 text-2xl font-semibold text-[var(--color-text-primary)]">{detail.requestedQuantity || 1}</p>
                 </div>
               </div>
-              {detail.requestScreenshotUrl ? (
+              {screenshotUrls.length ? (
                 <div className="mt-3">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                    Screenshot
+                    Fotos do pedido
                   </p>
-                  <a
-                    href={detail.requestScreenshotUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)]"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={detail.requestScreenshotUrl}
-                      alt="Screenshot enviado pelo cliente"
-                      className="max-h-[360px] w-full object-contain"
-                    />
-                  </a>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {screenshotUrls.map((url, index) => (
+                      <a
+                        key={`${url}-${index}`}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)]"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Foto ${index + 1} enviada pelo cliente`}
+                          className="h-52 w-full object-contain"
+                        />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
