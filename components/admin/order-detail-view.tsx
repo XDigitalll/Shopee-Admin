@@ -63,7 +63,7 @@ type DetailAction =
   | { label: string; href: string }
   | {
       label: string;
-      action: "focus-tracking" | "collect-and-deliver" | "cancel-order" | "mark-status" | "mark-ready-for-delivery" | "handoff";
+      action: "focus-tracking" | "collect-and-deliver" | "cancel-order" | "mark-status" | "mark-ready-for-delivery" | "handoff" | "purchase-proof";
       targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
       targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT";
     };
@@ -226,7 +226,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
   }
 
   if (status === "TO_PURCHASE" || status === "PAID") {
-    return { label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" };
+    return { label: "Enviar comprovativo de compra", action: "purchase-proof" };
   }
   if (status === "ORDERED") {
     return { label: "Marcar em trânsito", action: "mark-status", targetStatus: "IN_TRANSIT" };
@@ -280,7 +280,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
     }
   } else {
     if (status === "TO_PURCHASE" || status === "PAID") {
-      actions.push({ label: "Marcar como encomendado", action: "mark-status", targetStatus: "ORDERED" });
+      actions.push({ label: "Enviar comprovativo de compra", action: "purchase-proof" });
       actions.push({ label: "Actualizar rastreio", action: "focus-tracking" });
     }
     if (status === "ORDERED") {
@@ -323,6 +323,15 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
   const [correctionNote, setCorrectionNote] = useState("");
   const [isRequestingCorrection, setIsRequestingCorrection] = useState(false);
+  const [purchaseProofDialogOpen, setPurchaseProofDialogOpen] = useState(false);
+  const [purchaseProofFile, setPurchaseProofFile] = useState<File | null>(null);
+  const [purchaseProofPreviewUrl, setPurchaseProofPreviewUrl] = useState<string | null>(null);
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierPurchaseAmount, setSupplierPurchaseAmount] = useState("");
+  const [supplierOrderReference, setSupplierOrderReference] = useState("");
+  const [purchaseNote, setPurchaseNote] = useState("Produto comprado com sucesso.");
+  const [purchaseProofError, setPurchaseProofError] = useState("");
+  const [isUploadingPurchaseProof, setIsUploadingPurchaseProof] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -351,6 +360,17 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       cancelled = true;
     };
   }, [orderId]);
+
+  useEffect(() => {
+    if (!purchaseProofFile || !purchaseProofFile.type.startsWith("image/")) {
+      setPurchaseProofPreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(purchaseProofFile);
+    setPurchaseProofPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [purchaseProofFile]);
 
   const totals = useMemo(() => (detail ? buildTotals(detail) : null), [detail]);
   const primaryAction = detail ? buildPrimaryAction(detail, isSuperAdmin) : null;
@@ -388,6 +408,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
     if (action === "focus-tracking") {
       trackingRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    if (action === "purchase-proof") {
+      setPurchaseProofDialogOpen(true);
       return;
     }
 
@@ -494,6 +519,65 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     }
   }
 
+  function selectPurchaseProofFile(file: File | null) {
+    setPurchaseProofError("");
+    if (!file) {
+      setPurchaseProofFile(null);
+      return;
+    }
+
+    const allowed = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
+    if (!allowed.includes(file.type)) {
+      setPurchaseProofError("Envia uma imagem ou PDF do comprovativo.");
+      setPurchaseProofFile(null);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setPurchaseProofError("O ficheiro deve ter no maximo 10MB.");
+      setPurchaseProofFile(null);
+      return;
+    }
+    setPurchaseProofFile(file);
+  }
+
+  async function uploadPurchaseProof() {
+    if (!detail || !purchaseProofFile || !supplierName.trim()) return;
+
+    setIsUploadingPurchaseProof(true);
+    setPurchaseProofError("");
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", purchaseProofFile);
+      formData.append("supplierName", supplierName.trim());
+      if (supplierPurchaseAmount.trim()) {
+        formData.append("amount", supplierPurchaseAmount.trim());
+      }
+      if (supplierOrderReference.trim()) {
+        formData.append("supplierOrderReference", supplierOrderReference.trim());
+      }
+      if (purchaseNote.trim()) {
+        formData.append("note", purchaseNote.trim());
+      }
+
+      await adminApiFetch(`/api/admin/orders/${detail.id}/purchase-proof`, {
+        method: "POST",
+        body: formData,
+      });
+      setPurchaseProofDialogOpen(false);
+      setPurchaseProofFile(null);
+      setSupplierName("");
+      setSupplierPurchaseAmount("");
+      setSupplierOrderReference("");
+      setPurchaseNote("Produto comprado com sucesso.");
+      await refreshData();
+    } catch (actionError) {
+      setPurchaseProofError(actionError instanceof Error ? actionError.message : "Nao foi possivel enviar o comprovativo.");
+    } finally {
+      setIsUploadingPurchaseProof(false);
+    }
+  }
+
   if (!detail || !totals) {
     return (
       <AdminSectionSkeleton
@@ -511,6 +595,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     : detail.requestScreenshotUrl
       ? [detail.requestScreenshotUrl]
       : [];
+  const canUploadPurchaseProof = externalOrder
+    && ["PAID", "TO_PURCHASE", "ORDERED", "PURCHASED"].includes(currentStatus);
 
   return (
     <div className="space-y-6">
@@ -543,6 +629,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 Pedir correcao ao cliente
               </button>
             ) : null}
+            {canUploadPurchaseProof && currentStatus !== "PAID" && currentStatus !== "TO_PURCHASE" ? (
+              <button type="button" onClick={() => setPurchaseProofDialogOpen(true)} className="admin-button-danger">
+                {detail.purchaseProofUrl ? "Atualizar comprovativo" : "Enviar comprovativo de compra"}
+              </button>
+            ) : null}
             {primaryAction ? (
               "href" in primaryAction ? (
                 <Link href={primaryAction.href} className="admin-button-danger">
@@ -572,6 +663,28 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         <div className="rounded-[24px] border border-[#F1D7A8] bg-[#FFF5D8] px-5 py-4 text-sm text-[#7A5712]">
           <p className="font-semibold">Correcao pedida ao cliente</p>
           <p className="mt-1">{detail.customerCorrectionNote || "Aguardamos atualizacao das informacoes deste pedido."}</p>
+        </div>
+      ) : null}
+
+      {detail.purchaseProofUrl ? (
+        <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold">Comprovativo de compra enviado</p>
+              <p className="mt-1">
+                {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
+                {detail.purchaseProofUploadedAt
+                  ? `Enviado em ${new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.purchaseProofUploadedAt))}.`
+                  : "Disponivel para o cliente."}
+              </p>
+              {detail.supplierPurchaseAmount != null ? (
+                <p className="mt-1">Valor final pago ao fornecedor: {formatMoney(detail.supplierPurchaseAmount)}</p>
+              ) : null}
+            </div>
+            <a href={detail.purchaseProofUrl} target="_blank" rel="noreferrer" className="admin-button-muted justify-center">
+              Ver comprovativo
+            </a>
+          </div>
         </div>
       ) : null}
 
@@ -1076,6 +1189,129 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 disabled={isRequestingCorrection || !correctionNote.trim()}
               >
                 {isRequestingCorrection ? "A enviar..." : "Enviar pedido de correcao"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {purchaseProofDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Compra no fornecedor</p>
+            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
+              Enviar comprovativo de compra
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+              Anexa a fatura, recibo ou screenshot real da compra. Depois de confirmar, o cliente podera ver o comprovativo.
+            </p>
+
+            <div
+              className="mt-5 rounded-[24px] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-background-tertiary)] p-5 text-center"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                selectPurchaseProofFile(event.dataTransfer.files?.[0] ?? null);
+              }}
+            >
+              <input
+                id="purchase-proof-file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,application/pdf"
+                className="sr-only"
+                onChange={(event) => selectPurchaseProofFile(event.target.files?.[0] ?? null)}
+              />
+              <label htmlFor="purchase-proof-file" className="cursor-pointer">
+                <span className="block font-semibold text-[var(--color-text-primary)]">
+                  {purchaseProofFile ? purchaseProofFile.name : "Selecionar comprovativo"}
+                </span>
+                <span className="mt-1 block text-sm text-[var(--color-text-secondary)]">
+                  PNG, JPG, WebP ou PDF. Maximo 10MB.
+                </span>
+              </label>
+              {purchaseProofPreviewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={purchaseProofPreviewUrl}
+                  alt="Preview do comprovativo"
+                  className="mx-auto mt-4 max-h-64 rounded-2xl border border-[var(--color-border)] object-contain"
+                />
+              ) : purchaseProofFile?.type === "application/pdf" ? (
+                <div className="mx-auto mt-4 max-w-xs rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-semibold">
+                  PDF selecionado
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Loja onde foi comprado</span>
+                <input
+                  value={supplierName}
+                  onChange={(event) => setSupplierName(event.target.value)}
+                  className="admin-input"
+                  placeholder="Ex: Shein, Amazon, Temu"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Valor final pago</span>
+                <input
+                  value={supplierPurchaseAmount}
+                  onChange={(event) => setSupplierPurchaseAmount(event.target.value)}
+                  className="admin-input"
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Referencia do fornecedor</span>
+              <input
+                value={supplierOrderReference}
+                onChange={(event) => setSupplierOrderReference(event.target.value)}
+                className="admin-input"
+                placeholder="Opcional"
+              />
+            </label>
+
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Nota ao cliente</span>
+              <textarea
+                rows={4}
+                value={purchaseNote}
+                onChange={(event) => setPurchaseNote(event.target.value)}
+                className="admin-input min-h-[110px] resize-y"
+                placeholder="Produto comprado com sucesso."
+              />
+            </label>
+
+            {purchaseProofError ? (
+              <div className="mt-4 rounded-2xl border border-[rgba(232,67,26,0.18)] bg-[rgba(232,67,26,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                {purchaseProofError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isUploadingPurchaseProof) {
+                    setPurchaseProofDialogOpen(false);
+                  }
+                }}
+                className="admin-button-muted justify-center"
+                disabled={isUploadingPurchaseProof}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void uploadPurchaseProof()}
+                className="admin-button-danger justify-center disabled:opacity-60"
+                disabled={isUploadingPurchaseProof || !purchaseProofFile || !supplierName.trim()}
+              >
+                {isUploadingPurchaseProof ? "A enviar..." : "Confirmar compra e enviar"}
               </button>
             </div>
           </div>

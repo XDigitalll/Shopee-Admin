@@ -106,6 +106,13 @@ type BackendOrderDetail = {
   needsCustomerCorrection?: boolean | null;
   customerCorrectionNote?: string | null;
   customerEditable?: boolean | null;
+  purchaseProofUrl?: string | null;
+  purchaseProofUploadedAt?: string | null;
+  purchasedByAdminId?: number | null;
+  supplierPurchaseAmount?: number | null;
+  supplierOrderReference?: string | null;
+  supplierName?: string | null;
+  purchaseNote?: string | null;
   sourceStore?: string | null;
   orderDate?: string | null;
   totalAmount?: number | null;
@@ -637,6 +644,13 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     needsCustomerCorrection: externalOrder ? Boolean(order.needsCustomerCorrection) : false,
     customerCorrectionNote: externalOrder ? order.customerCorrectionNote ?? null : null,
     customerEditable: externalOrder ? Boolean(order.customerEditable) : false,
+    purchaseProofUrl: externalOrder ? order.purchaseProofUrl ?? null : null,
+    purchaseProofUploadedAt: externalOrder ? order.purchaseProofUploadedAt ?? null : null,
+    purchasedByAdminId: externalOrder ? order.purchasedByAdminId ?? null : null,
+    supplierPurchaseAmount: externalOrder && order.supplierPurchaseAmount != null ? Number(order.supplierPurchaseAmount) : null,
+    supplierOrderReference: externalOrder ? order.supplierOrderReference ?? null : null,
+    supplierName: externalOrder ? order.supplierName ?? null : null,
+    purchaseNote: externalOrder ? order.purchaseNote ?? null : null,
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
     totalAmount: finalOrderTotal(order),
