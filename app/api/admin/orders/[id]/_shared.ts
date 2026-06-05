@@ -103,6 +103,9 @@ type BackendOrderDetail = {
   requestedQuantity?: number | null;
   requestScreenshotUrl?: string | null;
   requestScreenshotUrls?: string[] | null;
+  needsCustomerCorrection?: boolean | null;
+  customerCorrectionNote?: string | null;
+  customerEditable?: boolean | null;
   sourceStore?: string | null;
   orderDate?: string | null;
   totalAmount?: number | null;
@@ -631,6 +634,9 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
           ? [order.requestScreenshotUrl]
           : []
       : [],
+    needsCustomerCorrection: externalOrder ? Boolean(order.needsCustomerCorrection) : false,
+    customerCorrectionNote: externalOrder ? order.customerCorrectionNote ?? null : null,
+    customerEditable: externalOrder ? Boolean(order.customerEditable) : false,
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
     totalAmount: finalOrderTotal(order),
