@@ -324,6 +324,9 @@ export type ExternalOrderDetail = {
   requestedQuantity: number;
   requestScreenshotUrl: string;
   requestScreenshotUrls: string[];
+  needsCustomerCorrection: boolean;
+  customerCorrectionNote: string | null;
+  customerEditable: boolean;
   sourceStore: string;
   createdAt: string;
   totalAmount: number;

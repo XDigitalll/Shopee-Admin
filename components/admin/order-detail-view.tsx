@@ -320,6 +320,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [error, setError] = useState("");
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState("");
+  const [isRequestingCorrection, setIsRequestingCorrection] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -471,6 +474,26 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     setInternalNote("");
   }
 
+  async function requestCustomerCorrection() {
+    if (!detail || !correctionNote.trim()) return;
+
+    setIsRequestingCorrection(true);
+    setError("");
+    try {
+      await adminApiFetch(`/api/admin/orders/${detail.id}/request-correction`, {
+        method: "PATCH",
+        body: JSON.stringify({ note: correctionNote.trim() }),
+      });
+      setCorrectionDialogOpen(false);
+      setCorrectionNote("");
+      await refreshData();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Nao foi possivel pedir correcao ao cliente.");
+    } finally {
+      setIsRequestingCorrection(false);
+    }
+  }
+
   if (!detail || !totals) {
     return (
       <AdminSectionSkeleton
@@ -515,6 +538,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             <button type="button" onClick={() => window.print()} className="admin-button-muted">
               Exportar PDF
             </button>
+            {detail.type === "EXTERNAL" && detail.customerEditable ? (
+              <button type="button" onClick={() => setCorrectionDialogOpen(true)} className="admin-button-muted">
+                Pedir correcao ao cliente
+              </button>
+            ) : null}
             {primaryAction ? (
               "href" in primaryAction ? (
                 <Link href={primaryAction.href} className="admin-button-danger">
@@ -537,6 +565,13 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       {error ? (
         <div className="rounded-[24px] border border-[rgba(232,67,26,0.18)] bg-[rgba(232,67,26,0.08)] px-5 py-4 text-sm text-[var(--color-danger)]">
           {error}
+        </div>
+      ) : null}
+
+      {detail.needsCustomerCorrection ? (
+        <div className="rounded-[24px] border border-[#F1D7A8] bg-[#FFF5D8] px-5 py-4 text-sm text-[#7A5712]">
+          <p className="font-semibold">Correcao pedida ao cliente</p>
+          <p className="mt-1">{detail.customerCorrectionNote || "Aguardamos atualizacao das informacoes deste pedido."}</p>
         </div>
       ) : null}
 
@@ -998,6 +1033,54 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
           </section>
         </aside>
       </div>
+
+      {correctionDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
+          <div className="w-full max-w-lg rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Pedido de correcao</p>
+            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
+              Pedir correcao ao cliente
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+              Explica de forma simples o que precisa ser corrigido antes de continuar a cotacao.
+            </p>
+            <label className="mt-5 block">
+              <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">
+                O que o cliente precisa corrigir?
+              </span>
+              <textarea
+                rows={5}
+                value={correctionNote}
+                onChange={(event) => setCorrectionNote(event.target.value)}
+                className="admin-input min-h-[140px] resize-y"
+                placeholder="Ex: Precisamos que indiques a cor e o tamanho correto."
+              />
+            </label>
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isRequestingCorrection) {
+                    setCorrectionDialogOpen(false);
+                  }
+                }}
+                className="admin-button-muted justify-center"
+                disabled={isRequestingCorrection}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void requestCustomerCorrection()}
+                className="admin-button-danger justify-center disabled:opacity-60"
+                disabled={isRequestingCorrection || !correctionNote.trim()}
+              >
+                {isRequestingCorrection ? "A enviar..." : "Enviar pedido de correcao"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AdminConfirmDialog
         open={cancelDialogOpen}
