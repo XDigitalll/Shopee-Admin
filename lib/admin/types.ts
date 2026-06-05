@@ -327,6 +327,13 @@ export type ExternalOrderDetail = {
   needsCustomerCorrection: boolean;
   customerCorrectionNote: string | null;
   customerEditable: boolean;
+  purchaseProofUrl: string | null;
+  purchaseProofUploadedAt: string | null;
+  purchasedByAdminId: number | null;
+  supplierPurchaseAmount: number | null;
+  supplierOrderReference: string | null;
+  supplierName: string | null;
+  purchaseNote: string | null;
   sourceStore: string;
   createdAt: string;
   totalAmount: number;
