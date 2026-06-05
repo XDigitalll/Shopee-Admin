@@ -483,6 +483,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
   const pickupOrder = isPickupOrder(detail);
   const externalOrder = detail.type === "EXTERNAL";
+  const screenshotUrls = detail.requestScreenshotUrls.length
+    ? detail.requestScreenshotUrls
+    : detail.requestScreenshotUrl
+      ? [detail.requestScreenshotUrl]
+      : [];
 
   return (
     <div className="space-y-6">
@@ -577,10 +582,14 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   </div>
                 </div>
                 ) : null}
-                {detail.requestScreenshotUrl ? (
-                  <a href={detail.requestScreenshotUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-primary)]">
-                    Abrir screenshot do produto
-                  </a>
+                {screenshotUrls.length ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {screenshotUrls.map((url, index) => (
+                      <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-primary)]">
+                        Abrir foto {index + 1}
+                      </a>
+                    ))}
+                  </div>
                 ) : null}
               </div>
               <Link href={detail.customerId ? `/admin/customers/${detail.customerId}` : "/admin/customers"} className="admin-button-muted">

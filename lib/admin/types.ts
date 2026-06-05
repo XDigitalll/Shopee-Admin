@@ -323,6 +323,7 @@ export type ExternalOrderDetail = {
   promotionalTextRemoved: boolean;
   requestedQuantity: number;
   requestScreenshotUrl: string;
+  requestScreenshotUrls: string[];
   sourceStore: string;
   createdAt: string;
   totalAmount: number;

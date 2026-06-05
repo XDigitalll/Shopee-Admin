@@ -102,6 +102,7 @@ type BackendOrderDetail = {
   promotionalTextRemoved?: boolean | null;
   requestedQuantity?: number | null;
   requestScreenshotUrl?: string | null;
+  requestScreenshotUrls?: string[] | null;
   sourceStore?: string | null;
   orderDate?: string | null;
   totalAmount?: number | null;
@@ -623,6 +624,13 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     promotionalTextRemoved: externalOrder ? Boolean(order.promotionalTextRemoved) : false,
     requestedQuantity: externalOrder ? Number(order.requestedQuantity ?? 1) : 0,
     requestScreenshotUrl: externalOrder ? order.requestScreenshotUrl ?? "" : "",
+    requestScreenshotUrls: externalOrder
+      ? order.requestScreenshotUrls?.length
+        ? order.requestScreenshotUrls
+        : order.requestScreenshotUrl
+          ? [order.requestScreenshotUrl]
+          : []
+      : [],
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     createdAt: order.orderDate ?? new Date().toISOString(),
     totalAmount: finalOrderTotal(order),
