@@ -855,6 +855,8 @@ export type ProductAttentionItem = {
 
 export type ProductAttentionResponse = {
   count: number;
+  lowStockCount?: number;
+  outOfStockCount?: number;
   items: ProductAttentionItem[];
 };
 
