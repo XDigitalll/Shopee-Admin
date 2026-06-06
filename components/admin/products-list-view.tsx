@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AdminListLoadingOverlay } from "@/components/admin/feedback-state";
@@ -78,6 +78,19 @@ function stockMetric(product: AdminProduct, key: "stockPhysical" | "stockReserve
   return Number(product[key] ?? product.stock ?? 0);
 }
 
+function lowStockSortValue(product: AdminProduct) {
+  const variantStocks = product.variants
+    ?.filter((variant) => variant.active)
+    .map((variant) => Number(variant.stockAvailable ?? variant.stock ?? 0))
+    .filter((stock) => stock > 0) ?? [];
+
+  if (variantStocks.length > 0) {
+    return Math.min(...variantStocks);
+  }
+
+  return stockMetric(product, "stockAvailable");
+}
+
 function publishBlockReason(product: AdminProduct) {
   if (stockMetric(product, "stockAvailable") <= 0) return "Nao e possivel publicar produto sem stock.";
   if (!product.category?.id) return "Nao e possivel publicar produto sem categoria.";
@@ -128,6 +141,20 @@ export function ProductsListView() {
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "gallery">("table");
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((left, right) => {
+      const leftLow = isLowStockProduct(left);
+      const rightLow = isLowStockProduct(right);
+      if (leftLow !== rightLow) {
+        return leftLow ? -1 : 1;
+      }
+      if (leftLow && rightLow) {
+        return lowStockSortValue(left) - lowStockSortValue(right);
+      }
+      return 0;
+    });
+  }, [products]);
 
   const PAGE_SIZE = 20;
 
@@ -385,15 +412,16 @@ export function ProductsListView() {
         </div>
       ) : viewMode === "gallery" ? (
         <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-          {products.map((product) => {
+          {sortedProducts.map((product) => {
             const img = primaryImage(product);
             const isDeleting = deletingId === product.id;
             const publishReason = publishBlockReason(product);
+            const lowStock = isLowStockProduct(product);
             return (
               <div
                 key={product.id}
                 className="group overflow-hidden rounded-2xl border flex flex-col"
-                style={{ background: "#111827", borderColor: "#1F2937", opacity: isDeleting ? 0.5 : 1 }}
+                style={{ background: lowStock ? "#151923" : "#111827", borderColor: lowStock ? "#7C4A10" : "#1F2937", opacity: isDeleting ? 0.5 : 1 }}
               >
                 {/* Image */}
                 <div className="relative h-44 w-full overflow-hidden flex-shrink-0" style={{ background: "#1F2937" }}>
@@ -495,16 +523,17 @@ export function ProductsListView() {
               </tr>
             </thead>
             <tbody>
-              {products.map((product, i) => {
+              {sortedProducts.map((product, i) => {
                 const img = primaryImage(product);
                 const isDeleting = deletingId === product.id;
                 const publishReason = publishBlockReason(product);
+                const lowStock = isLowStockProduct(product);
                 return (
                   <tr
                     key={product.id}
                     style={{
                       borderTop: i > 0 ? "1px solid #1F2937" : "none",
-                      background: isDeleting ? "#1F2937" : "transparent",
+                      background: isDeleting ? "#1F2937" : lowStock ? "rgba(249,115,22,0.08)" : "transparent",
                     }}
                   >
                     <td className="px-4 py-3 align-middle">
