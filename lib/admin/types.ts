@@ -294,6 +294,29 @@ export type QuoteDefaultsResponse = {
   urgentPercentage: number;
 };
 
+export type ClarificationField =
+  | "SIZE"
+  | "COLOR"
+  | "MODEL"
+  | "QUANTITY"
+  | "STORAGE"
+  | "LINK"
+  | "PHOTO"
+  | "OTHER";
+
+export type OrderClarificationRequest = {
+  id: number;
+  orderId: number;
+  requestedByAdminId: number | null;
+  status: "PENDING" | "ANSWERED" | "CANCELLED";
+  message: string | null;
+  requestedFields: ClarificationField[];
+  answers: Record<string, string>;
+  photoUrls: string[];
+  createdAt: string;
+  answeredAt: string | null;
+};
+
 export type ExternalOrderDetail = {
   id: number;
   number: string;
@@ -325,7 +348,10 @@ export type ExternalOrderDetail = {
   requestScreenshotUrl: string;
   requestScreenshotUrls: string[];
   needsCustomerCorrection: boolean;
+  needsClarification?: boolean;
   customerCorrectionNote: string | null;
+  activeClarificationRequest?: OrderClarificationRequest | null;
+  latestClarificationRequest?: OrderClarificationRequest | null;
   customerEditable: boolean;
   purchaseProofUrl: string | null;
   purchaseProofUploadedAt: string | null;

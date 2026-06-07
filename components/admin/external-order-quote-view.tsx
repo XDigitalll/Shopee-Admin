@@ -12,6 +12,7 @@ import { formatDate, formatMoney, humanizeOrderStatus } from "@/lib/admin/format
 import { canManageFinance, canManageOrders } from "@/lib/admin/permissions";
 import type {
   ExchangeRate,
+  ClarificationField,
   ExternalOrderDetail,
   ExternalOrderDraft,
   OrderHistoryEntry,
@@ -84,6 +85,27 @@ function isQuoteCurrency(value: string): value is QuoteCurrency {
 
 const compactNumberInputClass =
   "admin-input h-11 max-w-[220px] rounded-2xl px-3 py-2 text-sm";
+
+const CLARIFICATION_FIELDS: Array<{ value: ClarificationField; label: string }> = [
+  { value: "SIZE", label: "Tamanho" },
+  { value: "COLOR", label: "Cor" },
+  { value: "MODEL", label: "Modelo" },
+  { value: "STORAGE", label: "Memoria/capacidade" },
+  { value: "LINK", label: "Link correto" },
+  { value: "PHOTO", label: "Fotos/screenshots" },
+  { value: "OTHER", label: "Outro detalhe" },
+];
+
+const CLARIFICATION_LABELS: Record<string, string> = {
+  SIZE: "Tamanho",
+  COLOR: "Cor",
+  MODEL: "Modelo",
+  QUANTITY: "Quantidade",
+  STORAGE: "Memoria/capacidade",
+  LINK: "Link correto",
+  PHOTO: "Fotos/screenshots",
+  OTHER: "Outro detalhe",
+};
 
 function buildAutomaticValidityDate() {
   return new Date().toISOString().slice(0, 10);
@@ -224,6 +246,12 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const [error, setError] = useState("");
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
   const [isRefusing, setIsRefusing] = useState(false);
+  const [clarificationOpen, setClarificationOpen] = useState(false);
+  const [clarificationFields, setClarificationFields] = useState<ClarificationField[]>(["SIZE"]);
+  const [clarificationMessage, setClarificationMessage] = useState(
+    "Precisamos confirmar alguns detalhes antes de cotar."
+  );
+  const [isRequestingClarification, setIsRequestingClarification] = useState(false);
   const [isPending, startTransition] = useTransition();
   const canSubmitQuote = canManageOrders(profile);
   const canUseManualExchangeRate = canManageFinance(profile);
@@ -390,8 +418,47 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     }
   }
 
+  function toggleClarificationField(field: ClarificationField) {
+    setClarificationFields((current) =>
+      current.includes(field)
+        ? current.filter((item) => item !== field)
+        : [...current, field]
+    );
+  }
+
+  async function requestClarification() {
+    if (!detail || clarificationFields.length === 0) return;
+
+    setIsRequestingClarification(true);
+    try {
+      await adminApiFetch(`/api/admin/orders/${orderId}/clarification-request`, {
+        method: "POST",
+        body: JSON.stringify({
+          message: clarificationMessage,
+          fields: clarificationFields,
+        }),
+      });
+      await refreshQuoteData();
+      setClarificationOpen(false);
+      setError("");
+    } catch (clarificationError) {
+      setError(
+        clarificationError instanceof Error
+          ? clarificationError.message
+          : "Nao foi possivel pedir detalhes ao cliente."
+      );
+    } finally {
+      setIsRequestingClarification(false);
+    }
+  }
+
   async function sendQuote() {
     if (!detail || !draft) return;
+
+    if (detail.needsClarification || detail.activeClarificationRequest?.status === "PENDING") {
+      setError("Aguarde a resposta do cliente antes de enviar a cotacao.");
+      return;
+    }
 
     const isUpdate = Boolean(detail.latestQuoteSentAt);
     const currency = isQuoteCurrency(draft.currency) ? draft.currency : "ZAR";
@@ -494,9 +561,14 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     : detail.requestScreenshotUrl
       ? [detail.requestScreenshotUrl]
       : [];
+  const pendingClarification =
+    Boolean(detail.needsClarification) || detail.activeClarificationRequest?.status === "PENDING";
+  const answeredClarification =
+    detail.latestClarificationRequest?.status === "ANSWERED" ? detail.latestClarificationRequest : null;
   const canSendQuote =
     !isPending &&
     !isRateLoading &&
+    !pendingClarification &&
     (useManualExchangeRate ? manualRateValue > 0 : activeRateValue > 0);
 
   return (
@@ -530,6 +602,15 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 Ver cliente
               </button>
             )}
+            {canSubmitQuote ? (
+              <button
+                type="button"
+                onClick={() => setClarificationOpen(true)}
+                className="admin-button-muted"
+              >
+                Pedir detalhes ao cliente
+              </button>
+            ) : null}
             {canSubmitQuote ? (
               <button
                 type="button"
@@ -578,6 +659,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                     <span className="inline-flex rounded-full bg-[#fef3c7] px-2.5 py-1 text-xs font-semibold text-[#92400e]">
                       {detail.customerVerified ? "Contacto verificado" : "Verificacao pendente"}
                     </span>
+                    {pendingClarification ? (
+                      <span className="inline-flex rounded-full bg-[#FFE4E6] px-2.5 py-1 text-xs font-semibold text-[#9F1239]">
+                        Aguardando resposta do cliente
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -667,6 +753,66 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               </div>
             </div>
           </section>
+
+          {pendingClarification ? (
+            <section className="admin-card border-[#FBCFE8] bg-[#FFF1F2] p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9F1239]">
+                Aguardando cliente
+              </p>
+              <h2 className="mt-2 font-[family-name:var(--font-sora)] text-xl font-semibold text-[#881337]">
+                A cotacao esta bloqueada ate o cliente responder
+              </h2>
+              <p className="mt-2 text-sm text-[#9F1239]">
+                {detail.activeClarificationRequest?.message ||
+                  "Foi enviado um pedido de detalhes ao cliente."}
+              </p>
+              {detail.activeClarificationRequest?.requestedFields?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {detail.activeClarificationRequest.requestedFields.map((field) => (
+                    <span
+                      key={field}
+                      className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#9F1239]"
+                    >
+                      {CLARIFICATION_LABELS[field] || field}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {answeredClarification ? (
+            <section className="admin-card p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                Respostas do cliente
+              </p>
+              <h2 className="mt-2 font-[family-name:var(--font-sora)] text-xl font-semibold">
+                Detalhes enviados para cotacao
+              </h2>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {answeredClarification.requestedFields
+                  .filter((field) => field !== "PHOTO")
+                  .map((field) => (
+                    <div
+                      key={field}
+                      className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                        {CLARIFICATION_LABELS[field] || field}
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-[var(--color-text-primary)]">
+                        {answeredClarification.answers?.[field] || "Sem resposta"}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+              {answeredClarification.photoUrls?.length ? (
+                <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+                  Fotos adicionadas: {answeredClarification.photoUrls.length}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="admin-card p-6">
             <div className="mb-5">
@@ -1046,6 +1192,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               >
                 {isPending
                   ? "A enviar..."
+                  : pendingClarification
+                    ? "Aguardando resposta"
                   : detail.latestQuoteSentAt
                     ? "Actualizar cotacao"
                     : "Enviar cotacao ao cliente"}
@@ -1072,6 +1220,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 </button>
               ) : null}
               {!canSubmitQuote ? <p className="text-xs text-[var(--color-text-secondary)]">Sem permissao para enviar ou alterar cotacoes.</p> : null}
+              {pendingClarification ? (
+                <p className="text-xs font-semibold text-[#9F1239]">
+                  O cliente precisa responder aos detalhes pedidos antes do envio da cotacao.
+                </p>
+              ) : null}
             </div>
 
             <div className="mt-8 border-t border-[var(--color-border)] pt-5">
@@ -1111,6 +1264,79 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
           </div>
         </aside>
       </div>
+      {clarificationOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                  Pedido ao cliente
+                </p>
+                <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">
+                  Que informacoes faltam?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isRequestingClarification) setClarificationOpen(false);
+                }}
+                className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--color-text-secondary)]"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {CLARIFICATION_FIELDS.map((field) => (
+                <label
+                  key={field.value}
+                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold"
+                >
+                  <input
+                    type="checkbox"
+                    checked={clarificationFields.includes(field.value)}
+                    onChange={() => toggleClarificationField(field.value)}
+                    className="h-4 w-4 accent-[var(--color-danger)]"
+                  />
+                  {field.label}
+                </label>
+              ))}
+            </div>
+
+            <label className="mt-5 block">
+              <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
+                Mensagem para o cliente
+              </span>
+              <textarea
+                value={clarificationMessage}
+                onChange={(event) => setClarificationMessage(event.target.value)}
+                rows={4}
+                className="admin-input min-h-[120px] resize-y"
+              />
+            </label>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={isRequestingClarification}
+                onClick={() => setClarificationOpen(false)}
+                className="admin-button-muted justify-center disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isRequestingClarification || clarificationFields.length === 0}
+                onClick={() => void requestClarification()}
+                className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isRequestingClarification ? "A enviar..." : "Enviar pedido"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <AdminConfirmDialog
         open={refuseDialogOpen}
         title="Recusar pedido?"
