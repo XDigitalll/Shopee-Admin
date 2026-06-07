@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { AdminConfirmDialog } from "@/components/admin/feedback-state";
+import { WhatsAppLink, WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney } from "@/lib/admin/format";
+import { buildWhatsAppUrl } from "@/lib/admin/whatsapp";
 import type {
   AdminCustomer,
+  AdminCustomerPasswordResetResponse,
   CustomerActivity,
   CustomerNote,
   CustomerOrderSummary,
@@ -75,6 +79,16 @@ const STORE_LABEL: Record<string, string> = {
   MAKRO: "Makro", MR_PRICE: "Mr Price", ALI_EXPRESS: "AliExpress",
   ALI_BABA: "Alibaba", BUFFALO: "Buffalo", ZARA: "Zara", ASOS: "ASOS", EBAY: "eBay",
 };
+
+function buildPasswordResetWhatsAppMessage(resetUrl: string) {
+  return `Ola 👋
+Criamos um link para definires uma nova senha da tua conta ShopeeMz.
+
+Usa este link:
+${resetUrl}
+
+Este link expira em 60 minutos.`;
+}
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 
@@ -416,6 +430,10 @@ export default function CustomerDetailPage() {
 
   const [suspendModal, setSuspendModal] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [passwordResetOpen, setPasswordResetOpen] = useState(false);
+  const [passwordResetting, setPasswordResetting] = useState(false);
+  const [passwordResetResult, setPasswordResetResult] = useState<AdminCustomerPasswordResetResponse | null>(null);
+  const [passwordResetCopied, setPasswordResetCopied] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -475,6 +493,31 @@ export default function CustomerDetailPage() {
       setNote("");
       await loadNotes();
     } catch { /* ignore */ } finally { setSavingNote(false); }
+  }
+
+  async function requestPasswordReset() {
+    if (!customer) return;
+    setPasswordResetting(true);
+    setPasswordResetCopied(false);
+    try {
+      const result = await adminApiFetch<AdminCustomerPasswordResetResponse>(
+        `/api/admin/customers/${customer.id}/password-reset`,
+        { method: "POST" }
+      );
+      setPasswordResetResult(result);
+      await loadNotes();
+      toast(result.emailSent ? "Link gerado e email enviado." : "Link gerado. Partilha com o cliente por WhatsApp.", true);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Nao foi possivel gerar o reset de senha.", false);
+    } finally {
+      setPasswordResetting(false);
+    }
+  }
+
+  async function copyPasswordResetLink() {
+    if (!passwordResetResult?.resetUrl || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(passwordResetResult.resetUrl);
+    setPasswordResetCopied(true);
   }
 
   // ── Loading / not found ───────────────────────────────────────────────
@@ -563,10 +606,15 @@ export default function CustomerDetailPage() {
               </div>
               <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">{customer.email}</p>
               {customer.phoneNumber && (
-                <p className="mt-0.5 text-sm text-[var(--color-text-tertiary)]">{customer.phoneNumber}</p>
+                <WhatsAppPhone
+                  phone={customer.phoneNumber}
+                  className="mt-0.5 text-sm text-[var(--color-text-tertiary)]"
+                />
               )}
               {customer.alternativePhoneNumber && (
-                <p className="text-xs text-[var(--color-text-tertiary)]">Alt: {customer.alternativePhoneNumber}</p>
+                <div className="text-xs text-[var(--color-text-tertiary)]">
+                  Alt: <WhatsAppPhone phone={customer.alternativePhoneNumber} />
+                </div>
               )}
             </div>
 
@@ -713,11 +761,11 @@ export default function CustomerDetailPage() {
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">Telefone principal</span>
-                <span className="font-semibold text-[var(--color-text-primary)]">{customer.phoneNumber ?? "—"}</span>
+                <WhatsAppPhone phone={customer.phoneNumber} className="justify-end font-semibold text-[var(--color-text-primary)]" />
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">WhatsApp associado</span>
-                <span className="font-semibold text-[var(--color-text-primary)]">{customer.whatsappPhoneNumber ?? "—"}</span>
+                <WhatsAppPhone phone={customer.whatsappPhoneNumber} className="justify-end font-semibold text-[var(--color-text-primary)]" />
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">Email</span>
@@ -725,9 +773,7 @@ export default function CustomerDetailPage() {
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">Telefone comunicação</span>
-                <span className="font-semibold text-[var(--color-text-primary)]">
-                  {customer.effectiveCommunicationPhone ?? customer.phoneNumber ?? "—"}
-                </span>
+                <WhatsAppPhone phone={customer.effectiveCommunicationPhone ?? customer.phoneNumber} className="justify-end font-semibold text-[var(--color-text-primary)]" />
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[var(--color-text-tertiary)]">Canal</span>
@@ -781,6 +827,12 @@ export default function CustomerDetailPage() {
                   {customer.lastWhatsappInteractionAt ? `Última interação: ${fmtDateTime(customer.lastWhatsappInteractionAt)}` : "Sem interações registadas por enquanto."}
                 </p>
               </div>
+              <WhatsAppLink
+                phone={customer.effectiveCommunicationPhone ?? customer.whatsappPhoneNumber ?? customer.phoneNumber}
+                className="inline-flex w-full items-center justify-center rounded-[14px] border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[#128C7E] hover:bg-[#EAF7EF]"
+              >
+                Falar no WhatsApp
+              </WhatsAppLink>
             </div>
           </div>
 
@@ -836,6 +888,17 @@ export default function CustomerDetailPage() {
             )}
             <button
               type="button"
+              onClick={() => {
+                setPasswordResetOpen(true);
+                setPasswordResetResult(null);
+                setPasswordResetCopied(false);
+              }}
+              className="admin-button-muted w-full justify-center"
+            >
+              Resetar senha
+            </button>
+            <button
+              type="button"
               onClick={() => setSuspendModal(true)}
               className="rounded-[16px] border border-[var(--color-border)] py-2.5 text-sm font-semibold transition hover:bg-[rgba(232,67,26,0.06)] w-full"
               style={{ color: customer.suspended ? "#16A34A" : "#E8431A" }}
@@ -845,6 +908,56 @@ export default function CustomerDetailPage() {
           </div>
         </div>
       </div>
+
+      <AdminConfirmDialog
+        open={passwordResetOpen}
+        title="Resetar senha?"
+        message="Queres gerar um link para este cliente definir uma nova senha? O admin nao ve nem define a senha."
+        confirmLabel={passwordResetResult ? "Gerar novo link" : "Gerar link"}
+        cancelLabel="Fechar"
+        pending={passwordResetting}
+        onCancel={() => {
+          if (!passwordResetting) setPasswordResetOpen(false);
+        }}
+        onConfirm={() => void requestPasswordReset()}
+      >
+        {passwordResetResult ? (
+          <div className="space-y-3 rounded-[18px] border border-[#BFE8C8] bg-[#F0FFF4] p-4 text-sm text-[#14532D]">
+            <p className="font-semibold">
+              {passwordResetResult.emailSent ? "Email enviado." : "Email nao enviado. Usa WhatsApp ou copia o link."}
+            </p>
+            <p className="break-all rounded-[14px] bg-white/70 p-3 font-mono text-xs text-[var(--color-text-primary)]">
+              {passwordResetResult.resetUrl}
+            </p>
+            <p className="text-xs">Expira em: {fmtDateTime(passwordResetResult.expiresAt)}</p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={() => void copyPasswordResetLink()} className="admin-button-muted justify-center">
+                {passwordResetCopied ? "Link copiado" : "Copiar link"}
+              </button>
+              {buildWhatsAppUrl(
+                customer.effectiveCommunicationPhone ?? customer.whatsappPhoneNumber ?? customer.phoneNumber,
+                buildPasswordResetWhatsAppMessage(passwordResetResult.resetUrl)
+              ) ? (
+                <a
+                  href={buildWhatsAppUrl(
+                    customer.effectiveCommunicationPhone ?? customer.whatsappPhoneNumber ?? customer.phoneNumber,
+                    buildPasswordResetWhatsAppMessage(passwordResetResult.resetUrl)
+                  ) ?? undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="admin-button-danger justify-center"
+                >
+                  Enviar WhatsApp
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="rounded-[18px] bg-[var(--color-background-tertiary)] p-4 text-sm text-[var(--color-text-secondary)]">
+            O link expira em 60 minutos e so pode ser usado uma vez.
+          </p>
+        )}
+      </AdminConfirmDialog>
 
       {/* Suspend modal */}
       {suspendModal && (

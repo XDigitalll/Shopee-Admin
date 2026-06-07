@@ -5,11 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AttentionDot } from "@/components/admin/attention-dot";
 import { ActionError, AdminBanner, AdminListLoadingOverlay, AdminSpinner, AdminStateCard, AdminTableSkeleton, ProcessingOverlay } from "@/components/admin/feedback-state";
+import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useOrders } from "@/hooks/useOrders";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney, humanizeOrderStatus, humanizePaymentMethod } from "@/lib/admin/format";
+import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
 import type { OrderQueueStatus } from "@/lib/admin/order-status";
 import { isActionRequired, sortOperationalQueue, type OperationalContext } from "@/lib/admin/operational-queue";
 import type { AdminModule } from "@/lib/admin/roles";
@@ -213,6 +215,7 @@ function OrdersDrawer({
   const paymentValidated = isPaymentValidated(order?.paymentStatus ?? null);
   const cashOnDelivery = isCashOnDelivery(order);
   const backendTrackingSteps = order?.trackingDetailSteps ?? [];
+  const orderWhatsAppMessage = order ? buildOrderWhatsAppMessage(order.number) : "";
 
   function primaryAction(orderItem: AdminOrderListItem | null): DrawerAction | null {
     if (!orderItem) return null;
@@ -450,6 +453,7 @@ function OrdersDrawer({
             <dl className="space-y-3 text-sm">
               {[ 
                 ["Cliente", order.customer],
+                ["Telefone", order.customerPhone || ""],
                 ["Tipo", order.type === "EXTERNAL" ? "Externo" : "Interno"],
                 ["Loja de origem", order.sourceStore],
                 ["Valor", formatMoney(order.totalAmount)],
@@ -460,7 +464,13 @@ function OrdersDrawer({
               ].map(([label, value]) => (
                 <div key={label} className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-3">
                   <dt className="text-[var(--color-text-secondary)]">{label}</dt>
-                  <dd className="text-right font-medium text-[var(--color-text-primary)]">{value}</dd>
+                  <dd className="text-right font-medium text-[var(--color-text-primary)]">
+                    {label === "Telefone" ? (
+                      <WhatsAppPhone phone={order.customerPhone} message={orderWhatsAppMessage} className="justify-end" />
+                    ) : (
+                      value
+                    )}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -885,6 +895,14 @@ function SharedOrdersView({
                           <p className="text-sm text-[var(--color-text-secondary)]">
                             {order.customerEmail || order.sourceStore}
                           </p>
+                          {order.customerPhone ? (
+                            <WhatsAppPhone
+                              phone={order.customerPhone}
+                              message={buildOrderWhatsAppMessage(order.number)}
+                              stopPropagation
+                              className="text-xs text-[var(--color-text-secondary)]"
+                            />
+                          ) : null}
                         </div>
                       </div>
                     </td>

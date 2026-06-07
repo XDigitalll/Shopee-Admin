@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { usePathname, useRouter } from "next/navigation";
 
 import { AttentionDot } from "@/components/admin/attention-dot";
+import { WhatsAppLink, WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import {
   AdminBanner,
   AdminConfirmDialog,
@@ -17,6 +18,7 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, formatRelativePercent, humanizeRole } from "@/lib/admin/format";
+import { buildPhoneHref, buildWhatsAppUrl } from "@/lib/admin/whatsapp";
 import { isDeliveryActionRequired } from "@/lib/admin/operational-queue";
 import { canManageDelivery } from "@/lib/admin/permissions";
 import type {
@@ -90,19 +92,6 @@ function formatDuration(minutes: number | null | undefined) {
   return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
 }
 
-function normalizeWhatsappPhone(phone: string | null | undefined) {
-  const digits = (phone || "").replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("258")) return digits;
-  if (digits.length === 9) return `258${digits}`;
-  return digits;
-}
-
-function buildPhoneHref(phone: string | null | undefined) {
-  const trimmed = phone?.trim();
-  return trimmed ? `tel:${trimmed.replace(/\s/g, "")}` : null;
-}
-
 function buildDeliveryAddressUrl(orderNumber: string, phone: string | null | undefined) {
   const url = new URL(`${CLIENT_APP_URL}/delivery-address/${encodeURIComponent(orderNumber)}`);
   if (phone) {
@@ -112,11 +101,9 @@ function buildDeliveryAddressUrl(orderNumber: string, phone: string | null | und
 }
 
 function buildWhatsappAddressRequestUrl(orderNumber: string, phone: string | null | undefined) {
-  const whatsappPhone = normalizeWhatsappPhone(phone);
-  if (!whatsappPhone) return null;
   const addressUrl = buildDeliveryAddressUrl(orderNumber, phone);
   const text = `Ola! A tua encomenda ${orderNumber} ja chegou a Maputo. Para combinarmos a entrega, confirma a tua morada ou partilha a localizacao aqui: ${addressUrl}`;
-  return `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(text)}`;
+  return buildWhatsAppUrl(phone, text);
 }
 
 function DriverContactBadge({
@@ -141,6 +128,11 @@ function DriverContactBadge({
           ) : (
             phone
           )}
+          <WhatsAppLink
+            phone={phone}
+            iconOnly
+            className="ml-1 inline-flex align-middle text-[#128C7E]"
+          />
         </>
       ) : null}
     </span>
@@ -148,10 +140,8 @@ function DriverContactBadge({
 }
 
 function buildWhatsappArrivalNoticeUrl(orderNumber: string, phone: string | null | undefined) {
-  const whatsappPhone = normalizeWhatsappPhone(phone);
-  if (!whatsappPhone) return null;
   const text = `Ola! A tua encomenda ${orderNumber} ja chegou a Maputo. Vamos combinar a entrega contigo pelo telefone informado.`;
-  return `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(text)}`;
+  return buildWhatsAppUrl(phone, text);
 }
 
 function buildCsv(rows: string[][]) {
@@ -682,9 +672,7 @@ function DeliveryAddressDetails({
               <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">{label}</dt>
               <dd className="mt-1 text-sm font-semibold text-[var(--color-text-primary)]">
                 {label === "Telefone" && phone ? (
-                  <a href={`tel:${phone}`} className="text-[var(--color-danger)] hover:underline">
-                    {phone}
-                  </a>
+                  <WhatsAppPhone phone={phone} className="text-[var(--color-danger)]" />
                 ) : (
                   value
                 )}
@@ -1955,12 +1943,7 @@ export function DeliveryDriversView() {
                   <div className="rounded-[22px] bg-[var(--color-background-secondary)] px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Telefone</p>
                     {driver.phone ? (
-                      <a
-                        href={buildPhoneHref(driver.phone) ?? undefined}
-                        className="mt-2 inline-flex text-sm font-semibold text-[var(--color-danger)] hover:underline"
-                      >
-                        {driver.phone}
-                      </a>
+                      <WhatsAppPhone phone={driver.phone} className="mt-2 text-sm font-semibold text-[var(--color-danger)]" />
                     ) : (
                       <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">Sem telefone</p>
                     )}

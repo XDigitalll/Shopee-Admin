@@ -7,8 +7,10 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { AdminConfirmDialog, AdminSectionSkeleton } from "@/components/admin/feedback-state";
+import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizeOrderStatus, humanizePaymentMethod } from "@/lib/admin/format";
+import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
 import type { ExternalOrderDetail, InternalOrderNote, OrderHistoryEntry } from "@/lib/admin/types";
 
 const STANDARD_STATUS_STEPS = [
@@ -387,6 +389,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       }),
     [history]
   );
+  const orderWhatsAppMessage = detail ? buildOrderWhatsAppMessage(detail.number) : "";
 
   async function refreshData() {
     const detailPayload = await adminApiFetch<ExternalOrderDetail>(`/api/admin/orders/${orderId}`);
@@ -703,9 +706,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 </div>
                 <div>
                   <h2 className="font-[family-name:var(--font-sora)] text-2xl font-semibold">{detail.customerName}</h2>
-                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                    {detail.customerEmail} · {detail.customerPhone}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                    <span>{detail.customerEmail}</span>
+                    <span aria-hidden="true">·</span>
+                    <WhatsAppPhone phone={detail.customerPhone} message={orderWhatsAppMessage} />
+                  </div>
                   <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{detail.city || "Cidade não definida"}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${detail.type === "EXTERNAL" ? "bg-[#FFF0E6] text-[#AA4E1C]" : "bg-[#E8F6EB] text-[#185C2E]"}`}>
@@ -977,7 +982,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 </p>
                 <p className="mt-2 text-sm text-[var(--color-text-primary)]">{detail.deliveryAddress || "Sem morada completa"}</p>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Referência: {detail.deliveryReference || "Sem referência"}</p>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Destinatário: {detail.customerName} · {detail.customerPhone}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                  <span>Destinatário: {detail.customerName}</span>
+                  <span aria-hidden="true">·</span>
+                  <WhatsAppPhone phone={detail.customerPhone} message={orderWhatsAppMessage} />
+                </div>
               </div>
               <div>
                 {pickupOrder ? (

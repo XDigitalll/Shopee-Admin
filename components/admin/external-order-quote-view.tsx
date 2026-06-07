@@ -5,10 +5,12 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { AdminConfirmDialog, AdminSectionSkeleton } from "@/components/admin/feedback-state";
+import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney, humanizeOrderStatus } from "@/lib/admin/format";
+import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
 import { canManageFinance, canManageOrders } from "@/lib/admin/permissions";
 import type {
   ExchangeRate,
@@ -16,6 +18,8 @@ import type {
   ExternalOrderDetail,
   ExternalOrderDraft,
   OrderHistoryEntry,
+  QuoteSendOptions,
+  QuoteSendResponse,
   QuoteDefaultsResponse,
   QuoteSubmissionPayload,
 } from "@/lib/admin/types";
@@ -165,6 +169,17 @@ function withComputedTotals(draft: ExternalOrderDraft) {
   };
 }
 
+function buildQuoteSharePreview(orderNumber: string, total: number, quoteUrl = "https://shopeemz.xdigitalmz.com/quote/...") {
+  return `Ola 👋 A tua cotacao da ShopeeMz ja esta pronta.
+
+Pedido: ${orderNumber}
+Total: ${formatMoney(total)}
+Validade: ate 24h
+
+Ve e confirma aqui:
+${quoteUrl}`;
+}
+
 function buildDraft(
   detail: ExternalOrderDetail,
   defaults: QuoteDefaultsResponse
@@ -244,6 +259,15 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const [isRateLoading, setIsRateLoading] = useState(false);
   const [useManualExchangeRate, setUseManualExchangeRate] = useState(false);
   const [error, setError] = useState("");
+  const [quoteSendOpen, setQuoteSendOpen] = useState(false);
+  const [quoteSendOptions, setQuoteSendOptions] = useState<QuoteSendOptions>({
+    sendWhatsapp: true,
+    sendEmail: true,
+    copyOnly: false,
+    validHours: 24,
+  });
+  const [quoteSendResult, setQuoteSendResult] = useState<QuoteSendResponse | null>(null);
+  const [quoteLinkCopied, setQuoteLinkCopied] = useState(false);
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
   const [isRefusing, setIsRefusing] = useState(false);
   const [clarificationOpen, setClarificationOpen] = useState(false);
@@ -452,7 +476,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     }
   }
 
-  async function sendQuote() {
+  async function sendQuote(options: QuoteSendOptions) {
     if (!detail || !draft) return;
 
     if (detail.needsClarification || detail.activeClarificationRequest?.status === "PENDING") {
@@ -501,6 +525,16 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         body: JSON.stringify(payload),
       });
 
+      const result = await adminApiFetch<QuoteSendResponse>(`/api/admin/orders/${orderId}/quote/send`, {
+        method: "POST",
+        body: JSON.stringify(options),
+      });
+
+      setQuoteSendResult(result);
+      setQuoteSendOpen(true);
+      setQuoteLinkCopied(false);
+      await refreshQuoteData();
+
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(
           "admin_quotes_notice",
@@ -508,9 +542,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
             ? "Cotacao actualizada com sucesso."
             : "Cotacao enviada ao cliente com sucesso."
         );
+        if (options.sendWhatsapp && result.whatsappUrl) {
+          window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+        }
       }
 
-      router.push("/admin/external-quotes");
       router.refresh();
     } catch (sendError) {
       setError(
@@ -570,6 +606,16 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     !isRateLoading &&
     !pendingClarification &&
     (useManualExchangeRate ? manualRateValue > 0 : activeRateValue > 0);
+  const orderWhatsAppMessage = buildOrderWhatsAppMessage(detail.number);
+  const quotePreviewMessage = buildQuoteSharePreview(detail.number, summary.totalFinal, quoteSendResult?.quoteUrl);
+  const displayedQuoteSentAt = quoteSendResult?.quoteSentAt || detail.quoteSentAt || detail.latestQuoteSentAt || null;
+  const displayedQuoteExpiresAt = quoteSendResult?.quoteTokenExpiresAt || detail.quoteTokenExpiresAt || null;
+
+  async function copyQuoteLink() {
+    if (!quoteSendResult?.quoteUrl || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(quoteSendResult.quoteUrl);
+    setQuoteLinkCopied(true);
+  }
 
   return (
     <div className="space-y-6">
@@ -647,9 +693,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   <h2 className="font-[family-name:var(--font-sora)] text-2xl font-semibold">
                     {detail.customerName}
                   </h2>
-                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                    {detail.customerEmail} · {detail.customerPhone}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                    <span>{detail.customerEmail}</span>
+                    <span aria-hidden="true">·</span>
+                    <WhatsAppPhone phone={detail.customerPhone} message={orderWhatsAppMessage} />
+                  </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span
                       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusTheme(detail.type)}`}
@@ -1183,11 +1231,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               <button
                 type="button"
                 disabled={!canSubmitQuote || !canSendQuote}
-                onClick={() =>
-                  startTransition(async () => {
-                    await sendQuote();
-                  })
-                }
+                onClick={() => {
+                  setQuoteSendResult(null);
+                  setQuoteLinkCopied(false);
+                  setQuoteSendOpen(true);
+                }}
                 className="admin-button-danger justify-center"
               >
                 {isPending
@@ -1226,6 +1274,42 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 </p>
               ) : null}
             </div>
+
+            {(detail.quoteSentAt || quoteSendResult) ? (
+              <div className="mt-6 rounded-2xl border border-[#BFE8C8] bg-[#F0FFF4] px-4 py-4 text-sm text-[#14532D]">
+                <p className="font-semibold">Cotacao enviada</p>
+                <p className="mt-1">
+                  {displayedQuoteSentAt ? formatDate(displayedQuoteSentAt) : "Data indisponivel"}
+                  {displayedQuoteExpiresAt
+                    ? ` · Valida ate ${formatDate(displayedQuoteExpiresAt)}`
+                    : ""}
+                </p>
+                {quoteSendResult?.channels?.length ? (
+                  <p className="mt-1">Canais: {quoteSendResult.channels.join(", ")}</p>
+                ) : null}
+                {quoteSendResult?.quoteUrl ? (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyQuoteLink()}
+                      className="admin-button-muted justify-center"
+                    >
+                      {quoteLinkCopied ? "Link copiado" : "Copiar link da cotacao"}
+                    </button>
+                    {quoteSendResult.whatsappUrl ? (
+                      <a
+                        href={quoteSendResult.whatsappUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="admin-button-danger justify-center"
+                      >
+                        Abrir WhatsApp
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-8 border-t border-[var(--color-border)] pt-5">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
@@ -1352,6 +1436,125 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         }}
         onConfirm={() => void refuseOrder()}
       />
+      {quoteSendOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                  Enviar cotacao
+                </p>
+                <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">
+                  Escolher canais do cliente
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isPending) setQuoteSendOpen(false);
+                }}
+                className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--color-text-secondary)]"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {[
+                ["sendWhatsapp", "WhatsApp"],
+                ["sendEmail", "Email"],
+                ["copyOnly", "Copiar link apenas"],
+              ].map(([key, label]) => (
+                <label
+                  key={key}
+                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(quoteSendOptions[key as keyof QuoteSendOptions])}
+                    onChange={(event) =>
+                      setQuoteSendOptions((current) => ({
+                        ...current,
+                        [key]: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 accent-[var(--color-danger)]"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+
+            <label className="mt-5 block max-w-[220px]">
+              <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
+                Validade em horas
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={quoteSendOptions.validHours}
+                onChange={(event) =>
+                  setQuoteSendOptions((current) => ({
+                    ...current,
+                    validHours: Math.max(1, Math.min(168, Number(event.target.value || 24))),
+                  }))
+                }
+                className="admin-input h-11 rounded-2xl px-3 py-2 text-sm"
+              />
+            </label>
+
+            <div className="mt-5 rounded-2xl bg-[var(--color-background-tertiary)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-danger)]">
+                Preview WhatsApp
+              </p>
+              <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--color-text-primary)]">
+                {quotePreviewMessage}
+              </pre>
+            </div>
+
+            {quoteSendResult ? (
+              <div className="mt-5 rounded-2xl border border-[#BFE8C8] bg-[#F0FFF4] px-4 py-3 text-sm text-[#14532D]">
+                <p className="font-semibold">Cotacao enviada.</p>
+                <p className="mt-1">Email: {quoteSendResult.emailSent ? "enviado" : "nao enviado ou sem email"}</p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <button type="button" onClick={() => void copyQuoteLink()} className="admin-button-muted justify-center">
+                    {quoteLinkCopied ? "Link copiado" : "Copiar link da cotacao"}
+                  </button>
+                  {quoteSendResult.whatsappUrl ? (
+                    <a href={quoteSendResult.whatsappUrl} target="_blank" rel="noreferrer" className="admin-button-danger justify-center">
+                      Abrir WhatsApp
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setQuoteSendOpen(false)}
+                className="admin-button-muted justify-center disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isPending || (!quoteSendOptions.sendWhatsapp && !quoteSendOptions.sendEmail && !quoteSendOptions.copyOnly)}
+                onClick={() =>
+                  startTransition(async () => {
+                    await sendQuote(quoteSendOptions);
+                  })
+                }
+                className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isPending ? "A enviar..." : "Enviar cotacao ao cliente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

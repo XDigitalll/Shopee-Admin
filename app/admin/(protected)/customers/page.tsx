@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AdminListLoadingOverlay } from "@/components/admin/feedback-state";
+import { WhatsAppLink, WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney } from "@/lib/admin/format";
 import type {
@@ -301,7 +302,12 @@ function SidePanel({
               {customer.name}
             </p>
             <p className="text-xs truncate" style={{ color: "var(--color-text-secondary)" }}>{customer.email}</p>
-            {customer.phoneNumber && <p className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>{customer.phoneNumber}</p>}
+            {customer.phoneNumber && (
+              <WhatsAppPhone
+                phone={customer.phoneNumber}
+                className="text-xs text-[var(--color-text-tertiary)]"
+              />
+            )}
           </div>
         </div>
         <button type="button" onClick={onClose} className="mt-0.5 rounded-full p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-background-secondary)]">
@@ -336,6 +342,21 @@ function SidePanel({
       </div>
 
       <div className="mx-5 border-t border-[var(--color-border)]" />
+
+      <div className="flex flex-wrap gap-2 px-5 pt-4">
+        {customer.phoneNumber ? (
+          <WhatsAppLink
+            phone={customer.phoneNumber}
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[#128C7E] hover:bg-[#EAF7EF]"
+          >
+            Falar no WhatsApp
+          </WhatsAppLink>
+        ) : (
+          <span className="rounded-full bg-[var(--color-background-secondary)] px-3 py-2 text-xs text-[var(--color-text-tertiary)]">
+            Sem WhatsApp valido
+          </span>
+        )}
+      </div>
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-2 p-5">
@@ -800,7 +821,11 @@ export default function CustomersPage() {
                       </div>
 
                       {/* Phone */}
-                      <span className="text-xs text-[var(--color-text-secondary)] truncate">{c.phoneNumber || "—"}</span>
+                      <WhatsAppPhone
+                        phone={c.phoneNumber}
+                        stopPropagation
+                        className="text-xs text-[var(--color-text-secondary)]"
+                      />
 
                       {/* Orders */}
                       <span className="text-center font-[family-name:var(--font-sora)] text-sm font-bold" style={{ color: "var(--color-text-primary)" }}>{c.orderCount}</span>

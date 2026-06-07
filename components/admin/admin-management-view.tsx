@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { DeliveryIcon, ImageIcon, LayersIcon, LockIcon, OrdersIcon, PlusIcon, QuoteIcon, ShieldIcon, UsersIcon, WalletIcon, BoxIcon, ChartIcon } from "@/components/admin/icons";
+import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, humanizeRole } from "@/lib/admin/format";
@@ -406,7 +407,7 @@ function DetailsPanel({
             {isCurrentUser ? <span className="rounded-full bg-[#EEEDFE] px-2.5 py-1 text-[11px] font-semibold text-[#3C3489]">Você</span> : null}
           </div>
           <p className="mt-1 break-all text-sm text-[var(--color-text-secondary)]">{admin.email}</p>
-          <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">{admin.phone ?? "Sem telefone"}</p>
+          <WhatsAppPhone phone={admin.phone} className="mt-1 text-sm text-[var(--color-text-tertiary)]" />
         </div>
       </div>
 
