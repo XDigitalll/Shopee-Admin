@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
-import type { CreateExternalOrderPayload } from "@/lib/admin/types";
+import type { AdminCustomer, CreateExternalOrderPayload, CustomersPageResponse } from "@/lib/admin/types";
 
 const STORE_OPTIONS: Array<{ value: CreateExternalOrderPayload["sourceStore"]; label: string }> = [
   { value: "SHEIN", label: "Shein" },
@@ -49,6 +49,8 @@ export function ExternalOrderCreateView() {
   const [form, setForm] = useState<ExternalOrderFormState>(INITIAL_FORM);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [matchedCustomer, setMatchedCustomer] = useState<AdminCustomer | null>(null);
+  const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const storeLabel = useMemo(
@@ -61,6 +63,61 @@ export function ExternalOrderCreateView() {
     value: ExternalOrderFormState[Key]
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  useEffect(() => {
+    const email = (form.email || "").trim();
+    const phone = (form.primaryPhoneNumber || "").replace(/\D/g, "");
+    const query = email.includes("@") ? email : phone.length >= 8 ? form.primaryPhoneNumber.trim() : "";
+
+    if (!query) {
+      setMatchedCustomer(null);
+      setIsSearchingCustomer(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setIsSearchingCustomer(true);
+      try {
+        const result = await adminApiFetch<CustomersPageResponse>(
+          `/api/admin/customers?search=${encodeURIComponent(query)}&page=0&size=1`
+        );
+        if (!cancelled) {
+          setMatchedCustomer(result.content[0] ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setMatchedCustomer(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSearchingCustomer(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.email, form.primaryPhoneNumber]);
+
+  function useMatchedCustomer() {
+    if (!matchedCustomer) return;
+    setForm((current) => ({
+      ...current,
+      fullName: matchedCustomer.name || current.fullName,
+      primaryPhoneNumber: matchedCustomer.phoneNumber || current.primaryPhoneNumber,
+      alternativePhoneNumber: matchedCustomer.alternativePhoneNumber || current.alternativePhoneNumber,
+      email: matchedCustomer.email?.endsWith("@xdigital.local") ? current.email : matchedCustomer.email || current.email,
+      city: matchedCustomer.deliveryCity || matchedCustomer.city || current.city,
+      neighborhood: matchedCustomer.deliveryNeighborhood || current.neighborhood,
+      street: matchedCustomer.deliveryStreet || current.street,
+      houseNumber: matchedCustomer.houseNumber || current.houseNumber,
+      deliveryReference: matchedCustomer.deliveryReference || current.deliveryReference,
+      googleMapsLink: matchedCustomer.googleMapsLink || current.googleMapsLink,
+    }));
   }
 
   async function handleSubmit() {
@@ -257,6 +314,29 @@ export function ExternalOrderCreateView() {
                 />
               </label>
             </div>
+
+            {isSearchingCustomer ? (
+              <div className="mt-4 rounded-[20px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+                A procurar cliente existente...
+              </div>
+            ) : matchedCustomer ? (
+              <div className="mt-4 rounded-[20px] border border-[#BFE8C8] bg-[#F0FFF4] px-4 py-4 text-sm text-[#14532D]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">Cliente encontrado</p>
+                    <p className="mt-1">
+                      {matchedCustomer.name} · {matchedCustomer.phoneNumber || "Sem telefone"} · {matchedCustomer.email || "Sem email"}
+                    </p>
+                    <p className="mt-1 text-xs">
+                      Historico: {matchedCustomer.orderCount} pedido(s)
+                    </p>
+                  </div>
+                  <button type="button" onClick={useMatchedCustomer} className="admin-button-muted justify-center">
+                    Usar este cliente
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section className="admin-card p-6">

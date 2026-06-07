@@ -73,6 +73,7 @@ export type AdminOrderListItem = {
   number: string;
   customer: string;
   customerEmail: string;
+  customerPhone: string | null;
   customerInitials: string;
   type: "EXTERNAL" | "INTERNAL";
   totalAmount: number;
@@ -370,6 +371,11 @@ export type ExternalOrderDetail = {
   suggestedBaseAmount: number;
   externalItems: ExternalOrderLineItem[];
   latestQuoteSentAt: string | null;
+  quoteSentAt?: string | null;
+  quoteTokenExpiresAt?: string | null;
+  quoteAcceptedAt?: string | null;
+  quoteRejectedAt?: string | null;
+  quoteRejectedReason?: string | null;
   quoteDraft: ExternalOrderDraft | null;
   city: string;
   deliveryAddress: string;
@@ -431,6 +437,22 @@ export type QuoteSubmissionPayload = {
   urgentAmount?: number;
   notes: string;
   validityDate: string;
+};
+
+export type QuoteSendOptions = {
+  sendWhatsapp: boolean;
+  sendEmail: boolean;
+  copyOnly: boolean;
+  validHours: number;
+};
+
+export type QuoteSendResponse = {
+  quoteUrl: string;
+  whatsappUrl: string | null;
+  emailSent: boolean;
+  quoteSentAt: string | null;
+  quoteTokenExpiresAt: string | null;
+  channels: string[];
 };
 
 export type CurrencyCode = "USD" | "ZAR" | "MZN";
@@ -948,6 +970,12 @@ export type AdminCustomer = {
   communicationVerified: boolean | null;
   whatsappSameAsPrimary: boolean | null;
   effectiveCommunicationPhone: string | null;
+};
+
+export type AdminCustomerPasswordResetResponse = {
+  resetUrl: string;
+  expiresAt: string;
+  emailSent: boolean;
 };
 
 export type CustomerStats = {

@@ -35,6 +35,8 @@ type BackendOrder = {
   orderCode?: string | null;
   customerEmail?: string;
   customerFullName?: string;
+  primaryPhoneNumber?: string | null;
+  customerPhone?: string | null;
   type?: "EXTERNAL" | "INTERNAL";
   deliveryMethod?: "DELIVERY" | "STORE_PICKUP" | null;
   totalAmount?: number;
@@ -124,6 +126,7 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     number: getOrderNumber(order),
     customer,
     customerEmail: order.customerEmail ?? "",
+    customerPhone: order.primaryPhoneNumber ?? order.customerPhone ?? null,
     customerInitials: getInitials(customer),
     type: order.type ?? "INTERNAL",
     totalAmount: finalOrderTotal(order),
@@ -234,6 +237,7 @@ function matchesSearch(order: AdminOrderListItem, rawSearch: string | null) {
     order.number.toLowerCase(),
     order.customer.toLowerCase(),
     order.customerEmail.toLowerCase(),
+    (order.customerPhone ?? "").toLowerCase(),
     order.sourceStore.toLowerCase(),
     String(order.id),
   ].some((value) => value.includes(search));

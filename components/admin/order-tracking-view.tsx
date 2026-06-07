@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import {
   AdminConfirmDialog,
@@ -10,9 +10,11 @@ import {
   AdminSectionSkeleton,
   AdminStateCard,
 } from "@/components/admin/feedback-state";
+import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney } from "@/lib/admin/format";
+import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
 import type { ExternalOrderDetail, TrackingHistoryEntry } from "@/lib/admin/types";
 
 const ALLOWED_ROLES = new Set(["ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"]);
@@ -131,13 +133,7 @@ export function OrderTrackingView({ orderId }: { orderId: string }) {
     };
   }, [allowed, orderId]);
 
-  const destinationSummary = useMemo(() => {
-    if (!detail) {
-      return "";
-    }
-
-    return [detail.customerName, detail.customerPhone].filter(Boolean).join(" · ");
-  }, [detail]);
+  const orderWhatsAppMessage = detail ? buildOrderWhatsAppMessage(detail.number) : "";
 
   async function refreshHistory() {
     const payload = await adminApiFetch<TrackingHistoryEntry[]>(`/api/admin/orders/${orderId}/tracking-history`);
@@ -250,13 +246,21 @@ export function OrderTrackingView({ orderId }: { orderId: string }) {
                 <p className="text-sm font-medium text-[var(--color-text-secondary)]">Cliente</p>
                 <p className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">{detail.customerName}</p>
                 <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{detail.customerEmail || "Sem email"}</p>
-                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{detail.customerPhone || "Sem telefone"}</p>
+                <WhatsAppPhone
+                  phone={detail.customerPhone}
+                  message={orderWhatsAppMessage}
+                  className="mt-1 text-sm text-[var(--color-text-secondary)]"
+                />
               </div>
               <div className="rounded-[24px] bg-[var(--color-background-tertiary)] p-5">
                 <p className="text-sm font-medium text-[var(--color-text-secondary)]">Entrega</p>
                 <p className="mt-2 text-sm text-[var(--color-text-primary)]">{detail.deliveryAddress || "Sem morada completa"}</p>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Referencia: {detail.deliveryReference || "Sem referencia"}</p>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Destinatario: {destinationSummary || "Sem destinatario"}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                  <span>Destinatario: {detail.customerName}</span>
+                  <span aria-hidden="true">·</span>
+                  <WhatsAppPhone phone={detail.customerPhone} message={orderWhatsAppMessage} />
+                </div>
               </div>
             </div>
             <div className="mt-5 rounded-[24px] bg-[var(--color-background-tertiary)] p-5">

@@ -127,6 +127,11 @@ type BackendOrderDetail = {
   deliveryFee?: number | null;
   couponCode?: string | null;
   discountAmount?: number | null;
+  quoteSentAt?: string | null;
+  quoteTokenExpiresAt?: string | null;
+  quoteAcceptedAt?: string | null;
+  quoteRejectedAt?: string | null;
+  quoteRejectedReason?: string | null;
   activeQuote?: {
     quotedAt?: string | null;
     finalAmountMzn?: number | null;
@@ -666,7 +671,12 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     totalAfterDiscount: order.totalAfterDiscount ?? null,
     suggestedBaseAmount,
     externalItems,
-    latestQuoteSentAt: externalOrder ? historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null : null,
+    latestQuoteSentAt: externalOrder ? order.quoteSentAt ?? historyPayload?.[0]?.quotedAt ?? order.activeQuote?.quotedAt ?? null : null,
+    quoteSentAt: externalOrder ? order.quoteSentAt ?? null : null,
+    quoteTokenExpiresAt: externalOrder ? order.quoteTokenExpiresAt ?? null : null,
+    quoteAcceptedAt: externalOrder ? order.quoteAcceptedAt ?? null : null,
+    quoteRejectedAt: externalOrder ? order.quoteRejectedAt ?? null : null,
+    quoteRejectedReason: externalOrder ? order.quoteRejectedReason ?? null : null,
     quoteDraft: externalOrder ? (quoteDraftPayload ?? (order.activeQuote?.productPrice != null
       ? {
           baseAmount: Number(order.activeQuote.productPrice),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney } from "@/lib/admin/format";
 import type { AdminPaymentListItem, AdminPaymentsPageResponse } from "@/lib/admin/types";
@@ -175,7 +176,14 @@ function DetailDrawer({
               <Row label="Pedido" value={item.orderNumber || String(item.orderId)} />
               <Row label="Cliente" value={item.customerName || "—"} />
               {item.customerEmail ? <Row label="Email" value={item.customerEmail} /> : null}
-              {item.customerPhone ? <Row label="Telefone" value={item.customerPhone} /> : null}
+              {item.customerPhone ? (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[var(--color-text-secondary)]">Telefone</span>
+                  <strong className="text-right text-[var(--color-text-primary)]">
+                    <WhatsAppPhone phone={item.customerPhone} />
+                  </strong>
+                </div>
+              ) : null}
             </div>
           </section>
 
