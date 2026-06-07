@@ -104,7 +104,10 @@ type BackendOrderDetail = {
   requestScreenshotUrl?: string | null;
   requestScreenshotUrls?: string[] | null;
   needsCustomerCorrection?: boolean | null;
+  needsClarification?: boolean | null;
   customerCorrectionNote?: string | null;
+  activeClarificationRequest?: ExternalOrderDetail["activeClarificationRequest"] | null;
+  latestClarificationRequest?: ExternalOrderDetail["latestClarificationRequest"] | null;
   customerEditable?: boolean | null;
   purchaseProofUrl?: string | null;
   purchaseProofUploadedAt?: string | null;
@@ -642,7 +645,10 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
           : []
       : [],
     needsCustomerCorrection: externalOrder ? Boolean(order.needsCustomerCorrection) : false,
+    needsClarification: externalOrder ? Boolean(order.needsClarification) : false,
     customerCorrectionNote: externalOrder ? order.customerCorrectionNote ?? null : null,
+    activeClarificationRequest: externalOrder ? order.activeClarificationRequest ?? null : null,
+    latestClarificationRequest: externalOrder ? order.latestClarificationRequest ?? null : null,
     customerEditable: externalOrder ? Boolean(order.customerEditable) : false,
     purchaseProofUrl: externalOrder ? order.purchaseProofUrl ?? null : null,
     purchaseProofUploadedAt: externalOrder ? order.purchaseProofUploadedAt ?? null : null,
