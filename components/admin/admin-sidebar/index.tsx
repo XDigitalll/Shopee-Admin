@@ -244,6 +244,7 @@ export function AdminSidebar({
   const [temporaryPasswordCleared, setTemporaryPasswordCleared] = useState(false);
   const [productAttention, setProductAttention] = useState<ProductAttentionResponse>({ count: 0, lowStockCount: 0, outOfStockCount: 0, items: [] });
   const [productAttentionOpen, setProductAttentionOpen] = useState(false);
+  const [quoteCustomerRespondedCount, setQuoteCustomerRespondedCount] = useState(0);
   const mustChangePassword = Boolean(profile.mustChangePassword) && !temporaryPasswordCleared;
 
   useEffect(() => {
@@ -284,6 +285,34 @@ export function AdminSidebar({
     };
   }, [profile, pathname]);
 
+  useEffect(() => {
+    if (!hasPermission(profile, "quotes")) {
+      setQuoteCustomerRespondedCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadQuoteAttention() {
+      try {
+        const payload = await adminApiFetch<{ customerRespondedCount?: number }>("/api/admin/quotes/stats");
+        if (!cancelled) {
+          setQuoteCustomerRespondedCount(Number(payload.customerRespondedCount ?? 0));
+        }
+      } catch {
+        if (!cancelled) {
+          setQuoteCustomerRespondedCount(0);
+        }
+      }
+    }
+
+    void loadQuoteAttention();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, pathname]);
+
   function canShowNavItem(item: SidebarItem) {
     if (item.roles && !canPerform(profile, item.roles)) {
       return false;
@@ -301,6 +330,7 @@ export function AdminSidebar({
         : pathname === item.href || pathname.startsWith(`${item.href}/`);
     const count = item.counterKey ? counters[item.counterKey] : null;
     const isProductsItem = item.module === "products" && item.href === "/admin/products";
+    const isQuotesItem = item.module === "quotes" && item.href === "/admin/external-quotes";
     const productAttentionCount = Number(productAttention.lowStockCount ?? 0);
     const productAttentionTitle = `${productAttentionCount} ${productAttentionCount === 1 ? "produto com" : "produtos com"} stock baixo`;
     const Icon = item.icon;
@@ -340,6 +370,16 @@ export function AdminSidebar({
               className="min-w-5 shrink-0 rounded-full bg-[#F97316] px-1.5 py-0.5 text-center text-[10px] font-black leading-4 text-white shadow-[0_0_0_4px_rgba(249,115,22,0.16),0_0_14px_rgba(249,115,22,0.55)] outline-none ring-offset-2 ring-offset-[#111827] focus:ring-2 focus:ring-[#FDBA74]"
             >
               {productAttentionCount > 99 ? "99+" : productAttentionCount}
+            </span>
+          ) : null}
+          {isQuotesItem && quoteCustomerRespondedCount > 0 ? (
+            <span
+              aria-label={`${quoteCustomerRespondedCount} resposta(s) nova(s) de cliente`}
+              title={`${quoteCustomerRespondedCount} resposta(s) nova(s) de cliente`}
+              className="relative flex h-2.5 w-2.5 shrink-0"
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#E8431A] opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#E8431A]" />
             </span>
           ) : null}
           {typeof count === "number" && count > 0 ? (

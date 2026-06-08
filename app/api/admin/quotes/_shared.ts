@@ -37,6 +37,15 @@ type BackendOrder = {
   orderDate?: string;
   externalCartUrl?: string | null;
   sourceStore?: string | null;
+  needsClarification?: boolean | null;
+  activeClarificationRequest?: {
+    id?: number | null;
+    status?: string | null;
+    message?: string | null;
+    requestedFields?: string[] | null;
+    answeredAt?: string | null;
+    adminSeenAt?: string | null;
+  } | null;
   activeQuote?: {
     quotedAt?: string | null;
     finalAmountMzn?: number | null;
@@ -186,9 +195,24 @@ async function fetchExternalOrders(request: NextRequest) {
 function buildQuoteCardBase(order: BackendOrder) {
   const hasDraft = false;
   const status = normalizeQuoteStatus(order, hasDraft);
-  const quoteQueueStatus = order.quoteQueueStatus ?? (
+
+  // If admin requested clarification, classifier already returns WAITING_CUSTOMER
+  // but the backend quoteQueueStatus field may still show the old value.
+  // We override it here to stay in sync with the classifier logic.
+  let quoteQueueStatus = order.quoteQueueStatus ?? (
     status === "REJECTED" ? "ARCHIVED" : status === "SENT" ? "WAITING_CUSTOMER" : "QUOTE_ANALYSIS"
   );
+  if (
+    order.needsClarification === true &&
+    (quoteQueueStatus === "QUOTE_ANALYSIS" || quoteQueueStatus === "WAITING_CUSTOMER")
+  ) {
+    quoteQueueStatus = "WAITING_CUSTOMER";
+  }
+
+  const clarificationStatus = (order.activeClarificationRequest?.status as "PENDING" | "ANSWERED" | "CANCELLED" | undefined) ?? null;
+  const clarificationId = order.activeClarificationRequest?.id ?? null;
+  const clarificationAdminSeenAt = order.activeClarificationRequest?.adminSeenAt ?? null;
+
   const createdAt = order.orderDate ?? new Date().toISOString();
   const itemNames = extractSummaryItems(order.externalCartUrl);
   const actionRequired = Boolean(
@@ -218,6 +242,9 @@ function buildQuoteCardBase(order: BackendOrder) {
     urgent: needsAnalysisAttention(createdAt, status),
     quoteSentAt: order.activeQuote?.quotedAt ?? null,
     validityDate: estimateValidityDate(order.activeQuote?.quotedAt ?? null),
+    clarificationStatus,
+    clarificationId,
+    clarificationAdminSeenAt,
   } satisfies AdminQuoteListItem;
 }
 
@@ -296,6 +323,11 @@ export async function getQuoteStats(request: NextRequest): Promise<AdminQuoteSta
     waitingPayment: cards.filter((item) => item.quoteQueueStatus === "WAITING_PAYMENT").length,
     toPurchase: cards.filter((item) => item.quoteQueueStatus === "TO_PURCHASE").length,
     archived: cards.filter((item) => item.quoteQueueStatus === "ARCHIVED").length,
+    customerRespondedCount: cards.filter(
+      (item) =>
+        item.clarificationStatus === "ANSWERED" &&
+        item.clarificationAdminSeenAt == null
+    ).length,
   };
 }
 
@@ -368,6 +400,16 @@ export async function getQuoteDetail(request: NextRequest, id: string) {
     },
     rejectReason:
       status === "REJECTED" ? "Pedido recusado ou cancelado antes do envio da cotação." : null,
+    activeClarificationRequest: detail.activeClarificationRequest
+      ? {
+          id: detail.activeClarificationRequest.id,
+          status: detail.activeClarificationRequest.status as "PENDING" | "ANSWERED" | "CANCELLED",
+          message: detail.activeClarificationRequest.message ?? null,
+          requestedFields: (detail.activeClarificationRequest.requestedFields as string[]) ?? [],
+          answeredAt: detail.activeClarificationRequest.answeredAt ?? null,
+          adminSeenAt: detail.activeClarificationRequest.adminSeenAt ?? null,
+        }
+      : null,
   };
 
   return { detail: response };
