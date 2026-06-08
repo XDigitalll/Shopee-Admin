@@ -316,6 +316,7 @@ export type OrderClarificationRequest = {
   photoUrls: string[];
   createdAt: string;
   answeredAt: string | null;
+  adminSeenAt?: string | null;
 };
 
 export type ExternalOrderDetail = {
