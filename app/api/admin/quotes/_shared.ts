@@ -212,6 +212,9 @@ function buildQuoteCardBase(order: BackendOrder) {
   const clarificationStatus = (order.activeClarificationRequest?.status as "PENDING" | "ANSWERED" | "CANCELLED" | undefined) ?? null;
   const clarificationId = order.activeClarificationRequest?.id ?? null;
   const clarificationAdminSeenAt = order.activeClarificationRequest?.adminSeenAt ?? null;
+  if (clarificationStatus === "ANSWERED" && quoteQueueStatus === "WAITING_CUSTOMER") {
+    quoteQueueStatus = "QUOTE_ANALYSIS";
+  }
 
   const createdAt = order.orderDate ?? new Date().toISOString();
   const itemNames = extractSummaryItems(order.externalCartUrl);
@@ -272,6 +275,32 @@ function filterQuotes(items: AdminQuoteListItem[], filters: AdminQuotesFilterSta
   }
 
   filtered.sort((left, right) => {
+    const leftCustomerResponded =
+      left.clarificationStatus === "ANSWERED" && left.clarificationAdminSeenAt == null;
+    const rightCustomerResponded =
+      right.clarificationStatus === "ANSWERED" && right.clarificationAdminSeenAt == null;
+
+    if (leftCustomerResponded !== rightCustomerResponded) {
+      return leftCustomerResponded ? -1 : 1;
+    }
+
+    const queuePriority: Record<AdminQuoteListItem["quoteQueueStatus"], number> = {
+      QUOTE_ANALYSIS: 1,
+      WAITING_CUSTOMER: 2,
+      WAITING_PAYMENT: 3,
+      TO_PURCHASE: 4,
+      PURCHASED: 5,
+      IN_TRANSIT: 6,
+      ARRIVED: 7,
+      ARCHIVED: 8,
+    };
+    const priorityDiff =
+      (queuePriority[left.quoteQueueStatus] ?? 99) - (queuePriority[right.quoteQueueStatus] ?? 99);
+
+    if (priorityDiff !== 0 && filters.sort !== "VALUE") {
+      return priorityDiff;
+    }
+
     if (filters.sort === "VALUE") {
       return right.estimatedValue - left.estimatedValue;
     }

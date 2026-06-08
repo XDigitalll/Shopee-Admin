@@ -94,9 +94,9 @@ const CLARIFICATION_FIELDS: Array<{ value: ClarificationField; label: string }> 
   { value: "SIZE", label: "Tamanho" },
   { value: "COLOR", label: "Cor" },
   { value: "MODEL", label: "Modelo" },
-  { value: "STORAGE", label: "Memoria/capacidade" },
+  { value: "STORAGE", label: "Memória/capacidade" },
   { value: "LINK", label: "Link correto" },
-  { value: "PHOTO", label: "Fotos/screenshots" },
+  { value: "PHOTO", label: "Fotos ou capturas de ecrã" },
   { value: "OTHER", label: "Outro detalhe" },
 ];
 
@@ -105,9 +105,9 @@ const CLARIFICATION_LABELS: Record<string, string> = {
   COLOR: "Cor",
   MODEL: "Modelo",
   QUANTITY: "Quantidade",
-  STORAGE: "Memoria/capacidade",
+  STORAGE: "Memória/capacidade",
   LINK: "Link correto",
-  PHOTO: "Fotos/screenshots",
+  PHOTO: "Fotos ou capturas de ecrã",
   OTHER: "Outro detalhe",
 };
 
@@ -273,8 +273,10 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const [clarificationOpen, setClarificationOpen] = useState(false);
   const [clarificationFields, setClarificationFields] = useState<ClarificationField[]>(["SIZE"]);
   const [clarificationMessage, setClarificationMessage] = useState(
-    "Precisamos confirmar alguns detalhes antes de cotar."
+    "Precisamos confirmar alguns detalhes antes de preparar a tua cotação."
   );
+  const [clarificationValidationError, setClarificationValidationError] = useState("");
+  const [clarificationToast, setClarificationToast] = useState("");
   const [isRequestingClarification, setIsRequestingClarification] = useState(false);
   const [isPending, startTransition] = useTransition();
   const canSubmitQuote = canManageOrders(profile);
@@ -394,6 +396,13 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     setUseManualExchangeRate(false);
   }, [canUseManualExchangeRate]);
 
+  useEffect(() => {
+    if (!clarificationToast) return;
+
+    const timer = window.setTimeout(() => setClarificationToast(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [clarificationToast]);
+
   function updateDraft(next: Partial<ExternalOrderDraft>) {
     setDraft((current) => {
       if (!current) {
@@ -443,6 +452,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   }
 
   function toggleClarificationField(field: ClarificationField) {
+    setClarificationValidationError("");
     setClarificationFields((current) =>
       current.includes(field)
         ? current.filter((item) => item !== field)
@@ -451,7 +461,12 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   }
 
   async function requestClarification() {
-    if (!detail || clarificationFields.length === 0) return;
+    if (!detail) return;
+
+    if (clarificationFields.length === 0) {
+      setClarificationValidationError("Seleciona pelo menos uma informação para pedir ao cliente.");
+      return;
+    }
 
     setIsRequestingClarification(true);
     try {
@@ -464,6 +479,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
       });
       await refreshQuoteData();
       setClarificationOpen(false);
+      setClarificationValidationError("");
+      setClarificationToast("Pedido de detalhes enviado ao cliente.");
       setError("");
     } catch (clarificationError) {
       setError(
@@ -619,6 +636,17 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
   return (
     <div className="space-y-6">
+      {clarificationToast ? (
+        <div
+          className="fixed bottom-6 right-6 z-[60] rounded-2xl px-5 py-3 text-sm font-semibold shadow-xl"
+          style={{ background: "#D1FAE5", color: "#065F46" }}
+          role="status"
+          aria-live="polite"
+        >
+          {clarificationToast}
+        </div>
+      ) : null}
+
       <section className="sticky top-[88px] z-10 rounded-[28px] border border-[var(--color-border)] bg-[color:var(--color-surface-overlay)]/95 px-6 py-5 backdrop-blur-xl">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -1349,58 +1377,70 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         </aside>
       </div>
       {clarificationOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
-                  Pedido ao cliente
+                  PEDIR DETALHES AO CLIENTE
                 </p>
-                <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">
-                  Que informacoes faltam?
+                <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
+                  Que informações faltam?
                 </h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+                  Seleciona os detalhes que o cliente precisa confirmar antes de preparares a cotação.
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   if (!isRequestingClarification) setClarificationOpen(false);
                 }}
-                className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--color-text-secondary)]"
+                className="admin-button-muted shrink-0 px-4 py-2 text-sm"
               >
                 Fechar
               </button>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {CLARIFICATION_FIELDS.map((field) => (
-                <label
-                  key={field.value}
-                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold"
-                >
-                  <input
-                    type="checkbox"
-                    checked={clarificationFields.includes(field.value)}
-                    onChange={() => toggleClarificationField(field.value)}
-                    className="h-4 w-4 accent-[var(--color-danger)]"
-                  />
-                  {field.label}
-                </label>
-              ))}
+            <div className="overflow-y-auto px-6 py-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {CLARIFICATION_FIELDS.map((field) => (
+                  <label
+                    key={field.value}
+                    className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-primary)]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={clarificationFields.includes(field.value)}
+                      onChange={() => toggleClarificationField(field.value)}
+                      className="h-4 w-4 shrink-0 accent-[var(--color-danger)]"
+                    />
+                    <span>{field.label}</span>
+                  </label>
+                ))}
+              </div>
+
+              {clarificationValidationError ? (
+                <p className="mt-3 text-sm font-semibold text-[var(--color-danger)]" role="alert">
+                  {clarificationValidationError}
+                </p>
+              ) : null}
+
+              <label className="mt-5 block">
+                <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">
+                  Mensagem para o cliente
+                </span>
+                <textarea
+                  value={clarificationMessage}
+                  onChange={(event) => setClarificationMessage(event.target.value)}
+                  rows={4}
+                  className="admin-input min-h-[104px] resize-y"
+                  placeholder="Ex.: Precisamos confirmar o tamanho e a cor antes de preparar a cotação."
+                />
+              </label>
             </div>
 
-            <label className="mt-5 block">
-              <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                Mensagem para o cliente
-              </span>
-              <textarea
-                value={clarificationMessage}
-                onChange={(event) => setClarificationMessage(event.target.value)}
-                rows={4}
-                className="admin-input min-h-[120px] resize-y"
-              />
-            </label>
-
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <div className="flex flex-col-reverse gap-3 border-t border-[var(--color-border)] px-6 py-5 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 disabled={isRequestingClarification}
@@ -1411,11 +1451,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               </button>
               <button
                 type="button"
-                disabled={isRequestingClarification || clarificationFields.length === 0}
+                disabled={isRequestingClarification}
                 onClick={() => void requestClarification()}
                 className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isRequestingClarification ? "A enviar..." : "Enviar pedido"}
+                {isRequestingClarification ? "A enviar..." : "Enviar pedido de detalhes"}
               </button>
             </div>
           </div>
