@@ -354,6 +354,7 @@ export type ExternalOrderDetail = {
   customerCorrectionNote: string | null;
   activeClarificationRequest?: OrderClarificationRequest | null;
   latestClarificationRequest?: OrderClarificationRequest | null;
+  clarificationHistory?: OrderClarificationRequest[];
   customerEditable: boolean;
   purchaseProofUrl: string | null;
   purchaseProofUploadedAt: string | null;

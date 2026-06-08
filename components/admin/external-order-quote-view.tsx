@@ -266,6 +266,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     copyOnly: false,
     validHours: 24,
   });
+  const [regExtraChannels, setRegExtraChannels] = useState({ sendWhatsapp: false, sendEmail: false });
   const [quoteSendResult, setQuoteSendResult] = useState<QuoteSendResponse | null>(null);
   const [quoteLinkCopied, setQuoteLinkCopied] = useState(false);
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
@@ -542,13 +543,35 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         body: JSON.stringify(payload),
       });
 
+      // For registered users without extra channels, portal notification was already sent — skip public link generation
+      if (detail.customerId && !options.sendWhatsapp && !options.sendEmail) {
+        setQuoteSendResult({
+          quoteUrl: "",
+          whatsappUrl: null,
+          emailSent: false,
+          quoteSentAt: new Date().toISOString(),
+          quoteTokenExpiresAt: null,
+          channels: ["PORTAL"],
+        });
+        setQuoteLinkCopied(false);
+        await refreshQuoteData();
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(
+            "admin_quotes_notice",
+            isUpdate ? "Cotacao actualizada com sucesso." : "Cotacao publicada no portal do cliente."
+          );
+        }
+        router.refresh();
+        setTimeout(() => setQuoteSendOpen(false), 1600);
+        return;
+      }
+
       const result = await adminApiFetch<QuoteSendResponse>(`/api/admin/orders/${orderId}/quote/send`, {
         method: "POST",
         body: JSON.stringify(options),
       });
 
       setQuoteSendResult(result);
-      setQuoteSendOpen(true);
       setQuoteLinkCopied(false);
       await refreshQuoteData();
 
@@ -563,6 +586,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
           window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
         }
       }
+      setTimeout(() => setQuoteSendOpen(false), 1600);
 
       router.refresh();
     } catch (sendError) {
@@ -857,7 +881,133 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
             </section>
           ) : null}
 
-          {answeredClarification ? (
+          {(detail.clarificationHistory?.length ?? 0) > 0 ? (
+            <section className="admin-card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                    Respostas do cliente
+                  </p>
+                  <h2 className="mt-2 font-[family-name:var(--font-sora)] text-xl font-semibold">
+                    Histórico de esclarecimentos
+                  </h2>
+                </div>
+                <span className="mt-1 shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+                  {detail.clarificationHistory!.length}{" "}
+                  {detail.clarificationHistory!.length === 1 ? "resposta" : "respostas"}
+                </span>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                {detail.clarificationHistory!.map((item, index) => {
+                  const isLatest = index === detail.clarificationHistory!.length - 1;
+                  return (
+                    <div key={item.id} className="relative">
+                      {index < detail.clarificationHistory!.length - 1 && (
+                        <div
+                          className="absolute left-[13px] top-14 w-px bg-[var(--color-border)]"
+                          style={{ height: "calc(100% - 2rem)" }}
+                        />
+                      )}
+                      <div
+                        className={`rounded-2xl border p-4 transition-colors ${
+                          isLatest
+                            ? "border-[var(--color-danger)]/25 bg-[var(--color-danger)]/[0.04]"
+                            : "border-[var(--color-border)] bg-[var(--color-background-tertiary)]"
+                        }`}
+                      >
+                        {/* Card header */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                isLatest
+                                  ? "bg-[var(--color-danger)] text-white"
+                                  : "border border-[var(--color-border)] bg-[var(--color-background-secondary)] text-[var(--color-text-secondary)]"
+                              }`}
+                            >
+                              {index + 1}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold leading-none">
+                                {index === 0 ? "Primeira resposta" : `Atualização ${index}`}
+                              </p>
+                              {item.answeredAt && (
+                                <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                                  {formatDate(item.answeredAt)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          {isLatest && (
+                            <span className="rounded-full bg-[var(--color-danger)] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                              Última
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Admin question */}
+                        {item.message && (
+                          <div className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
+                              Pergunta do admin
+                            </p>
+                            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{item.message}</p>
+                          </div>
+                        )}
+
+                        {/* Field answers */}
+                        {item.requestedFields.filter((f) => f !== "PHOTO").length > 0 && (
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {item.requestedFields
+                              .filter((f) => f !== "PHOTO")
+                              .map((field) => (
+                                <div
+                                  key={field}
+                                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-3 py-2.5"
+                                >
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
+                                    {CLARIFICATION_LABELS[field] || field}
+                                  </p>
+                                  <p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-[var(--color-text-primary)]">
+                                    {item.answers?.[field] || (
+                                      <span className="font-normal italic text-[var(--color-text-secondary)]">
+                                        Sem resposta
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+
+                        {/* Photos */}
+                        {item.photoUrls?.length ? (
+                          <div className="mt-3">
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
+                              Fotos enviadas ({item.photoUrls.length})
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {item.photoUrls.map((url, i) => (
+                                <a key={i} href={url} target="_blank" rel="noreferrer">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={url}
+                                    alt={`Foto ${i + 1}`}
+                                    className="h-16 w-16 rounded-xl border border-[var(--color-border)] object-cover transition-opacity hover:opacity-80"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : answeredClarification ? (
             <section className="admin-card p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
                 Respostas do cliente
@@ -1262,6 +1412,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 onClick={() => {
                   setQuoteSendResult(null);
                   setQuoteLinkCopied(false);
+                  setRegExtraChannels({ sendWhatsapp: false, sendEmail: false });
                   setQuoteSendOpen(true);
                 }}
                 className="admin-button-danger justify-center"
@@ -1272,6 +1423,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                     ? "Aguardando resposta"
                   : detail.latestQuoteSentAt
                     ? "Actualizar cotacao"
+                  : detail.customerId
+                    ? "Publicar cotacao"
                     : "Enviar cotacao ao cliente"}
               </button>
               <button
@@ -1477,121 +1630,280 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         onConfirm={() => void refuseOrder()}
       />
       {quoteSendOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
-          <div className="w-full max-w-2xl rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 px-4 py-8 backdrop-blur-md"
+          style={{ animation: "overlay-in 0.15s ease-out" }}
+        >
+          <div
+            className="w-full max-w-xl rounded-[28px] border border-white/[0.07] bg-[#0d1627] p-7 shadow-[0_32px_80px_rgba(0,0,0,0.65)]"
+            style={{ animation: "modal-in 0.2s ease-out" }}
+          >
+            {/* HEADER */}
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
-                  Enviar cotacao
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-orange-400/80">
+                  {detail.customerId ? "Publicar cotação" : "Enviar cotação"}
                 </p>
-                <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">
-                  Escolher canais do cliente
+                <h2 className="mt-1.5 font-[family-name:var(--font-sora)] text-[1.4rem] font-semibold leading-snug text-white">
+                  {detail.customerId ? "Enviar cotação ao cliente" : "Escolher canais do cliente"}
                 </h2>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  if (!isPending) setQuoteSendOpen(false);
-                }}
-                className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--color-text-secondary)]"
+                onClick={() => { if (!isPending) setQuoteSendOpen(false); }}
+                aria-label="Fechar"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
               >
-                Fechar
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                </svg>
               </button>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {[
-                ["sendWhatsapp", "WhatsApp"],
-                ["sendEmail", "Email"],
-                ["copyOnly", "Copiar link apenas"],
-              ].map(([key, label]) => (
-                <label
-                  key={key}
-                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold"
-                >
+            <div className="mt-5 h-px bg-white/[0.06]" />
+
+            {detail.customerId ? (
+              <>
+                {/* INFO BOX */}
+                <div className="mt-5 flex gap-3 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3.5">
+                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-sm leading-relaxed text-blue-100">
+                    A cotação será enviada para a área{" "}
+                    <strong className="font-semibold text-white">Meus pedidos</strong> do cliente. O cliente receberá uma notificação no portal.
+                  </p>
+                </div>
+
+                {/* PORTAL CHANNEL — FIXED */}
+                <div className="mt-6">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Canal principal</p>
+                  <div className="flex items-center gap-3.5 rounded-2xl border border-orange-500/25 bg-orange-500/[0.06] px-4 py-4">
+                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] bg-orange-500/25">
+                      <svg className="h-3 w-3 text-orange-300" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white">Portal ShopeeMz</span>
+                        <span className="rounded-full bg-orange-500/15 px-2 py-px text-[9px] font-bold uppercase tracking-wider text-orange-300">
+                          Principal
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-slate-500">Notificação no portal · Meus pedidos</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* OPTIONAL CHANNELS */}
+                <div className="mt-5">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Também avisar por</p>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <label
+                      className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium transition-all duration-150 ${
+                        regExtraChannels.sendWhatsapp
+                          ? "border-orange-500/50 bg-orange-500/10 text-white"
+                          : "border-white/[0.07] bg-white/[0.02] text-slate-400 hover:border-white/[0.15] hover:bg-white/[0.04] hover:text-white"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={regExtraChannels.sendWhatsapp}
+                        onChange={(e) => setRegExtraChannels((c) => ({ ...c, sendWhatsapp: e.target.checked }))}
+                        className="h-4 w-4 accent-orange-500"
+                      />
+                      WhatsApp
+                      <span className="ml-auto text-[11px] text-slate-600">opcional</span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium transition-all duration-150 ${
+                        regExtraChannels.sendEmail
+                          ? "border-orange-500/50 bg-orange-500/10 text-white"
+                          : "border-white/[0.07] bg-white/[0.02] text-slate-400 hover:border-white/[0.15] hover:bg-white/[0.04] hover:text-white"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={regExtraChannels.sendEmail}
+                        onChange={(e) => setRegExtraChannels((c) => ({ ...c, sendEmail: e.target.checked }))}
+                        className="h-4 w-4 accent-orange-500"
+                      />
+                      Email
+                      <span className="ml-auto text-[11px] text-slate-600">opcional</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* SUCCESS STATE */}
+                {quoteSendResult ? (
+                  <div className="mt-5 flex gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3.5">
+                    <svg className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 20 20" aria-hidden="true">
+                      <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M6.5 10l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-100">Cotação publicada no portal do cliente.</p>
+                      {quoteSendResult.channels?.length ? (
+                        <p className="mt-0.5 text-xs text-emerald-400/70">Canais: {quoteSendResult.channels.join(", ")}</p>
+                      ) : null}
+                      {quoteSendResult.whatsappUrl ? (
+                        <div className="mt-3">
+                          <a href={quoteSendResult.whatsappUrl} target="_blank" rel="noreferrer" className="admin-button-danger inline-flex text-sm">
+                            Abrir WhatsApp
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* ACTIONS */}
+                <div className="mt-7 h-px bg-white/[0.06]" />
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() =>
+                      startTransition(async () => {
+                        await sendQuote({
+                          sendWhatsapp: regExtraChannels.sendWhatsapp,
+                          sendEmail: regExtraChannels.sendEmail,
+                          copyOnly: false,
+                          validHours: 24,
+                        });
+                      })
+                    }
+                    className="flex-1 rounded-full bg-[#e8431a] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(232,67,26,0.35)] transition-all hover:bg-[#d63917] hover:shadow-[0_6px_28px_rgba(232,67,26,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isPending ? "A publicar..." : "Publicar cotação"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setQuoteSendOpen(false)}
+                    className="rounded-full border border-white/10 px-6 py-3 text-sm font-semibold text-slate-400 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* CHANNEL CHECKBOXES */}
+                <div className="mt-5 grid gap-2.5 sm:grid-cols-3">
+                  {[
+                    ["sendWhatsapp", "WhatsApp"],
+                    ["sendEmail", "Email"],
+                    ["copyOnly", "Copiar link apenas"],
+                  ].map(([key, label]) => {
+                    const isChecked = Boolean(quoteSendOptions[key as keyof QuoteSendOptions]);
+                    return (
+                      <label
+                        key={key}
+                        className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium transition-all duration-150 ${
+                          isChecked
+                            ? "border-orange-500/50 bg-orange-500/10 text-white"
+                            : "border-white/[0.07] bg-white/[0.02] text-slate-400 hover:border-white/[0.15] hover:bg-white/[0.04] hover:text-white"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(event) =>
+                            setQuoteSendOptions((current) => ({
+                              ...current,
+                              [key]: event.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 accent-orange-500"
+                        />
+                        {label}
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <label className="mt-5 block max-w-[200px]">
+                  <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    Validade em horas
+                  </span>
                   <input
-                    type="checkbox"
-                    checked={Boolean(quoteSendOptions[key as keyof QuoteSendOptions])}
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={quoteSendOptions.validHours}
                     onChange={(event) =>
                       setQuoteSendOptions((current) => ({
                         ...current,
-                        [key]: event.target.checked,
+                        validHours: Math.max(1, Math.min(168, Number(event.target.value || 24))),
                       }))
                     }
-                    className="h-4 w-4 accent-[var(--color-danger)]"
+                    className="h-11 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-orange-500/40 focus:bg-white/[0.06]"
                   />
-                  {label}
                 </label>
-              ))}
-            </div>
 
-            <label className="mt-5 block max-w-[220px]">
-              <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                Validade em horas
-              </span>
-              <input
-                type="number"
-                min={1}
-                max={168}
-                value={quoteSendOptions.validHours}
-                onChange={(event) =>
-                  setQuoteSendOptions((current) => ({
-                    ...current,
-                    validHours: Math.max(1, Math.min(168, Number(event.target.value || 24))),
-                  }))
-                }
-                className="admin-input h-11 rounded-2xl px-3 py-2 text-sm"
-              />
-            </label>
-
-            <div className="mt-5 rounded-2xl bg-[var(--color-background-tertiary)] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-danger)]">
-                Preview WhatsApp
-              </p>
-              <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--color-text-primary)]">
-                {quotePreviewMessage}
-              </pre>
-            </div>
-
-            {quoteSendResult ? (
-              <div className="mt-5 rounded-2xl border border-[#BFE8C8] bg-[#F0FFF4] px-4 py-3 text-sm text-[#14532D]">
-                <p className="font-semibold">Cotacao enviada.</p>
-                <p className="mt-1">Email: {quoteSendResult.emailSent ? "enviado" : "nao enviado ou sem email"}</p>
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <button type="button" onClick={() => void copyQuoteLink()} className="admin-button-muted justify-center">
-                    {quoteLinkCopied ? "Link copiado" : "Copiar link da cotacao"}
-                  </button>
-                  {quoteSendResult.whatsappUrl ? (
-                    <a href={quoteSendResult.whatsappUrl} target="_blank" rel="noreferrer" className="admin-button-danger justify-center">
-                      Abrir WhatsApp
-                    </a>
-                  ) : null}
+                <div className="mt-5 rounded-2xl border border-white/[0.06] bg-[#060f1e] p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    Preview WhatsApp
+                  </p>
+                  <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-[1.7] text-slate-300">
+                    {quotePreviewMessage}
+                  </pre>
                 </div>
-              </div>
-            ) : null}
 
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setQuoteSendOpen(false)}
-                className="admin-button-muted justify-center disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isPending || (!quoteSendOptions.sendWhatsapp && !quoteSendOptions.sendEmail && !quoteSendOptions.copyOnly)}
-                onClick={() =>
-                  startTransition(async () => {
-                    await sendQuote(quoteSendOptions);
-                  })
-                }
-                className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isPending ? "A enviar..." : "Enviar cotacao ao cliente"}
-              </button>
-            </div>
+                {quoteSendResult ? (
+                  <div className="mt-5 flex gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3.5">
+                    <svg className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 20 20" aria-hidden="true">
+                      <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M6.5 10l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-100">Cotação enviada.</p>
+                      <p className="mt-0.5 text-xs text-emerald-400/70">Email: {quoteSendResult.emailSent ? "enviado" : "não enviado ou sem email"}</p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => void copyQuoteLink()}
+                          className="rounded-full border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition-all hover:border-white/20 hover:text-white"
+                        >
+                          {quoteLinkCopied ? "Link copiado" : "Copiar link da cotação"}
+                        </button>
+                        {quoteSendResult.whatsappUrl ? (
+                          <a href={quoteSendResult.whatsappUrl} target="_blank" rel="noreferrer" className="admin-button-danger inline-flex justify-center text-sm">
+                            Abrir WhatsApp
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-7 h-px bg-white/[0.06]" />
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    disabled={isPending || (!quoteSendOptions.sendWhatsapp && !quoteSendOptions.sendEmail && !quoteSendOptions.copyOnly)}
+                    onClick={() =>
+                      startTransition(async () => {
+                        await sendQuote(quoteSendOptions);
+                      })
+                    }
+                    className="flex-1 rounded-full bg-[#e8431a] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(232,67,26,0.35)] transition-all hover:bg-[#d63917] hover:shadow-[0_6px_28px_rgba(232,67,26,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isPending ? "A enviar..." : "Enviar cotação ao cliente"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setQuoteSendOpen(false)}
+                    className="rounded-full border border-white/10 px-6 py-3 text-sm font-semibold text-slate-400 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
