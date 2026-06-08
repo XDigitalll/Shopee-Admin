@@ -275,10 +275,12 @@ function filterQuotes(items: AdminQuoteListItem[], filters: AdminQuotesFilterSta
   }
 
   filtered.sort((left, right) => {
+    const isActiveQueue = (item: AdminQuoteListItem) =>
+      item.quoteQueueStatus === "QUOTE_ANALYSIS" || item.quoteQueueStatus === "WAITING_CUSTOMER";
     const leftCustomerResponded =
-      left.clarificationStatus === "ANSWERED" && left.clarificationAdminSeenAt == null;
+      left.clarificationStatus === "ANSWERED" && left.clarificationAdminSeenAt == null && isActiveQueue(left);
     const rightCustomerResponded =
-      right.clarificationStatus === "ANSWERED" && right.clarificationAdminSeenAt == null;
+      right.clarificationStatus === "ANSWERED" && right.clarificationAdminSeenAt == null && isActiveQueue(right);
 
     if (leftCustomerResponded !== rightCustomerResponded) {
       return leftCustomerResponded ? -1 : 1;
@@ -355,7 +357,8 @@ export async function getQuoteStats(request: NextRequest): Promise<AdminQuoteSta
     customerRespondedCount: cards.filter(
       (item) =>
         item.clarificationStatus === "ANSWERED" &&
-        item.clarificationAdminSeenAt == null
+        item.clarificationAdminSeenAt == null &&
+        (item.quoteQueueStatus === "QUOTE_ANALYSIS" || item.quoteQueueStatus === "WAITING_CUSTOMER")
     ).length,
   };
 }

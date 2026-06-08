@@ -369,6 +369,16 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   useEffect(() => {
+    const req = detail?.activeClarificationRequest;
+    if (req?.status === "ANSWERED" && req.adminSeenAt == null && req.id && detail?.id) {
+      adminApiFetch(
+        `/api/admin/orders/${detail.id}/clarification/${req.id}/mark-seen`,
+        { method: "PATCH" }
+      ).catch(() => undefined);
+    }
+  }, [detail?.activeClarificationRequest?.id, detail?.activeClarificationRequest?.status, detail?.activeClarificationRequest?.adminSeenAt, detail?.id]);
+
+  useEffect(() => {
     if (!purchaseProofFile || !purchaseProofFile.type.startsWith("image/")) {
       setPurchaseProofPreviewUrl(null);
       return;
