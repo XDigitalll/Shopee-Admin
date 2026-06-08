@@ -15,6 +15,7 @@ import {
 } from "@/lib/admin/format";
 import { MODULE_METADATA, type AdminModule } from "@/lib/admin/roles";
 import type {
+  AdminQuoteStatsResponse,
   PendingQuote,
   RecentOrder,
   TodayStatsResponse,
@@ -52,12 +53,15 @@ function typeClass(type: RecentOrder["type"]) {
 function DashboardIntro({
   stats,
   quotes,
+  quoteStats,
 }: {
   stats: TodayStatsResponse | null;
   quotes: PendingQuote[] | null;
+  quoteStats: AdminQuoteStatsResponse | null;
 }) {
   const pendingOrders = stats?.badges.orders ?? 0;
   const pendingQuotes = stats?.badges.quotes ?? 0;
+  const customersResponded = quoteStats?.customerRespondedCount ?? 0;
 
   return (
     <section className="admin-card p-6">
@@ -74,7 +78,7 @@ function DashboardIntro({
             pedidos pendentes, cotacoes por responder e pagamentos que precisam de validacao.
           </p>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
             <div className="rounded-[22px] bg-[var(--color-background-tertiary)] p-4">
               <p className="text-sm text-[var(--color-text-secondary)]">Pedidos a acompanhar</p>
               <strong className="mt-2 block font-[family-name:var(--font-sora)] text-3xl">
@@ -87,6 +91,15 @@ function DashboardIntro({
                 {pendingQuotes}
               </strong>
             </div>
+            <a
+              href="/admin/external-quotes"
+              className="block rounded-[22px] border border-[rgba(232,67,26,0.22)] bg-[rgba(232,67,26,0.08)] p-4 transition hover:bg-[rgba(232,67,26,0.12)]"
+            >
+              <p className="text-sm text-[var(--color-text-secondary)]">Clientes responderam</p>
+              <strong className="mt-2 block font-[family-name:var(--font-sora)] text-3xl text-[var(--color-danger)]">
+                {customersResponded}
+              </strong>
+            </a>
             <a href="/admin/finance/paysuite" className="rounded-[22px] bg-[var(--color-background-tertiary)] p-4 block hover:bg-[var(--color-background-secondary)] transition">
               <p className="text-sm text-[var(--color-text-secondary)]">Transações PaySuite</p>
               <strong className="mt-2 block font-[family-name:var(--font-sora)] text-3xl text-[var(--color-danger)]">Ver →</strong>
@@ -418,6 +431,7 @@ export function DashboardView() {
   const [orders, setOrders] = useState<RecentOrder[] | null>(null);
   const [revenue, setRevenue] = useState<WeeklyRevenueItem[] | null>(null);
   const [quotes, setQuotes] = useState<PendingQuote[] | null>(null);
+  const [quoteStats, setQuoteStats] = useState<AdminQuoteStatsResponse | null>(null);
   const [error, setError] = useState("");
   const { effectiveRole, hasAccess } = useAdminAuth();
 
@@ -439,9 +453,12 @@ export function DashboardView() {
       canSeeQuotes
         ? adminApiFetch<PendingQuote[]>("/api/admin/orders?mode=pendingQuotes&limit=5")
         : Promise.resolve([]),
+      canSeeQuotes
+        ? adminApiFetch<AdminQuoteStatsResponse>("/api/admin/quotes/stats")
+        : Promise.resolve(null),
     ]);
 
-    const [statsResult, ordersResult, revenueResult, quotesResult] = tasks;
+    const [statsResult, ordersResult, revenueResult, quotesResult, quoteStatsResult] = tasks;
     const messages: string[] = [];
 
     if (statsResult.status === "fulfilled") {
@@ -487,6 +504,17 @@ export function DashboardView() {
       );
     }
 
+    if (quoteStatsResult.status === "fulfilled") {
+      setQuoteStats(quoteStatsResult.value);
+    } else {
+      setQuoteStats(null);
+      messages.push(
+        quoteStatsResult.reason instanceof Error
+          ? quoteStatsResult.reason.message
+          : "Nao foi possivel actualizar os alertas de cotacoes."
+      );
+    }
+
     setError(messages[0] ?? "");
   }
 
@@ -506,7 +534,7 @@ export function DashboardView() {
         </div>
       ) : null}
 
-      <DashboardIntro stats={stats} quotes={quotes} />
+      <DashboardIntro stats={stats} quotes={quotes} quoteStats={quoteStats} />
       <MetricCards data={stats} />
 
       <div className={`grid gap-6 ${showRevenue ? "xl:grid-cols-[1.2fr_0.8fr]" : "xl:grid-cols-1"}`}>

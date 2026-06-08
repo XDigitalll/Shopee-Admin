@@ -40,6 +40,13 @@ function timestamp(value: string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
 }
 
+function quoteCustomerResponded(item: {
+  clarificationStatus?: "PENDING" | "ANSWERED" | "CANCELLED" | null;
+  clarificationAdminSeenAt?: string | null;
+}) {
+  return item.clarificationStatus === "ANSWERED" && item.clarificationAdminSeenAt == null;
+}
+
 export function isActionRequired(order: AdminOrderListItem, context: OperationalContext): boolean;
 export function isActionRequired(payment: AdminPaymentListItem, context: "PAYMENTS"): boolean;
 export function isActionRequired(quote: AdminQuoteListItem | AdminQuoteDetail, context: "QUOTES"): boolean;
@@ -113,6 +120,9 @@ export function sortOperationalQueue<
     if (context === "QUOTES") {
       const leftQuote = left as AdminQuoteListItem;
       const rightQuote = right as AdminQuoteListItem;
+      const customerResponseDelta = Number(quoteCustomerResponded(rightQuote)) - Number(quoteCustomerResponded(leftQuote));
+      if (customerResponseDelta !== 0) return customerResponseDelta;
+
       const urgentDelta = Number(rightQuote.urgent) - Number(leftQuote.urgent);
       if (urgentDelta !== 0) return urgentDelta;
     }
