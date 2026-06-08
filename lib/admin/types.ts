@@ -700,6 +700,9 @@ export type AdminQuoteListItem = {
   urgent: boolean;
   quoteSentAt: string | null;
   validityDate: string | null;
+  clarificationStatus?: "PENDING" | "ANSWERED" | "CANCELLED" | null;
+  clarificationId?: number | null;
+  clarificationAdminSeenAt?: string | null;
 };
 
 export type AdminQuotesPageResponse = {
@@ -722,6 +725,7 @@ export type AdminQuoteStatsResponse = {
   waitingPayment?: number;
   toPurchase?: number;
   archived?: number;
+  customerRespondedCount?: number;
 };
 
 export type AdminQuoteDetail = {
@@ -757,6 +761,14 @@ export type AdminQuoteDetail = {
     total: number;
   };
   rejectReason: string | null;
+  activeClarificationRequest?: {
+    id: number;
+    status: "PENDING" | "ANSWERED" | "CANCELLED";
+    message: string | null;
+    requestedFields: string[];
+    answeredAt: string | null;
+    adminSeenAt: string | null;
+  } | null;
 };
 
 export type AdminSessionProfile = {

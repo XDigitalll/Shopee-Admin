@@ -72,9 +72,23 @@ const defaultFilters: AdminQuotesFilterState = {
   size: 10,
 };
 
+function customerJustReplied(item: AdminQuoteListItem) {
+  return item.clarificationStatus === "ANSWERED" && item.clarificationAdminSeenAt == null;
+}
+
 function buildAction(item: AdminQuoteListItem) {
+  // Customer responded to clarification — show strong CTA
+  if (customerJustReplied(item)) {
+    return { label: "Continuar cotação →", href: `/admin/orders/${item.id}/quote` };
+  }
+
   if (item.quoteQueueStatus === "QUOTE_ANALYSIS") {
     return { label: "Analisar e cotar →", href: `/admin/orders/${item.id}/quote` };
+  }
+
+  // Clarification pending — waiting for customer
+  if (item.quoteQueueStatus === "WAITING_CUSTOMER" && item.clarificationStatus === "PENDING") {
+    return { label: "Aguardando resposta →", href: `/admin/orders/${item.id}` };
   }
 
   if (item.status === "DRAFT") {
@@ -291,6 +305,17 @@ export function ExternalQuotesManagementView() {
         const payload = await adminApiFetch<AdminQuoteDetail>(`/api/admin/quotes/${selectedId}`);
         if (!cancelled) {
           setSelectedDetail(payload);
+          // Auto mark-seen when admin opens a quote with an answered clarification not yet seen
+          if (
+            payload.activeClarificationRequest?.status === "ANSWERED" &&
+            payload.activeClarificationRequest.adminSeenAt == null &&
+            payload.activeClarificationRequest.id
+          ) {
+            adminApiFetch(
+              `/api/admin/orders/${payload.id}/clarification/${payload.activeClarificationRequest.id}/mark-seen`,
+              { method: "PATCH" }
+            ).catch(() => undefined);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -448,6 +473,11 @@ export function ExternalQuotesManagementView() {
               <span className="rounded-full bg-[#FFF0D8] px-3 py-1 text-sm font-semibold text-[#A16207]">
                 {stats?.pendingAnalysis ?? 0} pendente(s) de análise
               </span>
+              {(stats?.customerRespondedCount ?? 0) > 0 ? (
+                <span className="rounded-full bg-[#E8431A] px-3 py-1 text-sm font-semibold text-white">
+                  {stats!.customerRespondedCount} resposta(s) nova(s)
+                </span>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -583,8 +613,27 @@ export function ExternalQuotesManagementView() {
                 }}
                 className={`admin-card relative cursor-pointer overflow-hidden border-l-[3px] border-l-transparent transition ${active ? "border-[#E8431A]" : ""} ${needsAttention ? "ring-1 ring-[rgba(249,115,22,0.18)]" : ""}`}
               >
+                {customerJustReplied(quote) ? (
+                  <span className="absolute inset-x-0 top-0 h-1 bg-[#E8431A]" />
+                ) : null}
                 {needsAttention ? <AttentionDot className="absolute right-5 top-5" /> : null}
                 <div className="flex flex-col gap-4 px-5 py-5">
+                  {customerJustReplied(quote) ? (
+                    <div className="flex items-center gap-2 rounded-2xl border border-[rgba(232,67,26,0.25)] bg-[rgba(232,67,26,0.08)] px-4 py-2.5">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-[#E8431A]" />
+                      <p className="text-xs font-black text-[#E8431A]">
+                        Cliente respondeu aos detalhes solicitados
+                      </p>
+                    </div>
+                  ) : null}
+                  {quote.clarificationStatus === "PENDING" ? (
+                    <div className="flex items-center gap-2 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-[var(--color-background-tertiary)] px-4 py-2.5">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-[#F59E0B]" />
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                        Aguardando resposta do cliente
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex items-start gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(232,67,26,0.12)] font-[family-name:var(--font-sora)] text-sm font-semibold text-[var(--color-danger)]">
@@ -784,6 +833,48 @@ export function ExternalQuotesManagementView() {
                     </div>
                   </div>
                 </section>
+
+                {selectedDetail.activeClarificationRequest ? (
+                  <section className="border-t border-[var(--color-border)] py-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
+                      Esclarecimento
+                    </p>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[var(--color-text-secondary)]">Estado</span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-black ${
+                            selectedDetail.activeClarificationRequest.status === "ANSWERED"
+                              ? "bg-[#EAF3DE] text-[#27500A]"
+                              : selectedDetail.activeClarificationRequest.status === "PENDING"
+                                ? "bg-[#FEF3C7] text-[#92400E]"
+                                : "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"
+                          }`}
+                        >
+                          {selectedDetail.activeClarificationRequest.status === "ANSWERED"
+                            ? "Respondido"
+                            : selectedDetail.activeClarificationRequest.status === "PENDING"
+                              ? "Aguardando"
+                              : "Cancelado"}
+                        </span>
+                      </div>
+                      {selectedDetail.activeClarificationRequest.message ? (
+                        <div className="rounded-xl bg-[var(--color-background-tertiary)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                          {selectedDetail.activeClarificationRequest.message}
+                        </div>
+                      ) : null}
+                      {selectedDetail.activeClarificationRequest.requestedFields.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedDetail.activeClarificationRequest.requestedFields.map((field) => (
+                            <span key={field} className="rounded-full bg-[var(--color-background-tertiary)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
+                              {field}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
 
                 <div ref={detailActionsRef} tabIndex={-1} className="mt-4 flex flex-col gap-3 outline-none">
                   {detailActions?.primary ? (
