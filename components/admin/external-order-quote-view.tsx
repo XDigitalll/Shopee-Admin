@@ -340,6 +340,19 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   useEffect(() => {
+    if (
+      detail?.activeClarificationRequest?.status === "ANSWERED" &&
+      detail.activeClarificationRequest.adminSeenAt == null &&
+      detail.activeClarificationRequest.id
+    ) {
+      adminApiFetch(
+        `/api/admin/orders/${detail.id}/clarification/${detail.activeClarificationRequest.id}/mark-seen`,
+        { method: "PATCH" }
+      ).catch(() => undefined);
+    }
+  }, [detail?.activeClarificationRequest?.id, detail?.activeClarificationRequest?.status, detail?.activeClarificationRequest?.adminSeenAt, detail?.id]);
+
+  useEffect(() => {
     if (!draft?.currency || !isQuoteCurrency(draft.currency)) {
       setActiveRate(null);
       setActiveRateError("Moeda de cotacao invalida.");
@@ -853,6 +866,23 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               </div>
             </div>
           </section>
+
+          {detail.activeClarificationRequest?.status === "ANSWERED" && !detail.activeClarificationRequest.adminSeenAt ? (
+            <section className="admin-card border-[rgba(232,67,26,0.35)] bg-[rgba(232,67,26,0.06)] p-5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-2.5 w-2.5 shrink-0 relative">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#E8431A] opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#E8431A]" />
+                </span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--color-danger)]">Resposta recebida</p>
+                  <p className="mt-0.5 text-sm font-semibold text-[var(--color-text-primary)]">
+                    Cliente respondeu aos detalhes solicitados — ver resposta mais recente abaixo.
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {pendingClarification ? (
             <section className="admin-card border-[#FBCFE8] bg-[#FFF1F2] p-6">
