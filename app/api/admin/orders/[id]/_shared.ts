@@ -109,6 +109,7 @@ type BackendOrderDetail = {
   activeClarificationRequest?: ExternalOrderDetail["activeClarificationRequest"] | null;
   latestClarificationRequest?: ExternalOrderDetail["latestClarificationRequest"] | null;
   customerEditable?: boolean | null;
+  purchaseConfirmedAt?: string | null;
   purchaseProofUrl?: string | null;
   purchaseProofUploadedAt?: string | null;
   purchasedByAdminId?: number | null;
@@ -655,6 +656,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     activeClarificationRequest: externalOrder ? order.activeClarificationRequest ?? null : null,
     latestClarificationRequest: externalOrder ? order.latestClarificationRequest ?? null : null,
     customerEditable: externalOrder ? Boolean(order.customerEditable) : false,
+    purchaseConfirmedAt: externalOrder ? order.purchaseConfirmedAt ?? null : null,
     purchaseProofUrl: externalOrder ? order.purchaseProofUrl ?? null : null,
     purchaseProofUploadedAt: externalOrder ? order.purchaseProofUploadedAt ?? null : null,
     purchasedByAdminId: externalOrder ? order.purchasedByAdminId ?? null : null,

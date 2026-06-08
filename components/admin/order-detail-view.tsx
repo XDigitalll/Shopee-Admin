@@ -325,15 +325,20 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
   const [correctionNote, setCorrectionNote] = useState("");
   const [isRequestingCorrection, setIsRequestingCorrection] = useState(false);
-  const [purchaseProofDialogOpen, setPurchaseProofDialogOpen] = useState(false);
+  const [confirmPurchaseOpen, setConfirmPurchaseOpen] = useState(false);
+  const [publishProofOpen, setPublishProofOpen] = useState(false);
   const [purchaseProofFile, setPurchaseProofFile] = useState<File | null>(null);
   const [purchaseProofPreviewUrl, setPurchaseProofPreviewUrl] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState("");
   const [supplierPurchaseAmount, setSupplierPurchaseAmount] = useState("");
   const [supplierOrderReference, setSupplierOrderReference] = useState("");
-  const [purchaseNote, setPurchaseNote] = useState("Produto comprado com sucesso.");
-  const [purchaseProofError, setPurchaseProofError] = useState("");
-  const [isUploadingPurchaseProof, setIsUploadingPurchaseProof] = useState(false);
+  const [purchaseNote, setPurchaseNote] = useState("");
+  const [confirmPurchaseError, setConfirmPurchaseError] = useState("");
+  const [publishProofError, setPublishProofError] = useState("");
+  const [isConfirmingPurchase, setIsConfirmingPurchase] = useState(false);
+  const [isPublishingProof, setIsPublishingProof] = useState(false);
+  const [proofSendWhatsapp, setProofSendWhatsapp] = useState(false);
+  const [proofSendEmail, setProofSendEmail] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -415,7 +420,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     }
 
     if (action === "purchase-proof") {
-      setPurchaseProofDialogOpen(true);
+      setConfirmPurchaseOpen(true);
       return;
     }
 
@@ -523,7 +528,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   }
 
   function selectPurchaseProofFile(file: File | null) {
-    setPurchaseProofError("");
+    setPublishProofError("");
     if (!file) {
       setPurchaseProofFile(null);
       return;
@@ -531,53 +536,73 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
     const allowed = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
     if (!allowed.includes(file.type)) {
-      setPurchaseProofError("Envia uma imagem ou PDF do comprovativo.");
+      setPublishProofError("Envia uma imagem ou PDF do comprovativo.");
       setPurchaseProofFile(null);
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setPurchaseProofError("O ficheiro deve ter no maximo 10MB.");
+      setPublishProofError("O ficheiro deve ter no maximo 10MB.");
       setPurchaseProofFile(null);
       return;
     }
     setPurchaseProofFile(file);
   }
 
-  async function uploadPurchaseProof() {
-    if (!detail || !purchaseProofFile || !supplierName.trim()) return;
+  async function confirmPurchase() {
+    if (!detail || !supplierName.trim()) return;
 
-    setIsUploadingPurchaseProof(true);
-    setPurchaseProofError("");
+    setIsConfirmingPurchase(true);
+    setConfirmPurchaseError("");
+    setError("");
+    try {
+      await adminApiFetch(`/api/admin/orders/${detail.id}/purchase-confirmation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierName: supplierName.trim(),
+          amount: supplierPurchaseAmount.trim() || null,
+          supplierOrderReference: supplierOrderReference.trim() || null,
+          note: purchaseNote.trim() || null,
+        }),
+      });
+      setConfirmPurchaseOpen(false);
+      setSupplierName("");
+      setSupplierPurchaseAmount("");
+      setSupplierOrderReference("");
+      setPurchaseNote("");
+      await refreshData();
+    } catch (actionError) {
+      setConfirmPurchaseError(actionError instanceof Error ? actionError.message : "Nao foi possivel confirmar a compra.");
+    } finally {
+      setIsConfirmingPurchase(false);
+    }
+  }
+
+  async function publishPurchaseProof() {
+    if (!detail || !purchaseProofFile) return;
+
+    setIsPublishingProof(true);
+    setPublishProofError("");
     setError("");
     try {
       const formData = new FormData();
       formData.append("file", purchaseProofFile);
-      formData.append("supplierName", supplierName.trim());
-      if (supplierPurchaseAmount.trim()) {
-        formData.append("amount", supplierPurchaseAmount.trim());
-      }
-      if (supplierOrderReference.trim()) {
-        formData.append("supplierOrderReference", supplierOrderReference.trim());
-      }
-      if (purchaseNote.trim()) {
-        formData.append("note", purchaseNote.trim());
-      }
+      formData.append("sendWhatsapp", String(proofSendWhatsapp));
+      formData.append("sendEmail", String(proofSendEmail));
 
-      await adminApiFetch(`/api/admin/orders/${detail.id}/purchase-proof`, {
+      await adminApiFetch(`/api/admin/orders/${detail.id}/purchase-proof/publish`, {
         method: "POST",
         body: formData,
       });
-      setPurchaseProofDialogOpen(false);
+      setPublishProofOpen(false);
       setPurchaseProofFile(null);
-      setSupplierName("");
-      setSupplierPurchaseAmount("");
-      setSupplierOrderReference("");
-      setPurchaseNote("Produto comprado com sucesso.");
+      setProofSendWhatsapp(false);
+      setProofSendEmail(false);
       await refreshData();
     } catch (actionError) {
-      setPurchaseProofError(actionError instanceof Error ? actionError.message : "Nao foi possivel enviar o comprovativo.");
+      setPublishProofError(actionError instanceof Error ? actionError.message : "Nao foi possivel enviar o comprovativo.");
     } finally {
-      setIsUploadingPurchaseProof(false);
+      setIsPublishingProof(false);
     }
   }
 
@@ -598,8 +623,13 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     : detail.requestScreenshotUrl
       ? [detail.requestScreenshotUrl]
       : [];
-  const canUploadPurchaseProof = externalOrder
-    && ["PAID", "TO_PURCHASE", "ORDERED", "PURCHASED"].includes(currentStatus);
+  const canConfirmPurchase = externalOrder
+    && ["PAID", "TO_PURCHASE"].includes(currentStatus)
+    && !detail.purchaseConfirmedAt;
+  const canPublishProof = externalOrder
+    && (currentStatus as string) === "PURCHASED"
+    && !!detail.purchaseConfirmedAt
+    && !detail.purchaseProofUrl;
 
   return (
     <div className="space-y-6">
@@ -632,9 +662,14 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 Pedir correcao ao cliente
               </button>
             ) : null}
-            {canUploadPurchaseProof && currentStatus !== "PAID" && currentStatus !== "TO_PURCHASE" ? (
-              <button type="button" onClick={() => setPurchaseProofDialogOpen(true)} className="admin-button-danger">
-                {detail.purchaseProofUrl ? "Atualizar comprovativo" : "Enviar comprovativo de compra"}
+            {canConfirmPurchase ? (
+              <button type="button" onClick={() => setConfirmPurchaseOpen(true)} className="admin-button-danger">
+                Confirmar compra no fornecedor
+              </button>
+            ) : null}
+            {canPublishProof ? (
+              <button type="button" onClick={() => setPublishProofOpen(true)} className="admin-button-danger">
+                Enviar comprovativo ao cliente
               </button>
             ) : null}
             {primaryAction ? (
@@ -669,11 +704,27 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </div>
       ) : null}
 
+      {detail.purchaseConfirmedAt && !detail.purchaseProofUrl ? (
+        <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
+          <p className="font-semibold">Compra confirmada no fornecedor</p>
+          <p className="mt-1">
+            {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
+            {detail.purchaseConfirmedAt
+              ? `Confirmado em ${new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.purchaseConfirmedAt))}.`
+              : ""}
+          </p>
+          {detail.supplierPurchaseAmount != null ? (
+            <p className="mt-1">Valor final pago: {formatMoney(detail.supplierPurchaseAmount)}</p>
+          ) : null}
+          <p className="mt-2 text-xs text-[#166534]/70">Comprovativo ainda nao enviado ao cliente.</p>
+        </div>
+      ) : null}
+
       {detail.purchaseProofUrl ? (
         <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="font-semibold">Comprovativo de compra enviado</p>
+              <p className="font-semibold">Comprovativo enviado ao cliente</p>
               <p className="mt-1">
                 {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
                 {detail.purchaseProofUploadedAt
@@ -681,7 +732,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   : "Disponivel para o cliente."}
               </p>
               {detail.supplierPurchaseAmount != null ? (
-                <p className="mt-1">Valor final pago ao fornecedor: {formatMoney(detail.supplierPurchaseAmount)}</p>
+                <p className="mt-1">Valor final pago: {formatMoney(detail.supplierPurchaseAmount)}</p>
               ) : null}
             </div>
             <a href={detail.purchaseProofUrl} target="_blank" rel="noreferrer" className="admin-button-muted justify-center">
@@ -1204,19 +1255,132 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </div>
       ) : null}
 
-      {purchaseProofDialogOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Compra no fornecedor</p>
-            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
-              Enviar comprovativo de compra
+      {confirmPurchaseOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-4 pt-6 sm:items-center sm:pb-6"
+          style={{ animation: "overlay-in 0.18s ease both", background: "rgba(0,0,0,0.72)" }}
+          onClick={(e) => { if (e.target === e.currentTarget && !isConfirmingPurchase) setConfirmPurchaseOpen(false); }}
+        >
+          <div
+            className="w-full max-w-lg overflow-y-auto rounded-[28px] p-6"
+            style={{
+              animation: "modal-in 0.22s cubic-bezier(0.34,1.06,0.64,1) both",
+              background: "#0d1627",
+              border: "1px solid rgba(255,255,255,0.07)",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04) inset",
+              maxHeight: "92vh",
+            }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Passo 1 de 2</p>
+            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-white">
+              Confirmar compra no fornecedor
             </h2>
-            <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-              Anexa a fatura, recibo ou screenshot real da compra. Depois de confirmar, o cliente podera ver o comprovativo.
+            <p className="mt-2 text-sm text-white/50">
+              Regista onde e quanto pagaste. O cliente ainda nao sera notificado — isso acontece no proximo passo.
+            </p>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-white/80">Loja onde foi comprado *</span>
+                <input
+                  value={supplierName}
+                  onChange={(event) => setSupplierName(event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-orange-500/60 focus:ring-1 focus:ring-orange-500/30"
+                  placeholder="Ex: Shein, Amazon, Temu"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-white/80">Valor final pago</span>
+                <input
+                  value={supplierPurchaseAmount}
+                  onChange={(event) => setSupplierPurchaseAmount(event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-orange-500/60 focus:ring-1 focus:ring-orange-500/30"
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-semibold text-white/80">Referencia do fornecedor</span>
+              <input
+                value={supplierOrderReference}
+                onChange={(event) => setSupplierOrderReference(event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-orange-500/60 focus:ring-1 focus:ring-orange-500/30"
+                placeholder="Opcional"
+              />
+            </label>
+
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-semibold text-white/80">Nota interna</span>
+              <textarea
+                rows={3}
+                value={purchaseNote}
+                onChange={(event) => setPurchaseNote(event.target.value)}
+                className="w-full resize-y rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-orange-500/60 focus:ring-1 focus:ring-orange-500/30"
+                placeholder="Opcional"
+              />
+            </label>
+
+            {confirmPurchaseError ? (
+              <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                {confirmPurchaseError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => { if (!isConfirmingPurchase) setConfirmPurchaseOpen(false); }}
+                disabled={isConfirmingPurchase}
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:bg-white/10 disabled:opacity-40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmPurchase()}
+                disabled={isConfirmingPurchase || !supplierName.trim()}
+                className="rounded-xl px-6 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-40"
+                style={{
+                  background: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
+                  boxShadow: isConfirmingPurchase ? "none" : "0 0 20px rgba(249,115,22,0.35)",
+                }}
+              >
+                {isConfirmingPurchase ? "A confirmar..." : "Confirmar compra"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {publishProofOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-4 pt-6 sm:items-center sm:pb-6"
+          style={{ animation: "overlay-in 0.18s ease both", background: "rgba(0,0,0,0.72)" }}
+          onClick={(e) => { if (e.target === e.currentTarget && !isPublishingProof) setPublishProofOpen(false); }}
+        >
+          <div
+            className="w-full max-w-lg overflow-y-auto rounded-[28px] p-6"
+            style={{
+              animation: "modal-in 0.22s cubic-bezier(0.34,1.06,0.64,1) both",
+              background: "#0d1627",
+              border: "1px solid rgba(255,255,255,0.07)",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04) inset",
+              maxHeight: "92vh",
+            }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Passo 2 de 2</p>
+            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-white">
+              Enviar comprovativo ao cliente
+            </h2>
+            <p className="mt-2 text-sm text-white/50">
+              Anexa o comprovativo real da compra. O cliente sera notificado pelo Portal e pelos canais que escolheres.
             </p>
 
             <div
-              className="mt-5 rounded-[24px] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-background-tertiary)] p-5 text-center"
+              className="mt-5 rounded-[20px] p-5 text-center"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1.5px dashed rgba(255,255,255,0.12)" }}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault();
@@ -1224,17 +1388,17 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               }}
             >
               <input
-                id="purchase-proof-file"
+                id="publish-proof-file"
                 type="file"
                 accept="image/png,image/jpeg,image/webp,application/pdf"
                 className="sr-only"
                 onChange={(event) => selectPurchaseProofFile(event.target.files?.[0] ?? null)}
               />
-              <label htmlFor="purchase-proof-file" className="cursor-pointer">
-                <span className="block font-semibold text-[var(--color-text-primary)]">
+              <label htmlFor="publish-proof-file" className="cursor-pointer">
+                <span className="block font-semibold text-white/80">
                   {purchaseProofFile ? purchaseProofFile.name : "Selecionar comprovativo"}
                 </span>
-                <span className="mt-1 block text-sm text-[var(--color-text-secondary)]">
+                <span className="mt-1 block text-sm text-white/40">
                   PNG, JPG, WebP ou PDF. Maximo 10MB.
                 </span>
               </label>
@@ -1243,84 +1407,93 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 <img
                   src={purchaseProofPreviewUrl}
                   alt="Preview do comprovativo"
-                  className="mx-auto mt-4 max-h-64 rounded-2xl border border-[var(--color-border)] object-contain"
+                  className="mx-auto mt-4 max-h-48 rounded-xl object-contain"
+                  style={{ border: "1px solid rgba(255,255,255,0.1)" }}
                 />
               ) : purchaseProofFile?.type === "application/pdf" ? (
-                <div className="mx-auto mt-4 max-w-xs rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-semibold">
+                <div className="mx-auto mt-4 max-w-xs rounded-xl px-4 py-3 text-sm font-semibold text-white/60" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
                   PDF selecionado
                 </div>
               ) : null}
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Loja onde foi comprado</span>
-                <input
-                  value={supplierName}
-                  onChange={(event) => setSupplierName(event.target.value)}
-                  className="admin-input"
-                  placeholder="Ex: Shein, Amazon, Temu"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Valor final pago</span>
-                <input
-                  value={supplierPurchaseAmount}
-                  onChange={(event) => setSupplierPurchaseAmount(event.target.value)}
-                  className="admin-input"
-                  inputMode="decimal"
-                  placeholder="Opcional"
-                />
-              </label>
+            <div className="mt-5 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-white/40">Canais de envio</p>
+              <div className="rounded-[16px] px-4 py-3" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Portal ShopeeMz</p>
+                    <p className="text-xs text-white/40">Notificacao in-app — sempre enviada</p>
+                  </div>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-white text-xs font-bold">✓</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProofSendWhatsapp(!proofSendWhatsapp)}
+                className="w-full rounded-[16px] px-4 py-3 text-left transition-colors"
+                style={{
+                  background: proofSendWhatsapp ? "rgba(37,211,102,0.1)" : "rgba(255,255,255,0.04)",
+                  border: proofSendWhatsapp ? "1px solid rgba(37,211,102,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">WhatsApp</p>
+                    <p className="text-xs text-white/40">Mensagem automatica via WhatsApp</p>
+                  </div>
+                  <div className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold transition-colors ${proofSendWhatsapp ? "bg-green-500 text-white" : "border border-white/20 text-transparent"}`}>
+                    {proofSendWhatsapp ? "✓" : ""}
+                  </div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setProofSendEmail(!proofSendEmail)}
+                className="w-full rounded-[16px] px-4 py-3 text-left transition-colors"
+                style={{
+                  background: proofSendEmail ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)",
+                  border: proofSendEmail ? "1px solid rgba(99,102,241,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Email</p>
+                    <p className="text-xs text-white/40">Notificacao por email ao cliente</p>
+                  </div>
+                  <div className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold transition-colors ${proofSendEmail ? "bg-indigo-500 text-white" : "border border-white/20 text-transparent"}`}>
+                    {proofSendEmail ? "✓" : ""}
+                  </div>
+                </div>
+              </button>
             </div>
 
-            <label className="mt-4 block">
-              <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Referencia do fornecedor</span>
-              <input
-                value={supplierOrderReference}
-                onChange={(event) => setSupplierOrderReference(event.target.value)}
-                className="admin-input"
-                placeholder="Opcional"
-              />
-            </label>
-
-            <label className="mt-4 block">
-              <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">Nota ao cliente</span>
-              <textarea
-                rows={4}
-                value={purchaseNote}
-                onChange={(event) => setPurchaseNote(event.target.value)}
-                className="admin-input min-h-[110px] resize-y"
-                placeholder="Produto comprado com sucesso."
-              />
-            </label>
-
-            {purchaseProofError ? (
-              <div className="mt-4 rounded-2xl border border-[rgba(232,67,26,0.18)] bg-[rgba(232,67,26,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                {purchaseProofError}
+            {publishProofError ? (
+              <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                {publishProofError}
               </div>
             ) : null}
 
-            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => {
-                  if (!isUploadingPurchaseProof) {
-                    setPurchaseProofDialogOpen(false);
-                  }
-                }}
-                className="admin-button-muted justify-center"
-                disabled={isUploadingPurchaseProof}
+                onClick={() => { if (!isPublishingProof) setPublishProofOpen(false); }}
+                disabled={isPublishingProof}
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:bg-white/10 disabled:opacity-40"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={() => void uploadPurchaseProof()}
-                className="admin-button-danger justify-center disabled:opacity-60"
-                disabled={isUploadingPurchaseProof || !purchaseProofFile || !supplierName.trim()}
+                onClick={() => void publishPurchaseProof()}
+                disabled={isPublishingProof || !purchaseProofFile}
+                className="rounded-xl px-6 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-40"
+                style={{
+                  background: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
+                  boxShadow: isPublishingProof ? "none" : "0 0 20px rgba(249,115,22,0.35)",
+                }}
               >
-                {isUploadingPurchaseProof ? "A enviar..." : "Confirmar compra e enviar"}
+                {isPublishingProof ? "A publicar..." : "Publicar comprovativo"}
               </button>
             </div>
           </div>

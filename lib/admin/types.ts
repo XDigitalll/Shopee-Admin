@@ -356,6 +356,7 @@ export type ExternalOrderDetail = {
   latestClarificationRequest?: OrderClarificationRequest | null;
   clarificationHistory?: OrderClarificationRequest[];
   customerEditable: boolean;
+  purchaseConfirmedAt: string | null;
   purchaseProofUrl: string | null;
   purchaseProofUploadedAt: string | null;
   purchasedByAdminId: number | null;
