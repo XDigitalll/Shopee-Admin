@@ -211,6 +211,10 @@ function OrdersDrawer({
     onError: (message) => onFeedback({ message, tone: "error" }),
   });
   const isPending = actionRunner.isRunning;
+  const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
+  const [purchaseProofFile, setPurchaseProofFile] = useState<File | null>(null);
+  const [purchaseSupplierReference, setPurchaseSupplierReference] = useState("");
+  const [purchaseModalError, setPurchaseModalError] = useState("");
   const actionRegionRef = useRef<HTMLDivElement | null>(null);
   const paymentValidated = isPaymentValidated(order?.paymentStatus ?? null);
   const cashOnDelivery = isCashOnDelivery(order);
@@ -354,14 +358,71 @@ function OrdersDrawer({
     });
   }
 
-  async function handleMarkPurchased() {
+  function resetPurchaseModal() {
+    setPurchaseProofFile(null);
+    setPurchaseSupplierReference("");
+    setPurchaseModalError("");
+  }
+
+  function selectPurchaseProofFile(file: File | null) {
+    setPurchaseModalError("");
+    if (!file) {
+      setPurchaseProofFile(null);
+      return;
+    }
+
+    const allowed = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
+    if (!allowed.includes(file.type)) {
+      setPurchaseModalError("Envia uma imagem ou PDF do comprovativo.");
+      setPurchaseProofFile(null);
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setPurchaseModalError("O ficheiro deve ter no maximo 10MB.");
+      setPurchaseProofFile(null);
+      return;
+    }
+
+    setPurchaseProofFile(file);
+  }
+
+  async function submitPurchaseConfirmation({ skipProof }: { skipProof: boolean }) {
     if (!order) return;
 
+    if (skipProof) {
+      const confirmed = window.confirm("Tens certeza que queres marcar como comprado sem comprovativo?");
+      if (!confirmed) return;
+    }
+
     await actionRunner.run(async () => {
-      await adminApiFetch(`/api/admin/orders/${order.id}/mark-purchased`, {
-        method: "PATCH",
-      });
-      onFeedback({ message: "Pedido marcado como comprado no fornecedor.", tone: "success" });
+      if (purchaseProofFile && !skipProof) {
+        const formData = new FormData();
+        formData.append("file", purchaseProofFile);
+        formData.append("supplierName", "Fornecedor");
+        formData.append("skipProof", "false");
+        if (purchaseSupplierReference.trim()) {
+          formData.append("supplierOrderReference", purchaseSupplierReference.trim());
+        }
+
+        await adminApiFetch(`/api/admin/orders/${order.id}/purchase-confirmation`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        await adminApiFetch(`/api/admin/orders/${order.id}/purchase-confirmation`, {
+          method: "POST",
+          body: JSON.stringify({
+            skipProof: true,
+            supplierName: "Fornecedor",
+            supplierOrderReference: purchaseSupplierReference.trim() || null,
+          }),
+        });
+      }
+
+      setPurchaseModalOpen(false);
+      resetPurchaseModal();
+      onFeedback({ message: "Pedido marcado como comprado.", tone: "success" });
       onActionComplete();
     });
   }
@@ -426,7 +487,102 @@ function OrdersDrawer({
   }
 
   return (
-    <aside className="sticky top-[132px] w-full shrink-0 self-start xl:w-[320px]">
+    <>
+      {purchaseModalOpen && order ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 px-4 pb-4 pt-6 sm:items-center sm:pb-6"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !isPending) {
+              setPurchaseModalOpen(false);
+              resetPurchaseModal();
+            }
+          }}
+        >
+          <div className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#0d1627] p-6 shadow-2xl">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Compra no fornecedor</p>
+              <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-white">
+                Confirmar compra no fornecedor
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Anexa o comprovativo da compra, recibo ou screenshot do fornecedor. Isto ajuda a provar que o pedido ja foi comprado.
+              </p>
+            </div>
+
+            <div className="mt-5 rounded-[20px] border border-dashed border-white/15 bg-white/[0.04] p-5">
+              <input
+                id={`purchase-proof-${order.id}`}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,application/pdf"
+                className="sr-only"
+                onChange={(event) => selectPurchaseProofFile(event.target.files?.[0] ?? null)}
+              />
+              <label htmlFor={`purchase-proof-${order.id}`} className="block cursor-pointer">
+                <span className="block text-sm font-semibold text-white/85">Comprovativo da compra</span>
+                <span className="mt-1 block text-sm text-white/45">
+                  Podes anexar agora ou saltar e adicionar depois.
+                </span>
+                <span className="mt-4 inline-flex rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80">
+                  {purchaseProofFile ? purchaseProofFile.name : "Selecionar ficheiro"}
+                </span>
+              </label>
+              <p className="mt-3 text-xs text-white/35">JPEG, PNG, WebP ou PDF. Maximo 10MB.</p>
+            </div>
+
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-semibold text-white/80">
+                Referencia da compra / numero do pedido no fornecedor
+              </span>
+              <input
+                value={purchaseSupplierReference}
+                onChange={(event) => setPurchaseSupplierReference(event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-orange-500/60 focus:ring-1 focus:ring-orange-500/30"
+                placeholder="Ex: SHEIN 123456, AliExpress 98765..."
+              />
+            </label>
+
+            {purchaseModalError || actionRunner.error ? (
+              <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {purchaseModalError || actionRunner.error}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isPending) {
+                    setPurchaseModalOpen(false);
+                    resetPurchaseModal();
+                  }
+                }}
+                disabled={isPending}
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:bg-white/10 disabled:opacity-40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitPurchaseConfirmation({ skipProof: true })}
+                disabled={isPending}
+                className="rounded-xl border border-orange-400/25 bg-orange-400/10 px-5 py-2.5 text-sm font-semibold text-orange-100 transition-colors hover:bg-orange-400/15 disabled:opacity-40"
+              >
+                Saltar por agora
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitPurchaseConfirmation({ skipProof: false })}
+                disabled={isPending || !purchaseProofFile}
+                className="rounded-xl bg-orange-600 px-6 py-2.5 text-sm font-bold text-white transition-colors hover:bg-orange-500 disabled:opacity-40"
+              >
+                {isPending ? "A confirmar..." : "Confirmar compra"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <aside className="sticky top-[132px] w-full shrink-0 self-start xl:w-[320px]">
       <div className="admin-card relative p-5">
         <ProcessingOverlay visible={isPending} />
         {order ? (
@@ -589,7 +745,8 @@ function OrdersDrawer({
                       }
 
                       if (action.action === "mark-purchased") {
-                        void handleMarkPurchased();
+                        resetPurchaseModal();
+                        setPurchaseModalOpen(true);
                         return;
                       }
 
@@ -647,7 +804,8 @@ function OrdersDrawer({
           </div>
         )}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -1221,9 +1379,9 @@ export function PaymentsQueueView() {
   return (
     <SharedOrdersView
       requiredModule="payments"
-      title="Pagamentos"
-      eyebrow="Validacoes"
-      subtitle={`${paymentOrders?.content.length ?? 0} pedido(s) a aguardar comprovativo, validacao ou confirmacao`}
+      title="Pagamentos manuais"
+      eyebrow="Validacao de comprovativos"
+      subtitle={`${paymentOrders?.content.length ?? 0} pedido(s) a aguardar comprovativo, validacao ou confirmacao manual`}
       filters={filters}
       orders={paymentOrders}
       isLoading={isLoading}
@@ -1249,7 +1407,7 @@ export function PaymentsQueueView() {
           search: filters.search,
           date: filters.date,
         }),
-        "payments-queue.csv"
+        "manual-payments-queue.csv"
       )}
       statValues={buildStatValues(stats)}
       showStatusCards={false}

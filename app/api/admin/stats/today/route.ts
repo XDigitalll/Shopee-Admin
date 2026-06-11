@@ -29,6 +29,42 @@ type WorkQueueSummary = {
   orphanOrders?: number | null;
 };
 
+type ManualPaymentQueueSummary = {
+  pendingAttentionCount?: number | null;
+  pendingReviewCount?: number | null;
+  submitted?: number | null;
+  submittedCount?: number | null;
+  proofUploaded?: number | null;
+  proofUploadedCount?: number | null;
+  underReview?: number | null;
+  underReviewCount?: number | null;
+  suspicious?: number | null;
+  suspiciousCount?: number | null;
+};
+
+function numberFrom(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getManualPaymentCount(payload: ManualPaymentQueueSummary | null) {
+  const direct = numberFrom(payload?.pendingAttentionCount ?? payload?.pendingReviewCount);
+  if (direct > 0) {
+    return direct;
+  }
+
+  return (
+    numberFrom(payload?.submitted) +
+    numberFrom(payload?.submittedCount) +
+    numberFrom(payload?.proofUploaded) +
+    numberFrom(payload?.proofUploadedCount) +
+    numberFrom(payload?.underReview) +
+    numberFrom(payload?.underReviewCount) +
+    numberFrom(payload?.suspicious) +
+    numberFrom(payload?.suspiciousCount)
+  );
+}
+
 function computeDelta(current: number, baseline: number) {
   if (!baseline) {
     return current > 0 ? 100 : 0;
@@ -37,14 +73,35 @@ function computeDelta(current: number, baseline: number) {
   return Number(((current / baseline) * 100).toFixed(1));
 }
 
+async function getManualPaymentBadge(request: NextRequest) {
+  let response: Response;
+  try {
+    response = await fetchBackend(request, "/admin/payment-submissions/queues");
+    await relayAuthFailure(response);
+  } catch {
+    return 0;
+  }
+
+  if (!response.ok) {
+    return 0;
+  }
+
+  const payload = await parseBackendJson<ManualPaymentQueueSummary | null>(response);
+  return getManualPaymentCount(payload);
+}
+
 async function getOrderBadges(request: NextRequest) {
-  const workQueueResponse = await fetchBackend(request, "/admin/work-queue/summary");
+  const [workQueueResponse, payments] = await Promise.all([
+    fetchBackend(request, "/admin/work-queue/summary"),
+    getManualPaymentBadge(request),
+  ]);
   await relayAuthFailure(workQueueResponse);
   if (workQueueResponse.ok) {
     const queue = await parseBackendJson<WorkQueueSummary>(workQueueResponse);
     return {
       orders: Number(queue.orders ?? 0),
       quotes: Number(queue.externalQuotes ?? 0),
+      payments,
       delivery: Number(queue.delivery ?? 0),
       orphanOrders: Number(queue.orphanOrders ?? 0),
     };
@@ -71,6 +128,7 @@ async function getOrderBadges(request: NextRequest) {
       Number(payload?.externalCreatedOrders ?? 0) +
       Number(payload?.externalUnderReviewOrders ?? 0) +
       Number(payload?.externalQuotedOrders ?? 0),
+    payments,
     delivery: deliveryBadges.delivery,
     orphanOrders: 0,
   };
@@ -83,7 +141,7 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
   ]);
 
   if ("error" in pendingResult || "error" in activeResult) {
-    return { orders: 0, quotes: 0, delivery: 0, orphanOrders: 0 };
+    return { orders: 0, quotes: 0, payments: 0, delivery: 0, orphanOrders: 0 };
   }
 
   const deliveryIds = new Set([
@@ -91,7 +149,7 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
     ...activeResult.map((order) => order.id),
   ]);
 
-  return { orders: 0, quotes: 0, delivery: deliveryIds.size, orphanOrders: 0 };
+  return { orders: 0, quotes: 0, payments: 0, delivery: deliveryIds.size, orphanOrders: 0 };
 }
 
 export async function GET(request: NextRequest) {

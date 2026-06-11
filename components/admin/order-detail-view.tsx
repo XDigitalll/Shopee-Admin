@@ -716,17 +716,24 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
       {detail.purchaseConfirmedAt && !detail.purchaseProofUrl ? (
         <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
-          <p className="font-semibold">Compra confirmada no fornecedor</p>
-          <p className="mt-1">
-            {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
-            {detail.purchaseConfirmedAt
-              ? `Confirmado em ${new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.purchaseConfirmedAt))}.`
-              : ""}
-          </p>
-          {detail.supplierPurchaseAmount != null ? (
-            <p className="mt-1">Valor final pago: {formatMoney(detail.supplierPurchaseAmount)}</p>
-          ) : null}
-          <p className="mt-2 text-xs text-[#166534]/70">Comprovativo ainda nao enviado ao cliente.</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold">Compra sem comprovativo anexado</p>
+              <p className="mt-1">
+                {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
+                {detail.purchaseConfirmedAt
+                  ? `Confirmado em ${new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.purchaseConfirmedAt))}.`
+                  : ""}
+              </p>
+              {detail.supplierPurchaseAmount != null ? (
+                <p className="mt-1">Valor final pago: {formatMoney(detail.supplierPurchaseAmount)}</p>
+              ) : null}
+              <p className="mt-2 text-xs text-[#166534]/70">Compra marcada sem comprovativo. Deve ser anexado depois.</p>
+            </div>
+            <button type="button" onClick={() => setPublishProofOpen(true)} className="admin-button-muted justify-center">
+              Adicionar comprovativo de compra
+            </button>
+          </div>
         </div>
       ) : null}
 
