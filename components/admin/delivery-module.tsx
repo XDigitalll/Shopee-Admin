@@ -25,6 +25,7 @@ import type {
   DeliveryActiveOrder,
   DeliveryDriver,
   DeliveryDriversResponse,
+  DeliveryHistoryItem,
   DeliveryHistoryResponse,
   DeliveryOrderItem,
   DeliveryPendingOrder,
@@ -90,6 +91,42 @@ function formatDuration(minutes: number | null | undefined) {
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;
   return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
+}
+
+function formatSmartDate(value: string | null | undefined) {
+  if (!value) {
+    return "Pendente";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Data invalida";
+  }
+
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayDiff = Math.round((startOfToday - startOfDate) / 86400000);
+  const time = new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit" }).format(date);
+
+  if (dayDiff === 0) return `Hoje · ${time}`;
+  if (dayDiff === 1) return `Ontem · ${time}`;
+  if (dayDiff > 1 && dayDiff < 7) return `ha ${dayDiff} dias`;
+  return new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "short" }).format(date);
+}
+
+function formatDateTooltip(value: string | null | undefined) {
+  return value ? formatDateTime(value) : "Sem registo";
+}
+
+function getDurationTone(minutes: number | null | undefined) {
+  if (minutes == null || !Number.isFinite(minutes)) {
+    return "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]";
+  }
+
+  if (minutes <= 45) return "bg-[rgba(21,128,61,0.12)] text-[#86efac]";
+  if (minutes <= 120) return "bg-[rgba(245,158,11,0.14)] text-[#facc15]";
+  return "bg-[rgba(232,67,26,0.14)] text-[#fb923c]";
 }
 
 function buildDeliveryAddressUrl(orderNumber: string, phone: string | null | undefined) {
@@ -1563,6 +1600,170 @@ export function DeliveryActiveView() {
   );
 }
 
+function DeliveryHistoryKpiCard({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "green" | "amber" | "orange" | "blue" | "neutral";
+}) {
+  const toneClass = {
+    green: "from-[rgba(21,128,61,0.18)] to-[rgba(15,23,42,0.24)] text-[#86efac]",
+    amber: "from-[rgba(245,158,11,0.18)] to-[rgba(15,23,42,0.24)] text-[#facc15]",
+    orange: "from-[rgba(232,67,26,0.22)] to-[rgba(15,23,42,0.24)] text-[#fb923c]",
+    blue: "from-[rgba(56,189,248,0.18)] to-[rgba(15,23,42,0.24)] text-[#7dd3fc]",
+    neutral: "from-[rgba(148,163,184,0.14)] to-[rgba(15,23,42,0.24)] text-[var(--color-text-primary)]",
+  }[tone];
+
+  return (
+    <article className={`group min-h-[132px] rounded-[18px] border border-[rgba(148,163,184,0.16)] bg-gradient-to-br ${toneClass} p-4 shadow-[0_18px_42px_rgba(2,6,23,0.24)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(232,67,26,0.32)]`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">{label}</p>
+        <span className="h-2 w-2 rounded-full bg-current shadow-[0_0_18px_currentColor]" aria-hidden="true" />
+      </div>
+      <p className="mt-4 font-[family-name:var(--font-sora)] text-2xl font-semibold tracking-normal text-[var(--color-text-primary)]">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{detail}</p>
+    </article>
+  );
+}
+
+function DeliveryHistoryStatusBadge({ item }: { item: DeliveryHistoryItem }) {
+  const isDelivered = item.status === "DELIVERED";
+  const label = isDelivered ? "Entregue" : "Incidente";
+  const classes = isDelivered
+    ? "border-[rgba(21,128,61,0.28)] bg-[rgba(21,128,61,0.12)] text-[#86efac]"
+    : "border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.14)] text-[#fbbf24]";
+
+  return (
+    <span className={`inline-flex items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${classes}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_12px_currentColor]" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function DeliveryMiniTimeline({ item }: { item: DeliveryHistoryItem }) {
+  const hasIssue = item.status === "PROBLEM";
+  const steps = [
+    { label: "Saiu", active: Boolean(item.leftOfficeAt), tone: "bg-[#38bdf8]" },
+    { label: hasIssue ? "Incidente" : "Em rota", active: true, tone: hasIssue ? "bg-[#f59e0b]" : "bg-[#f59e0b]" },
+    { label: hasIssue ? "Fechado" : "Entregue", active: Boolean(item.deliveredAt) || hasIssue, tone: hasIssue ? "bg-[#fb923c]" : "bg-[#22c55e]" },
+  ];
+
+  return (
+    <div className="grid grid-cols-3 items-start gap-2">
+      {steps.map((step, index) => (
+        <div key={step.label} className="relative">
+          {index < steps.length - 1 ? (
+            <span className="absolute left-[18px] top-[9px] h-px w-[calc(100%+0.5rem)] bg-[var(--color-border-strong)]" aria-hidden="true" />
+          ) : null}
+          <div className="relative z-10 flex flex-col gap-2">
+            <span className={`h-5 w-5 rounded-full border-4 border-[var(--color-background-secondary)] ${step.active ? step.tone : "bg-[var(--color-border-strong)]"} shadow-[0_0_18px_rgba(255,255,255,0.08)]`} />
+            <span className="text-[11px] font-semibold text-[var(--color-text-secondary)]">{step.label}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeliveryHistoryRow({
+  item,
+  expanded,
+  onToggle,
+}: {
+  item: DeliveryHistoryItem;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const issueLabel = item.issueType ? ISSUE_OPTIONS.find((option) => option.value === item.issueType)?.label ?? item.issueType : "Sem incidente";
+
+  return (
+    <article className="group rounded-[20px] border border-[var(--color-border)] bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(19,31,52,0.88))] p-4 shadow-[0_18px_48px_rgba(2,6,23,0.26)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(232,67,26,0.3)]">
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_1.1fr_0.8fr_auto] xl:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[rgba(232,67,26,0.24)] bg-[rgba(232,67,26,0.1)] px-3 py-1 text-xs font-semibold text-[#fb923c]">
+              {item.number}
+            </span>
+            <DeliveryHistoryStatusBadge item={item} />
+          </div>
+          <p className="mt-3 truncate font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">{item.customerName}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-text-secondary)]">
+            <span>{item.sourceStore || "Shopee X Digital"}</span>
+            <span className="text-[var(--color-border-strong)]">/</span>
+            <span>Maputo operacional</span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 rounded-[14px] bg-[rgba(148,163,184,0.08)] px-3 py-2">
+            <span className="text-xs text-[var(--color-text-secondary)]">Estafeta</span>
+            <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{item.driverName || "Nao atribuido"}</span>
+          </div>
+          <DeliveryMiniTimeline item={item} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-1">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Saida</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--color-text-primary)]" title={formatDateTooltip(item.leftOfficeAt)}>{formatSmartDate(item.leftOfficeAt)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Entrega</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--color-text-primary)]" title={formatDateTooltip(item.deliveredAt)}>{formatSmartDate(item.deliveredAt)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Duracao</p>
+            <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getDurationTone(item.durationMinutes)}`}>
+              {formatDuration(item.durationMinutes)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 xl:flex-col xl:items-end">
+          <div className="text-left xl:text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Taxa</p>
+            <p className="mt-1 font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-text-primary)]">{formatMoney(item.deliveryFee ?? 0)}</p>
+          </div>
+          <button type="button" onClick={onToggle} className="rounded-full border border-[var(--color-border-strong)] px-4 py-2 text-xs font-semibold text-[var(--color-text-primary)] transition hover:border-[rgba(232,67,26,0.42)] hover:bg-[rgba(232,67,26,0.08)]">
+            {expanded ? "Fechar" : "Detalhes"}
+          </button>
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="mt-5 grid gap-3 border-t border-[var(--color-border)] pt-5 md:grid-cols-4">
+          <div className="rounded-[14px] bg-[rgba(148,163,184,0.08)] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Registro</p>
+            <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">{item.number}</p>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">ID interno #{item.id}</p>
+          </div>
+          <div className="rounded-[14px] bg-[rgba(148,163,184,0.08)] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Incidente</p>
+            <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">{issueLabel}</p>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{item.status === "DELIVERED" ? "Fecho concluido sem problema registado." : "Requer leitura operacional."}</p>
+          </div>
+          <div className="rounded-[14px] bg-[rgba(148,163,184,0.08)] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Prova</p>
+            <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">Associada ao fluxo</p>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Sem anexo adicional neste resumo.</p>
+          </div>
+          <div className="rounded-[14px] bg-[rgba(148,163,184,0.08)] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">SLA</p>
+            <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">{formatDuration(item.durationMinutes)}</p>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Calculado entre saida e fecho.</p>
+          </div>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 export function DeliveryHistoryView() {
   const { effectiveRole } = useAdminAuth();
   const [history, setHistory] = useState<DeliveryHistoryResponse | null>(null);
@@ -1575,6 +1776,8 @@ export function DeliveryHistoryView() {
     page: 0,
     size: 10,
   });
+  const [quickSearch, setQuickSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -1636,12 +1839,44 @@ export function DeliveryHistoryView() {
   const historyItems = Array.isArray(history?.content) ? history.content : [];
   const historyPage = Number(history?.page ?? 0);
   const historyTotalPages = Math.max(1, Number(history?.totalPages ?? 1));
+  const filteredHistoryItems = historyItems.filter((item) => {
+    const term = quickSearch.trim().toLowerCase();
+    if (!term) return true;
+    return [
+      item.number,
+      item.customerName,
+      item.driverName ?? "",
+      item.sourceStore,
+      item.issueType ?? "",
+      item.status,
+    ].join(" ").toLowerCase().includes(term);
+  });
+  const deliveredCount = historyItems.filter((item) => item.status === "DELIVERED").length;
+  const incidentCount = historyItems.filter((item) => item.status === "PROBLEM").length;
+  const averageFee = historyItems.length
+    ? historyItems.reduce((total, item) => total + Number(item.deliveryFee ?? 0), 0) / historyItems.length
+    : 0;
+  const durationSamples = historyItems
+    .map((item) => item.durationMinutes)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const averageDuration = durationSamples.length
+    ? Math.round(durationSamples.reduce((total, value) => total + value, 0) / durationSamples.length)
+    : null;
+  const todayKey = new Date().toDateString();
+  const deliveredToday = historyItems.filter((item) => item.deliveredAt && new Date(item.deliveredAt).toDateString() === todayKey).length;
+  const driverWins = historyItems.reduce<Record<string, number>>((acc, item) => {
+    const name = item.driverName || "Nao atribuido";
+    acc[name] = (acc[name] ?? 0) + 1;
+    return acc;
+  }, {});
+  const bestDriver = Object.entries(driverWins).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Sem dados";
+  const hasActiveFilters = Boolean(filters.driverId || filters.status || filters.sourceStore || filters.period || quickSearch);
 
   return (
     <DeliveryPageFrame
-      eyebrow="Historico"
-      title="Entregas fechadas"
-      description="Consulta as entregas concluidas ou com incidente, com filtros por estafeta, estado e periodo."
+      eyebrow="Historico logistico"
+      title="Historico de entregas"
+      description="Consulta de entregas concluidas, incidentes e desempenho operacional."
       actions={
         <button
           type="button"
@@ -1671,13 +1906,38 @@ export function DeliveryHistoryView() {
     >
       {error ? <AdminBanner message={error} tone="error" /> : null}
 
-      <section className="admin-card p-5">
-        <div className="grid gap-3 lg:grid-cols-4">
+      <section className="overflow-hidden rounded-[24px] border border-[rgba(148,163,184,0.16)] bg-[radial-gradient(circle_at_top_left,rgba(232,67,26,0.14),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(9,17,31,0.9))] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.3)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#fb923c]">Operacao fechada</p>
+            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold tracking-normal text-[var(--color-text-primary)] md:text-3xl">
+              Historico de entregas
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
+              Consulta de entregas concluidas, incidentes e desempenho operacional.
+            </p>
+          </div>
+          <div className="rounded-full border border-[rgba(148,163,184,0.18)] bg-[rgba(15,23,42,0.52)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)]">
+            {filteredHistoryItems.length} visiveis · {history?.totalElements ?? 0} no historico
+          </div>
+        </div>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <DeliveryHistoryKpiCard label="Total concluidas" value={String(history?.totalElements ?? deliveredCount)} detail="Registos no periodo activo" tone="green" />
+          <DeliveryHistoryKpiCard label="Taxa media entrega" value={formatMoney(averageFee)} detail="Media da pagina carregada" tone="orange" />
+          <DeliveryHistoryKpiCard label="Tempo medio" value={formatDuration(averageDuration)} detail="Entre saida e fecho" tone="blue" />
+          <DeliveryHistoryKpiCard label="Entregas hoje" value={String(deliveredToday)} detail="Fechadas nesta data" tone="green" />
+          <DeliveryHistoryKpiCard label="Incidentes" value={String(incidentCount)} detail="Ocorrencias visiveis" tone="amber" />
+          <DeliveryHistoryKpiCard label="Melhor estafeta" value={bestDriver} detail="Maior volume nesta vista" tone="neutral" />
+        </div>
+      </section>
+
+      <section className="rounded-[22px] border border-[var(--color-border)] bg-[rgba(15,23,42,0.58)] p-4 shadow-[0_18px_42px_rgba(2,6,23,0.2)]">
+        <div className="grid gap-3 xl:grid-cols-[1fr_1fr_1fr_1fr_1.3fr_auto_auto] xl:items-center">
           {effectiveRole === "DELIVERY_DRIVER" ? null : (
             <select
               value={filters.driverId}
               onChange={(event) => setFilters((current) => ({ ...current, driverId: event.target.value, page: 0 }))}
-              className="admin-input"
+              className="admin-input min-h-12"
             >
               <option value="">Todos os estafetas</option>
               {drivers.map((driver) => (
@@ -1690,7 +1950,7 @@ export function DeliveryHistoryView() {
           <select
             value={filters.status}
             onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value, page: 0 }))}
-            className="admin-input"
+            className="admin-input min-h-12"
           >
             <option value="">Todos os estados</option>
             <option value="DELIVERED">Entregue</option>
@@ -1700,89 +1960,104 @@ export function DeliveryHistoryView() {
             type="date"
             value={filters.period}
             onChange={(event) => setFilters((current) => ({ ...current, period: event.target.value, page: 0 }))}
-            className="admin-input"
+            className="admin-input min-h-12"
           />
           <input
             type="text"
             value={filters.sourceStore}
             onChange={(event) => setFilters((current) => ({ ...current, sourceStore: event.target.value, page: 0 }))}
-            className="admin-input"
-            placeholder="Filtrar por loja de origem"
+            className="admin-input min-h-12"
+            placeholder="Loja origem"
           />
+          <input
+            type="search"
+            value={quickSearch}
+            onChange={(event) => setQuickSearch(event.target.value)}
+            className="admin-input min-h-12"
+            placeholder="Busca rapida por pedido, cliente, estafeta"
+          />
+          <button
+            type="button"
+            disabled={!hasActiveFilters}
+            onClick={() => {
+              setFilters({ driverId: "", status: "", sourceStore: "", period: "", page: 0, size: filters.size });
+              setQuickSearch("");
+            }}
+            className="admin-button-muted min-h-12 justify-center px-4 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Limpar
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              exportCsv(
+                "delivery-history.csv",
+                [
+                  ["Pedido", "Cliente", "Estafeta", "Taxa", "Saiu", "Entregue", "Duracao", "Estado"],
+                  ...filteredHistoryItems.map((item) => [
+                    item.number,
+                    item.customerName,
+                    item.driverName ?? "",
+                    String(item.deliveryFee ?? 0),
+                    item.leftOfficeAt ?? "",
+                    item.deliveredAt ?? "",
+                    formatDuration(item.durationMinutes),
+                    item.status,
+                  ]),
+                ],
+              )
+            }
+            className="admin-button-danger min-h-12 justify-center px-4 text-sm"
+          >
+            Exportar
+          </button>
         </div>
       </section>
 
-      <section className="admin-card overflow-hidden">
-        <div className="grid gap-3 bg-[var(--color-background-secondary)] px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)] md:grid-cols-[110px_1.3fr_1fr_120px_130px_130px_110px_120px]">
-          <span>ID</span>
-          <span>Cliente</span>
-          <span>Estafeta</span>
-          <span>Taxa</span>
-          <span>Saida</span>
-          <span>Entrega</span>
-          <span>Duracao</span>
-          <span>Estado</span>
-        </div>
-        <div className="p-5">
-          {!history ? (
-            <AdminTableSkeleton columns={8} rows={4} />
-          ) : historyItems.length === 0 ? (
-            <AdminStateCard title="Sem historico nesta combinacao" message="Ajusta os filtros para ver entregas fechadas ou problemas registados." compact />
-          ) : (
-            <div className="space-y-3">
-              {historyItems.map((item) => (
-                <div key={`${item.id}-${item.status}`} className="grid gap-3 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-4 py-4 text-sm md:grid-cols-[110px_1.3fr_1fr_120px_130px_130px_110px_120px]">
-                  <span className="font-semibold text-[var(--color-text-primary)]">{item.number}</span>
-                  <div>
-                    <p className="font-medium text-[var(--color-text-primary)]">{item.customerName}</p>
-                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{item.sourceStore}</p>
-                  </div>
-                  <span className="text-[var(--color-text-secondary)]">{item.driverName || "Nao atribuido"}</span>
-                  <span>{formatMoney(item.deliveryFee ?? 0)}</span>
-                  <span>{formatDateTime(item.leftOfficeAt)}</span>
-                  <span>{formatDateTime(item.deliveredAt)}</span>
-                  <span>{formatDuration(item.durationMinutes)}</span>
-                  <div className="flex flex-col gap-1">
-                    <span className={`rounded-full px-3 py-1 text-center text-xs font-semibold ${item.status === "DELIVERED" ? "bg-[#EAF3DE] text-[#27500A]" : "bg-[#FFF0EC] text-[#C13210]"}`}>
-                      {item.status === "DELIVERED" ? "Entregue" : "Problema"}
-                    </span>
-                    {item.issueType ? (
-                      <span className="px-1 text-center text-[10px] text-[var(--color-text-tertiary)]">
-                        {ISSUE_OPTIONS.find((o) => o.value === item.issueType)?.label ?? item.issueType}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        {history ? (
-          <div className="flex items-center justify-between border-t border-[var(--color-border)] px-5 py-4 text-sm text-[var(--color-text-secondary)]">
-            <span>
-              Pagina {historyPage + 1} de {historyTotalPages}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={historyPage === 0}
-                onClick={() => setFilters((current) => ({ ...current, page: Math.max(current.page - 1, 0) }))}
-                className="admin-button-muted disabled:opacity-50"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                disabled={historyPage + 1 >= historyTotalPages}
-                onClick={() => setFilters((current) => ({ ...current, page: current.page + 1 }))}
-                className="admin-button-muted disabled:opacity-50"
-              >
-                Seguinte
-              </button>
-            </div>
-          </div>
-        ) : null}
+      <section className="space-y-3">
+        {!history ? (
+          <AdminTableSkeleton columns={4} rows={4} />
+        ) : historyItems.length === 0 ? (
+          <AdminStateCard title="Sem historico nesta combinacao" message="Ajusta os filtros para ver entregas fechadas ou problemas registados." compact />
+        ) : filteredHistoryItems.length === 0 ? (
+          <AdminStateCard title="Sem resultado na busca rapida" message="Remove a busca local ou altera os filtros para encontrar outros registos." compact />
+        ) : (
+          filteredHistoryItems.map((item) => (
+            <DeliveryHistoryRow
+              key={`${item.id}-${item.status}`}
+              item={item}
+              expanded={expandedId === item.id}
+              onToggle={() => setExpandedId((current) => (current === item.id ? null : item.id))}
+            />
+          ))
+        )}
       </section>
+
+      {history ? (
+        <div className="flex flex-col gap-3 rounded-[20px] border border-[var(--color-border)] bg-[rgba(15,23,42,0.54)] px-5 py-4 text-sm text-[var(--color-text-secondary)] md:flex-row md:items-center md:justify-between">
+          <span>
+            Pagina {historyPage + 1} de {historyTotalPages} · {history?.totalElements ?? 0} registos
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={historyPage === 0}
+              onClick={() => setFilters((current) => ({ ...current, page: Math.max(current.page - 1, 0) }))}
+              className="admin-button-muted justify-center disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              disabled={historyPage + 1 >= historyTotalPages}
+              onClick={() => setFilters((current) => ({ ...current, page: current.page + 1 }))}
+              className="admin-button-muted justify-center disabled:opacity-50"
+            >
+              Seguinte
+            </button>
+          </div>
+        </div>
+      ) : null}
     </DeliveryPageFrame>
   );
 }
