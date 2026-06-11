@@ -338,6 +338,12 @@ export type ExternalOrderDetail = {
   allowedActions?: string[];
   isArchived: boolean;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
+  paymentMethod?: "PAYSUITE" | "MANUAL_TRANSFER" | "CASH_ON_DELIVERY" | "DEPOSIT_PLUS_DELIVERY" | string | null;
+  codEnabled?: boolean | null;
+  depositRequired?: boolean | null;
+  depositAmount?: number | null;
+  remainingAmountOnDelivery?: number | null;
+  deliveryPaymentStatus?: "PENDING" | "RECEIVED" | "WAIVED" | string | null;
   urgentRequest: boolean;
   externalCartUrl: string;
   requestInputType: "LINK" | "DESCRIPTION" | null;

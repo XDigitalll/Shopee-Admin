@@ -11,20 +11,14 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useOrders } from "@/hooks/useOrders";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatDate, formatMoney, humanizeOrderStatus, humanizePaymentMethod } from "@/lib/admin/format";
+import { getOrderActionHint, getPrimaryOrderAction, type AdminOrderAction } from "@/lib/admin/order-actions";
 import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
 import type { OrderQueueStatus } from "@/lib/admin/order-status";
 import { isActionRequired, sortOperationalQueue, type OperationalContext } from "@/lib/admin/operational-queue";
 import type { AdminModule } from "@/lib/admin/roles";
 import type { AdminOrderListItem, OrdersFilterState, OrdersStatsResponse } from "@/lib/admin/types";
 
-type DrawerAction =
-  | { label: string; href: string }
-  | {
-      label: string;
-      action: "mark-status" | "mark-ready-for-delivery" | "mark-purchased" | "mark-in-transit" | "mark-arrived" | "validate-payment" | "collect-and-close" | "handoff";
-      targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
-      targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION";
-    };
+type DrawerAction = AdminOrderAction;
 
 type ActionFeedback = {
   message: string;
@@ -206,7 +200,7 @@ function OrdersDrawer({
   mode: "orders" | "delivery";
   onFeedback: (feedback: ActionFeedback) => void;
 }) {
-  const { effectiveRole } = useAdminAuth();
+  const { profile } = useAdminAuth();
   const actionRunner = useAsyncAction({
     onError: (message) => onFeedback({ message, tone: "error" }),
   });
@@ -223,89 +217,11 @@ function OrdersDrawer({
 
   function primaryAction(orderItem: AdminOrderListItem | null): DrawerAction | null {
     if (!orderItem) return null;
-
-    const status = getOperationalStatus(orderItem);
-
-    if (isPickupOrder(orderItem)) {
-      if (hasAllowedAction(orderItem, "MARK_READY_FOR_PICKUP")) {
-        return { label: "Marcar pronto para levantamento", action: "mark-ready-for-delivery" };
-      }
-
-      if (hasAllowedAction(orderItem, "CONFIRM_PICKUP")) {
-        if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus)) {
-          return { label: "Confirmar cobrança e levantamento", action: "collect-and-close", targetStatus: "DELIVERED" };
-        }
-
-        return { label: "Confirmar levantamento", action: "mark-status", targetStatus: "DELIVERED" };
-      }
-
-      if (status === "DELIVERED") {
-        return { label: "Ver detalhes completos", href: `/admin/orders/${orderItem.id}` };
-      }
-
-      return null;
-    }
-
-    if (mode === "delivery") {
-      if (orderItem.deliveryMethod === "STORE_PICKUP") {
-        return null;
-      }
-
-      if (isCashOnDelivery(orderItem) && !isPaymentValidated(orderItem.paymentStatus) && status === "OUT_FOR_DELIVERY") {
-        return { label: "Confirmar cobrança e entrega", action: "collect-and-close", targetStatus: "DELIVERED" };
-      }
-
-      const deliveryAction = DELIVERY_NEXT_ACTION[status] ?? null;
-      return deliveryAction
-        ? { label: deliveryAction.label, action: "mark-status", targetStatus: deliveryAction.targetStatus }
-        : null;
-    }
-
-    if (orderItem.uiStatus === "UNDER_REVIEW" || (orderItem.type === "EXTERNAL" && orderItem.uiStatus === "CREATED")) {
-      return { label: "Analisar e cotar", href: `/admin/orders/${orderItem.id}/quote` };
-    }
-    if (orderItem.uiStatus === "QUOTED") {
-      return { label: "Ver cotacao enviada", href: `/admin/orders/${orderItem.id}/quote` };
-    }
-    if (["APPROVED", "PENDING_PAYMENT", "PAYMENT_SUBMITTED", "PAYMENT_UNDER_REVIEW", "PAYMENT_REJECTED"].includes(orderItem.uiStatus)) {
-      return effectiveRole === "SUPER_ADMIN"
-        ? { label: orderItem.uiStatus === "PAYMENT_REJECTED" ? "Ver submissao financeira" : "Ver em pagamentos", href: `/admin/payments?orderId=${orderItem.id}&queue=${paymentQueueForOrder(orderItem.uiStatus)}` }
-        : { label: "Enviar para equipa de pagamentos", action: "handoff", targetQueue: "PAYMENTS" };
-    }
-    if (isInternalDeliveryOrder(orderItem) && status === "READY_FOR_FULFILLMENT") {
-      return { label: "Preparar produto", action: "mark-ready-for-delivery" };
-    }
-    if (isInternalDeliveryOrder(orderItem) && ["PICKING", "PREPARING"].includes(status)) {
-      return { label: "Mandar para entrega", action: "mark-ready-for-delivery" };
-    }
-    if (isInternalDeliveryOrder(orderItem) && status === "READY_FOR_DELIVERY") {
-      return { label: "Ver em entregas", href: "/admin/delivery/pending" };
-    }
-    if (orderItem.type === "EXTERNAL" && (orderItem.uiStatus === "TO_PURCHASE" || orderItem.uiStatus === "PAID")) {
-      return { label: "Marcar como comprado", action: "mark-purchased" };
-    }
-    if (orderItem.type === "EXTERNAL" && (status === "ORDERED" || status === "PURCHASED")) {
-      return { label: "Marcar em trânsito", action: "mark-in-transit" };
-    }
-    if (orderItem.type === "EXTERNAL" && status === "IN_TRANSIT") {
-      return { label: "Marcar como chegado a sede", action: "mark-arrived" };
-    }
-    if (orderItem.type === "EXTERNAL" && status === "ARRIVED") {
-      return effectiveRole === "SUPER_ADMIN"
-        ? { label: "Mandar para entrega", action: "handoff", targetQueue: "DELIVERY" }
-        : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
-    }
-    if (orderItem.type === "EXTERNAL" && status === "READY_FOR_DELIVERY") {
-      return { label: "Ver em entregas", href: "/admin/delivery/pending" };
-    }
-    if (orderItem.uiStatus === "DELIVERED") {
-      return { label: "Ver recibo", href: `/admin/orders/${orderItem.id}` };
-    }
-
-    return null;
+    return getPrimaryOrderAction(orderItem, profile, { surface: "list", mode }) as DrawerAction | null;
   }
 
   const action = primaryAction(order);
+  const actionHint = getOrderActionHint(order);
 
   useEffect(() => {
     if (!order || !shouldFocusAction) {
@@ -459,7 +375,7 @@ function OrdersDrawer({
     });
   }
 
-  async function handleHandoff(targetQueue: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION") {
+  async function handleHandoff(targetQueue: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT") {
     if (!order) return;
 
     await actionRunner.run(async () => {
@@ -770,6 +686,12 @@ function OrdersDrawer({
                     {isPending ? <AdminSpinner label="A processar..." /> : action.label}
                   </button>
                 )
+              ) : null}
+
+              {!action && actionHint ? (
+                <p className="rounded-2xl border border-[#BAE6FD] bg-[#F0F9FF] px-4 py-3 text-xs font-medium text-[#0C4A6E]">
+                  {actionHint}
+                </p>
               ) : null}
 
               {mode === "delivery" && cashOnDelivery && !paymentValidated && getOperationalStatus(order) !== "OUT_FOR_DELIVERY" && !isPickupOrder(order) ? (

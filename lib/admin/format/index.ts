@@ -61,6 +61,7 @@ export function humanizeOrderStatus(status: string | null | undefined) {
     PAYMENT_SUBMITTED: "Pagamento submetido",
     PAYMENT_UNDER_REVIEW: "Pagamento em analise",
     PAYMENT_REJECTED: "Pagamento rejeitado",
+    PAYMENT_ON_DELIVERY_PENDING: "Pagamento na entrega",
     READY_FOR_FULFILLMENT: "Preparar produto",
     PICKING: "Em separacao",
     PREPARING: "Em preparacao",
@@ -89,8 +90,11 @@ export function humanizePaymentMethod(method: string | null | undefined) {
     MPESA: "M-Pesa",
     EMOLA: "e-Mola",
     BANK_TRANSFER: "Transferencia bancaria",
+    PAYSUITE: "Pagar agora",
+    MANUAL_TRANSFER: "Transferencia manual",
     VISA_MANUAL: "Visa / cartao manual",
-    CASH_ON_DELIVERY: "Cobranca na entrega",
+    CASH_ON_DELIVERY: "Pagar na entrega",
+    DEPOSIT_PLUS_DELIVERY: "Sinal + saldo na entrega",
     CARD: "Cartao",
   };
 
