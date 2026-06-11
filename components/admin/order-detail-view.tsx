@@ -10,6 +10,8 @@ import { AdminConfirmDialog, AdminSectionSkeleton } from "@/components/admin/fee
 import { WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney, humanizeOrderStatus, humanizePaymentMethod } from "@/lib/admin/format";
+import { getAvailableOrderActions, getOrderActionHint, getPrimaryOrderAction, type AdminOrderAction } from "@/lib/admin/order-actions";
+import { canPerform } from "@/lib/admin/permissions";
 import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
 import type { ExternalOrderDetail, InternalOrderNote, OrderHistoryEntry } from "@/lib/admin/types";
 
@@ -43,6 +45,7 @@ const EXTERNAL_STATUS_STEPS = [
 const PICKUP_STATUS_STEPS = [
   "CREATED",
   "PENDING_PAYMENT",
+  "PAYMENT_ON_DELIVERY_PENDING",
   "PAID",
   "READY_FOR_DELIVERY",
   "DELIVERED",
@@ -51,6 +54,7 @@ const PICKUP_STATUS_STEPS = [
 const INTERNAL_DELIVERY_STATUS_STEPS = [
   "CREATED",
   "PENDING_PAYMENT",
+  "PAYMENT_ON_DELIVERY_PENDING",
   "PAID",
   "OUT_FOR_DELIVERY",
   "DELIVERED",
@@ -61,14 +65,7 @@ type TrackableStatus =
   | (typeof EXTERNAL_STATUS_STEPS)[number]
   | (typeof PICKUP_STATUS_STEPS)[number]
   | (typeof INTERNAL_DELIVERY_STATUS_STEPS)[number];
-type DetailAction =
-  | { label: string; href: string }
-  | {
-      label: string;
-      action: "focus-tracking" | "collect-and-deliver" | "cancel-order" | "mark-status" | "mark-ready-for-delivery" | "handoff" | "purchase-proof";
-      targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
-      targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT";
-    };
+type DetailAction = AdminOrderAction;
 
 type DetailActionCommand = Extract<DetailAction, { action: string }>;
 
@@ -78,6 +75,7 @@ const STATUS_THEME: Record<string, string> = {
   QUOTED: "bg-[#fef3c7] text-[#92400e]",
   APPROVED: "bg-[#d1fae5] text-[#065f46]",
   PENDING_PAYMENT: "bg-[#FAEEDA] text-[#633806]",
+  PAYMENT_ON_DELIVERY_PENDING: "bg-[#E0F2FE] text-[#0C4A6E]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
   TO_PURCHASE: "bg-[#FFF2D6] text-[#8A5A00]",
   ORDERED: "bg-[#E1F5EE] text-[#085041]",
@@ -176,11 +174,13 @@ function getCurrentStepIndex(
 
 function getTrackingStepLabel(step: string, detail: ExternalOrderDetail | null) {
   if (detail && isPickupOrder(detail)) {
+    if (step === "PAYMENT_ON_DELIVERY_PENDING") return "Pagar na entrega";
     if (step === "PAID") return "Pagamento confirmado";
     if (step === "READY_FOR_DELIVERY") return "Pronto para levantamento";
     if (step === "DELIVERED") return "Levantado";
   }
   if (detail && isInternalDeliveryOrder(detail)) {
+    if (step === "PAYMENT_ON_DELIVERY_PENDING") return "Pagar na entrega";
     if (step === "PAID") return "Pago";
     if (step === "OUT_FOR_DELIVERY") return "A caminho";
   }
@@ -311,8 +311,9 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
 
 export function OrderDetailView({ orderId }: { orderId: string }) {
   const router = useRouter();
-  const { effectiveRole } = useAdminAuth();
+  const { effectiveRole, profile } = useAdminAuth();
   const isSuperAdmin = effectiveRole === "SUPER_ADMIN";
+  const canConfirmDeliveryPayment = ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(String(effectiveRole ?? ""));
   const trackingRef = useRef<HTMLDivElement | null>(null);
   const [detail, setDetail] = useState<ExternalOrderDetail | null>(null);
   const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
@@ -337,6 +338,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [publishProofError, setPublishProofError] = useState("");
   const [isConfirmingPurchase, setIsConfirmingPurchase] = useState(false);
   const [isPublishingProof, setIsPublishingProof] = useState(false);
+  const [isConfirmingDeliveryPayment, setIsConfirmingDeliveryPayment] = useState(false);
   const [proofSendWhatsapp, setProofSendWhatsapp] = useState(false);
   const [proofSendEmail, setProofSendEmail] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -390,8 +392,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   }, [purchaseProofFile]);
 
   const totals = useMemo(() => (detail ? buildTotals(detail) : null), [detail]);
-  const primaryAction = detail ? buildPrimaryAction(detail, isSuperAdmin) : null;
-  const quickActions = detail ? buildQuickActions(detail, isSuperAdmin) : [];
+  const primaryAction = detail ? getPrimaryOrderAction(detail, profile, { surface: "detail", mode: "orders", usePurchaseProof: true }) as DetailAction | null : null;
+  const quickActions = detail ? getAvailableOrderActions(detail, profile, { surface: "detail", mode: "orders", usePurchaseProof: true }) as DetailAction[] : [];
+  const actionHint = getOrderActionHint(detail);
   const trackingSteps = useMemo(() => getTrackingSteps(detail), [detail]);
   const currentStatus = normalizeTrackingStatus(detail);
   const currentStepIndex = getCurrentStepIndex(trackingSteps, currentStatus);
@@ -405,6 +408,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     [history]
   );
   const orderWhatsAppMessage = detail ? buildOrderWhatsAppMessage(detail.number) : "";
+  const hasDeliveryBalance = Boolean(
+    detail &&
+      (detail.codEnabled || detail.depositRequired || Number(detail.remainingAmountOnDelivery ?? 0) > 0) &&
+      detail.deliveryPaymentStatus !== "RECEIVED"
+  );
 
   async function refreshData() {
     const detailPayload = await adminApiFetch<ExternalOrderDetail>(`/api/admin/orders/${orderId}`);
@@ -494,6 +502,21 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       setError(actionError instanceof Error ? actionError.message : "Não foi possível cancelar este pedido.");
     } finally {
       setIsCancelling(false);
+    }
+  }
+
+  async function confirmDeliveryPayment() {
+    if (!detail) return;
+
+    setIsConfirmingDeliveryPayment(true);
+    setError("");
+    try {
+      await adminApiFetch(`/api/admin/orders/${detail.id}/delivery-payment/confirm`, { method: "PATCH" });
+      await refreshData();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Nao foi possivel confirmar o dinheiro recebido.");
+    } finally {
+      setIsConfirmingDeliveryPayment(false);
     }
   }
 
@@ -628,15 +651,18 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
   const pickupOrder = isPickupOrder(detail);
   const externalOrder = detail.type === "EXTERNAL";
+  const canManageOrderActions = canPerform(profile, ["ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"]);
   const screenshotUrls = detail.requestScreenshotUrls.length
     ? detail.requestScreenshotUrls
     : detail.requestScreenshotUrl
       ? [detail.requestScreenshotUrl]
       : [];
   const canConfirmPurchase = externalOrder
+    && canManageOrderActions
     && ["PAID", "TO_PURCHASE"].includes(currentStatus)
     && !detail.purchaseConfirmedAt;
   const canPublishProof = externalOrder
+    && canManageOrderActions
     && (currentStatus as string) === "PURCHASED"
     && !!detail.purchaseConfirmedAt
     && !detail.purchaseProofUrl;
@@ -697,6 +723,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 </button>
               )
             ) : null}
+            {!primaryAction && actionHint ? (
+              <p className="rounded-2xl border border-[#BAE6FD] bg-[#F0F9FF] px-4 py-3 text-xs font-medium text-[#0C4A6E]">
+                {actionHint}
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -716,17 +747,24 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
       {detail.purchaseConfirmedAt && !detail.purchaseProofUrl ? (
         <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
-          <p className="font-semibold">Compra confirmada no fornecedor</p>
-          <p className="mt-1">
-            {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
-            {detail.purchaseConfirmedAt
-              ? `Confirmado em ${new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.purchaseConfirmedAt))}.`
-              : ""}
-          </p>
-          {detail.supplierPurchaseAmount != null ? (
-            <p className="mt-1">Valor final pago: {formatMoney(detail.supplierPurchaseAmount)}</p>
-          ) : null}
-          <p className="mt-2 text-xs text-[#166534]/70">Comprovativo ainda nao enviado ao cliente.</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold">Compra sem comprovativo anexado</p>
+              <p className="mt-1">
+                {detail.supplierName ? `Loja: ${detail.supplierName}. ` : ""}
+                {detail.purchaseConfirmedAt
+                  ? `Confirmado em ${new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.purchaseConfirmedAt))}.`
+                  : ""}
+              </p>
+              {detail.supplierPurchaseAmount != null ? (
+                <p className="mt-1">Valor final pago: {formatMoney(detail.supplierPurchaseAmount)}</p>
+              ) : null}
+              <p className="mt-2 text-xs text-[#166534]/70">Compra marcada sem comprovativo. Deve ser anexado depois.</p>
+            </div>
+            <button type="button" onClick={() => setPublishProofOpen(true)} className="admin-button-muted justify-center">
+              Adicionar comprovativo de compra
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -1098,7 +1136,10 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between"><span>Método</span><strong>{humanizePaymentMethod(detail.payment.method)}</strong></div>
+                <div className="flex items-center justify-between"><span>Método escolhido</span><strong>{humanizePaymentMethod(detail.paymentMethod ?? detail.payment.method)}</strong></div>
+                {detail.payment.method && detail.payment.method !== detail.paymentMethod ? (
+                  <div className="flex items-center justify-between"><span>Meio de pagamento</span><strong>{humanizePaymentMethod(detail.payment.method)}</strong></div>
+                ) : null}
                 <div className="flex items-center justify-between"><span>Provider</span><strong>{detail.payment.provider || "MANUAL"}</strong></div>
                 {detail.payment.providerReference ? (
                   <div className="flex items-center justify-between gap-3"><span>Ref. gateway</span><strong className="break-all text-right">{detail.payment.providerReference}</strong></div>
@@ -1110,8 +1151,25 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 <div className="flex items-center justify-between"><span>Data e hora</span><strong>{detail.payment.paymentDate ? new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(detail.payment.paymentDate)) : "Não pago"}</strong></div>
                 <div className="flex items-center justify-between"><span>Valor pago</span><strong>{formatMoney(detail.payment.amount)}</strong></div>
                 <div className="flex items-center justify-between"><span>Estado</span><strong>{detail.payment.status || "Sem validação"}</strong></div>
+                {(detail.codEnabled || detail.depositRequired || Number(detail.remainingAmountOnDelivery ?? 0) > 0) ? (
+                  <>
+                    <div className="flex items-center justify-between"><span>Sinal pago</span><strong>{formatMoney(Number(detail.depositAmount ?? 0))}</strong></div>
+                    <div className="flex items-center justify-between"><span>Saldo por receber na entrega</span><strong>{formatMoney(Number(detail.remainingAmountOnDelivery ?? 0))}</strong></div>
+                    <div className="flex items-center justify-between"><span>Dinheiro na entrega</span><strong>{detail.deliveryPaymentStatus || "PENDING"}</strong></div>
+                  </>
+                ) : null}
               </div>
               <div className="flex flex-col gap-3">
+                {hasDeliveryBalance && canConfirmDeliveryPayment ? (
+                  <button
+                    type="button"
+                    onClick={() => void confirmDeliveryPayment()}
+                    disabled={isConfirmingDeliveryPayment}
+                    className="admin-button-danger justify-center disabled:opacity-60"
+                  >
+                    {isConfirmingDeliveryPayment ? "A confirmar..." : "Confirmar dinheiro recebido na entrega"}
+                  </button>
+                ) : null}
                 {detail.payment.checkoutUrl ? (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-[var(--color-text-secondary)]">Checkout URL</p>
@@ -1163,6 +1221,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   </button>
                 )
               )}
+              {quickActions.length === 0 && actionHint ? (
+                <p className="rounded-2xl border border-[#BAE6FD] bg-[#F0F9FF] px-4 py-3 text-xs font-medium text-[#0C4A6E]">
+                  {actionHint}
+                </p>
+              ) : null}
             </div>
           </section>
 

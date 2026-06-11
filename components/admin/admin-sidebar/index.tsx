@@ -29,6 +29,7 @@ import {
 type SidebarCounters = {
   orders: number;
   quotes: number;
+  payments: number;
   delivery: number;
   orphanOrders: number;
 };
@@ -43,6 +44,7 @@ type SidebarItem = {
   counterKey?: SidebarCounterKey;
   roles?: AdminRole[];
   indent?: boolean;
+  exact?: boolean;
 };
 
 const sections = [
@@ -74,6 +76,22 @@ const sections = [
     ] satisfies SidebarItem[],
   },
   {
+    title: "Financeiro",
+    items: [
+      {
+        module: "payments",
+        label: "Pagamentos manuais",
+        href: "/admin/payments",
+        icon: WalletIcon,
+        counterKey: "payments",
+        roles: ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"],
+      },
+      { module: "finance", label: "Transações PaySuite", href: "/admin/finance/paysuite", icon: WalletIcon, roles: ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"] },
+      { module: "finance", label: "Finanças", href: "/admin/finance", icon: ChartIcon, roles: ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"], exact: true },
+      { module: "coupons", label: "Cupões", href: "/admin/coupons", icon: WalletIcon, roles: ["FINANCE_MANAGER", "CRM_MANAGER", "ADMIN", "SUPER_ADMIN"] },
+    ] satisfies SidebarItem[],
+  },
+  {
     title: "Catalogo",
     items: [
       { module: "products", label: "Produtos", href: "/admin/products", icon: BoxIcon },
@@ -86,9 +104,6 @@ const sections = [
     title: "CRM & Suporte",
     items: [
       { module: "customers", label: "Clientes", href: "/admin/customers", icon: UsersIcon },
-      { module: "finance", label: "Finanças", href: "/admin/finance", icon: ChartIcon },
-      { module: "finance", label: "Transações PaySuite", href: "/admin/finance/paysuite", icon: WalletIcon, indent: true },
-      { module: "coupons", label: "Cupões", href: "/admin/coupons", icon: WalletIcon, roles: ["FINANCE_MANAGER", "CRM_MANAGER", "ADMIN", "SUPER_ADMIN"] },
     ] satisfies SidebarItem[],
   },
 ];
@@ -325,8 +340,8 @@ export function AdminSidebar({
     if (!canShowNavItem(item)) return null;
 
     const isActive =
-      item.href === "/admin"
-        ? pathname === "/admin"
+      item.href === "/admin" || item.exact
+        ? pathname === item.href
         : pathname === item.href || pathname.startsWith(`${item.href}/`);
     const count = item.counterKey ? counters[item.counterKey] : null;
     const isProductsItem = item.module === "products" && item.href === "/admin/products";

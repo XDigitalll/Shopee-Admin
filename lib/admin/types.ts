@@ -25,6 +25,7 @@ export type TodayStatsResponse = {
   badges: {
     orders: number;
     quotes: number;
+    payments: number;
     delivery: number;
     orphanOrders: number;
   };
@@ -337,6 +338,12 @@ export type ExternalOrderDetail = {
   allowedActions?: string[];
   isArchived: boolean;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
+  paymentMethod?: "PAYSUITE" | "MANUAL_TRANSFER" | "CASH_ON_DELIVERY" | "DEPOSIT_PLUS_DELIVERY" | string | null;
+  codEnabled?: boolean | null;
+  depositRequired?: boolean | null;
+  depositAmount?: number | null;
+  remainingAmountOnDelivery?: number | null;
+  deliveryPaymentStatus?: "PENDING" | "RECEIVED" | "WAIVED" | string | null;
   urgentRequest: boolean;
   externalCartUrl: string;
   requestInputType: "LINK" | "DESCRIPTION" | null;
@@ -589,6 +596,120 @@ export type AdminPaymentStatsResponse = {
   rejected: number;
   pendingValidationCount: number;
   validatedTodayAmount: number;
+};
+
+export type AdminPaymentReceiptResponse = {
+  url: string | null;
+};
+
+export type PaymentSubmissionStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "FLAGGED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF" | "REQUESTED_NEW_PROOF";
+export type PaymentSubmissionQueue = "AWAITING_SUBMISSION" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPICIOUS" | "REQUEST_NEW_PROOF";
+export type PaymentMethodType = "EMOLA" | "MPESA" | "BANK_TRANSFER" | "VISA_MANUAL";
+
+export type PaymentAllowedActions = {
+  canStartReview: boolean;
+  canReopenReview?: boolean;
+  canApprove: boolean;
+  canApproveWithMismatch?: boolean;
+  canReject: boolean;
+  canMarkSuspect: boolean;
+  canRequestNewProof: boolean;
+};
+
+export type PaymentSubmissionQueueStats = {
+  awaitingSubmission: number;
+  submitted: number;
+  underReview: number;
+  approved: number;
+  rejected: number;
+  suspicious: number;
+  requestNewProof?: number;
+  pendingAttentionCount?: number;
+};
+
+export type PaymentAwaitingSubmission = {
+  orderId: number;
+  orderCode: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  expectedAmount: number | null;
+  orderStatus: string | null;
+  orderDate: string | null;
+};
+
+export type PaymentSubmission = {
+  id: number;
+  orderId: number | null;
+  orderCode: string | null;
+  orderStatus: string | null;
+  orderType?: string | null;
+  itemCount?: number | null;
+  orderCreatedAt?: string | null;
+  expectedAmount: number | null;
+  declaredAmount?: number | null;
+  differenceAmount?: number | null;
+  amountMismatch?: boolean | null;
+  mismatchOverrideReason?: string | null;
+  mismatchApprovedBy?: string | null;
+  mismatchApprovedAt?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerCommunicationPhone?: string | null;
+  customerEmail?: string | null;
+  customerCity?: string | null;
+  customerPreviousOrders?: number | null;
+  customerApprovedPayments?: number | null;
+  customerRiskFlags?: number | null;
+  paymentMethod: PaymentMethodType | string | null;
+  payerName: string | null;
+  payerPhone: string | null;
+  payerBank: string | null;
+  transactionReference: string | null;
+  amount: number | null;
+  currency: string | null;
+  proofUrl: string | null;
+  proofType: string | null;
+  status: PaymentSubmissionStatus;
+  bucket?: PaymentSubmissionQueue | null;
+  currentBucket?: PaymentSubmissionQueue | null;
+  isResubmission?: boolean | null;
+  hasUnreadChanges?: boolean | null;
+  actionRequired?: boolean | null;
+  actionReason?: string | null;
+  isTerminal?: boolean | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  riskFlags: string[];
+  matchedTransactionId: string | null;
+  metadata: Record<string, unknown> | null;
+  orderItems?: AdminPaymentOrderItem[];
+  allowedActions?: PaymentAllowedActions;
+  orderHistory?: Array<{
+    id?: number;
+    action?: string | null;
+    description?: string | null;
+    performedByEmail?: string | null;
+    performedByName?: string | null;
+    createdAt?: string | null;
+  }>;
+};
+
+export type PaymentSubmissionsPage = {
+  content: PaymentSubmission[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+export type AwaitingPaymentSubmissionsPage = {
+  content: PaymentAwaitingSubmission[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
 };
 
 export type CreateExternalOrderPayload = {

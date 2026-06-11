@@ -79,6 +79,12 @@ type BackendOrderDetail = {
   googleMapsLink?: string;
   type?: "EXTERNAL" | "INTERNAL";
   deliveryMethod?: "DELIVERY" | "STORE_PICKUP" | null;
+  paymentMethod?: string | null;
+  codEnabled?: boolean | null;
+  depositRequired?: boolean | null;
+  depositAmount?: number | null;
+  remainingAmountOnDelivery?: number | null;
+  deliveryPaymentStatus?: string | null;
   urgent?: boolean | null;
   status?: string;
   operationalStatus?: string | null;
@@ -632,6 +638,12 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     allowedActions: order.allowedActions ?? [],
     isArchived: Boolean(order.isArchived ?? order.quoteQueueStatus === "ARCHIVED"),
     deliveryMethod: order.deliveryMethod ?? null,
+    paymentMethod: order.paymentMethod ?? paymentPayload?.method ?? null,
+    codEnabled: Boolean(order.codEnabled),
+    depositRequired: Boolean(order.depositRequired),
+    depositAmount: order.depositAmount == null ? null : Number(order.depositAmount),
+    remainingAmountOnDelivery: order.remainingAmountOnDelivery == null ? null : Number(order.remainingAmountOnDelivery),
+    deliveryPaymentStatus: order.deliveryPaymentStatus ?? null,
     urgentRequest: Boolean(order.urgent),
     externalCartUrl: externalOrder ? order.externalCartUrl ?? "" : "",
     requestInputType: externalOrder ? order.requestInputType ?? null : null,

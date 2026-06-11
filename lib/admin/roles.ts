@@ -117,8 +117,8 @@ export const MODULE_METADATA: Record<
     path: "/admin/external-quotes",
   },
   payments: {
-    name: "Pagamentos",
-    description: "Validar pagamentos e rever pendências financeiras.",
+    name: "Pagamentos manuais",
+    description: "Validar comprovativos manuais e rever pendências financeiras.",
     icon: "wallet",
     path: "/admin/payments",
   },
@@ -194,6 +194,7 @@ export const ROUTE_ACCESS_RULES: Array<{
   { pattern: /^\/admin\/banners$/, module: "banners" },
   { pattern: /^\/admin\/customers$/, module: "customers" },
   { pattern: /^\/admin\/finance$/, module: "finance" },
+  { pattern: /^\/admin\/finance\/paysuite$/, module: "finance" },
   { pattern: /^\/admin\/coupons$/, module: "coupons" },
   { pattern: /^\/admin\/super-admin\/admins$/, module: "adminManagement" },
   { pattern: /^\/admin\/super-admin\/roles$/, module: "roleManagement" },

@@ -1,21 +1,42 @@
-import { NextRequest } from "next/server";
-import { jsonError } from "@/app/api/admin/_utils";
+import { NextRequest, NextResponse } from "next/server";
+import { fetchBackend, forwardXsrfCookie, jsonErrorPayload, parseBackendJson, relayAuthFailure } from "@/app/api/admin/_utils";
 
-const GONE_MESSAGE =
-  "Submissões manuais de pagamento foram desativadas. O fluxo de pagamento é agora gerido exclusivamente pelo PaySuite.";
+type RouteContext = {
+  params: Promise<{ path: string[] }>;
+};
 
-export async function GET(_request: NextRequest) {
-  return jsonError(GONE_MESSAGE, 410);
+async function proxy(request: NextRequest, context: RouteContext, method: "GET" | "POST" | "PATCH" | "PUT") {
+  const { path } = await context.params;
+  const suffix = path.map(encodeURIComponent).join("/");
+  const backendPath = `/admin/payment-submissions/${suffix}${method === "GET" ? new URL(request.url).search : ""}`;
+  const backendResponse = await fetchBackend(request, backendPath, {
+    method,
+    body: method === "GET" ? undefined : await request.text(),
+  });
+  await relayAuthFailure(backendResponse);
+  const payload = await parseBackendJson<unknown>(backendResponse);
+
+  if (!backendResponse.ok) {
+    return jsonErrorPayload(payload, backendResponse.status, "Nao foi possivel processar submissao de pagamento.");
+  }
+
+  const response = NextResponse.json(payload, { status: backendResponse.status });
+  forwardXsrfCookie(backendResponse, response);
+  return response;
 }
 
-export async function POST(_request: NextRequest) {
-  return jsonError(GONE_MESSAGE, 410);
+export async function GET(request: NextRequest, context: RouteContext) {
+  return proxy(request, context, "GET");
 }
 
-export async function PATCH(_request: NextRequest) {
-  return jsonError(GONE_MESSAGE, 410);
+export async function POST(request: NextRequest, context: RouteContext) {
+  return proxy(request, context, "POST");
 }
 
-export async function PUT(_request: NextRequest) {
-  return jsonError(GONE_MESSAGE, 410);
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  return proxy(request, context, "PATCH");
+}
+
+export async function PUT(request: NextRequest, context: RouteContext) {
+  return proxy(request, context, "PUT");
 }
