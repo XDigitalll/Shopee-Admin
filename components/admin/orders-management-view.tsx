@@ -242,7 +242,7 @@ function OrdersDrawer({
     return () => window.cancelAnimationFrame(frame);
   }, [action, onActionFocused, order, shouldFocusAction]);
 
-  async function handleOrderAdvance(targetStatus: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED") {
+  async function handleOrderAdvance(targetStatus: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "READY_FOR_DELIVERY" | "OUT_FOR_DELIVERY" | "DELIVERED") {
     if (!order) return;
 
     await actionRunner.run(async () => {
@@ -264,6 +264,11 @@ function OrdersDrawer({
 
   async function handleMarkReadyForDelivery() {
     if (!order) return;
+
+    if (order.type === "EXTERNAL") {
+      await handleOrderAdvance("READY_FOR_DELIVERY");
+      return;
+    }
 
     await actionRunner.run(async () => {
       await adminApiFetch(`/api/admin/orders/${order.id}/mark-ready-for-delivery`, {
@@ -371,6 +376,17 @@ function OrdersDrawer({
     if (!order) return;
 
     await actionRunner.run(async () => {
+      if (order.type === "INTERNAL" && order.paymentMethod === "CASH_ON_DELIVERY") {
+        const amountCollected = Number(order.remainingAmountOnDelivery ?? order.totalAmount ?? 0);
+        await adminApiFetch(`/api/admin/orders/${order.id}/cod/confirm-collected`, {
+          method: "PATCH",
+          body: JSON.stringify({ amountCollected }),
+        });
+        onFeedback({ message: "COD recebido e pedido entregue.", tone: "success" });
+        onActionComplete();
+        return;
+      }
+
       window.location.assign(`/admin/payments?orderId=${order.id}`);
     });
   }

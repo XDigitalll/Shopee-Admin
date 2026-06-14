@@ -314,6 +314,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const { effectiveRole, profile } = useAdminAuth();
   const isSuperAdmin = effectiveRole === "SUPER_ADMIN";
   const canConfirmDeliveryPayment = ["FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(String(effectiveRole ?? ""));
+  const canConfirmCodPayment = ["DELIVERY_DRIVER", "DELIVERY_MANAGER", "FINANCE_MANAGER", "ADMIN", "SUPER_ADMIN"].includes(String(effectiveRole ?? ""));
   const trackingRef = useRef<HTMLDivElement | null>(null);
   const [detail, setDetail] = useState<ExternalOrderDetail | null>(null);
   const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
@@ -339,6 +340,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [isConfirmingPurchase, setIsConfirmingPurchase] = useState(false);
   const [isPublishingProof, setIsPublishingProof] = useState(false);
   const [isConfirmingDeliveryPayment, setIsConfirmingDeliveryPayment] = useState(false);
+  const [codAmountCollected, setCodAmountCollected] = useState("");
+  const [codNotCollectedReason, setCodNotCollectedReason] = useState("");
   const [proofSendWhatsapp, setProofSendWhatsapp] = useState(false);
   const [proofSendEmail, setProofSendEmail] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -413,6 +416,13 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       (detail.codEnabled || detail.depositRequired || Number(detail.remainingAmountOnDelivery ?? 0) > 0) &&
       detail.deliveryPaymentStatus !== "RECEIVED"
   );
+  const isCodOrder = detail?.type === "INTERNAL" && detail.paymentMethod === "CASH_ON_DELIVERY";
+  const canCollectCodNow = Boolean(
+    isCodOrder &&
+      detail &&
+      ["READY_FOR_DELIVERY", "OUT_FOR_DELIVERY"].includes(detail.status) &&
+      detail.deliveryPaymentStatus !== "RECEIVED"
+  );
 
   async function refreshData() {
     const detailPayload = await adminApiFetch<ExternalOrderDetail>(`/api/admin/orders/${orderId}`);
@@ -469,6 +479,15 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       }
 
       if (action === "mark-ready-for-delivery") {
+        if (detail.type === "EXTERNAL") {
+          await adminApiFetch(`/api/admin/orders/${detail.id}/status`, {
+            method: "PUT",
+            body: JSON.stringify({ status: "READY_FOR_DELIVERY" }),
+          });
+          await refreshData();
+          return;
+        }
+
         await adminApiFetch(`/api/admin/orders/${detail.id}/mark-ready-for-delivery`, {
           method: "PATCH",
         });
@@ -515,6 +534,45 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       await refreshData();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Nao foi possivel confirmar o dinheiro recebido.");
+    } finally {
+      setIsConfirmingDeliveryPayment(false);
+    }
+  }
+
+  async function confirmCodCollected() {
+    if (!detail) return;
+
+    const amountCollected = Number(codAmountCollected || detail.remainingAmountOnDelivery || detail.totalAmount || 0);
+    setIsConfirmingDeliveryPayment(true);
+    setError("");
+    try {
+      await adminApiFetch(`/api/admin/orders/${detail.id}/cod/confirm-collected`, {
+        method: "PATCH",
+        body: JSON.stringify({ amountCollected }),
+      });
+      setCodAmountCollected("");
+      await refreshData();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Nao foi possivel confirmar o COD recebido.");
+    } finally {
+      setIsConfirmingDeliveryPayment(false);
+    }
+  }
+
+  async function markCodNotCollected() {
+    if (!detail) return;
+
+    setIsConfirmingDeliveryPayment(true);
+    setError("");
+    try {
+      await adminApiFetch(`/api/admin/orders/${detail.id}/cod/mark-not-collected`, {
+        method: "PATCH",
+        body: JSON.stringify({ reason: codNotCollectedReason }),
+      });
+      setCodNotCollectedReason("");
+      await refreshData();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Nao foi possivel marcar COD como nao recebido.");
     } finally {
       setIsConfirmingDeliveryPayment(false);
     }
@@ -1160,7 +1218,49 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 ) : null}
               </div>
               <div className="flex flex-col gap-3">
-                {hasDeliveryBalance && canConfirmDeliveryPayment ? (
+                {canCollectCodNow && canConfirmCodPayment ? (
+                  <div className="space-y-3">
+                    <label className="block text-xs font-semibold text-[var(--color-text-secondary)]" htmlFor="cod-amount-collected">
+                      Valor COD recebido
+                    </label>
+                    <input
+                      id="cod-amount-collected"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={codAmountCollected}
+                      onChange={(event) => setCodAmountCollected(event.target.value)}
+                      placeholder={String(detail.remainingAmountOnDelivery ?? detail.totalAmount ?? 0)}
+                      className="admin-input w-full"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void confirmCodCollected()}
+                      disabled={isConfirmingDeliveryPayment}
+                      className="admin-button-danger w-full justify-center disabled:opacity-60"
+                    >
+                      {isConfirmingDeliveryPayment ? "A confirmar..." : "Confirmar COD recebido e entregar"}
+                    </button>
+                    <label className="block text-xs font-semibold text-[var(--color-text-secondary)]" htmlFor="cod-not-collected-reason">
+                      Motivo se nao recebeu
+                    </label>
+                    <textarea
+                      id="cod-not-collected-reason"
+                      value={codNotCollectedReason}
+                      onChange={(event) => setCodNotCollectedReason(event.target.value)}
+                      rows={3}
+                      className="admin-input w-full resize-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void markCodNotCollected()}
+                      disabled={isConfirmingDeliveryPayment || !codNotCollectedReason.trim()}
+                      className="admin-button-muted w-full justify-center disabled:opacity-60"
+                    >
+                      Marcar COD nao recebido
+                    </button>
+                  </div>
+                ) : hasDeliveryBalance && !isCodOrder && canConfirmDeliveryPayment ? (
                   <button
                     type="button"
                     onClick={() => void confirmDeliveryPayment()}

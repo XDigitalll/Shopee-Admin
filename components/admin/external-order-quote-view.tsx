@@ -340,19 +340,6 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   useEffect(() => {
-    if (
-      detail?.activeClarificationRequest?.status === "ANSWERED" &&
-      detail.activeClarificationRequest.adminSeenAt == null &&
-      detail.activeClarificationRequest.id
-    ) {
-      adminApiFetch(
-        `/api/admin/orders/${detail.id}/clarification/${detail.activeClarificationRequest.id}/mark-seen`,
-        { method: "PATCH" }
-      ).catch(() => undefined);
-    }
-  }, [detail?.activeClarificationRequest?.id, detail?.activeClarificationRequest?.status, detail?.activeClarificationRequest?.adminSeenAt, detail?.id]);
-
-  useEffect(() => {
     if (!draft?.currency || !isQuoteCurrency(draft.currency)) {
       setActiveRate(null);
       setActiveRateError("Moeda de cotacao invalida.");
@@ -1560,12 +1547,20 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         </aside>
       </div>
       {clarificationOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/45 px-4 py-6"
+          onClick={() => {
+            if (!isRequestingClarification) setClarificationOpen(false);
+          }}
+        >
+          <div
+            className="admin-card flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden p-0 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 px-6 pt-6">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
-                  PEDIR DETALHES AO CLIENTE
+                  Pedir detalhes ao cliente
                 </p>
                 <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
                   Que informações faltam?
@@ -1579,7 +1574,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 onClick={() => {
                   if (!isRequestingClarification) setClarificationOpen(false);
                 }}
-                className="admin-button-muted shrink-0 px-4 py-2 text-sm"
+                className="admin-button-muted shrink-0 justify-center px-4 py-2 text-sm"
               >
                 Fechar
               </button>
@@ -1590,7 +1585,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 {CLARIFICATION_FIELDS.map((field) => (
                   <label
                     key={field.value}
-                    className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-sm font-semibold text-[var(--color-text-primary)]"
+                    className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                      clarificationFields.includes(field.value)
+                        ? "border-[rgba(232,67,26,0.45)] bg-[rgba(232,67,26,0.08)] text-[var(--color-text-primary)]"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:border-[rgba(232,67,26,0.25)]"
+                    }`}
                   >
                     <input
                       type="checkbox"
@@ -1623,7 +1622,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               </label>
             </div>
 
-            <div className="flex flex-col-reverse gap-3 border-t border-[var(--color-border)] px-6 py-5 sm:flex-row sm:justify-end">
+            <div className="flex flex-col-reverse gap-3 px-6 pb-6 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 disabled={isRequestingClarification}

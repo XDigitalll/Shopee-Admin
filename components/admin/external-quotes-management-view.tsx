@@ -305,17 +305,6 @@ export function ExternalQuotesManagementView() {
         const payload = await adminApiFetch<AdminQuoteDetail>(`/api/admin/quotes/${selectedId}`);
         if (!cancelled) {
           setSelectedDetail(payload);
-          // Auto mark-seen when admin opens a quote with an answered clarification not yet seen
-          if (
-            payload.activeClarificationRequest?.status === "ANSWERED" &&
-            payload.activeClarificationRequest.adminSeenAt == null &&
-            payload.activeClarificationRequest.id
-          ) {
-            adminApiFetch(
-              `/api/admin/orders/${payload.id}/clarification/${payload.activeClarificationRequest.id}/mark-seen`,
-              { method: "PATCH" }
-            ).catch(() => undefined);
-          }
         }
       } catch {
         if (!cancelled) {
@@ -372,6 +361,40 @@ export function ExternalQuotesManagementView() {
       totalPages: listPayload.totalPages,
       totalElements: listPayload.totalElements,
     });
+  }
+
+  async function markClarificationSeen(orderId: number, requestId: number | null | undefined) {
+    if (!requestId) {
+      return;
+    }
+
+    await adminApiFetch(`/api/admin/orders/${orderId}/clarification/${requestId}/mark-seen`, {
+      method: "PATCH",
+    });
+    setStats((current) =>
+      current
+        ? {
+            ...current,
+            customerRespondedCount: Math.max(0, Number(current.customerRespondedCount ?? 0) - 1),
+          }
+        : current
+    );
+    setQuotes((current) =>
+      current.map((quote) =>
+        quote.id === orderId ? { ...quote, clarificationAdminSeenAt: new Date().toISOString() } : quote
+      )
+    );
+    setSelectedDetail((current) =>
+      current?.id === orderId && current.activeClarificationRequest
+        ? {
+            ...current,
+            activeClarificationRequest: {
+              ...current.activeClarificationRequest,
+              adminSeenAt: new Date().toISOString(),
+            },
+          }
+        : current
+    );
   }
 
   function selectQuote(id: number, focusActions = false) {
@@ -702,7 +725,19 @@ export function ExternalQuotesManagementView() {
 
                       <Link
                         href={action.href}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (customerJustReplied(quote)) {
+                            event.preventDefault();
+                            startTransition(async () => {
+                              try {
+                                await markClarificationSeen(quote.id, quote.clarificationId);
+                              } finally {
+                                window.location.assign(action.href);
+                              }
+                            });
+                          }
+                        }}
                         className="text-sm font-semibold text-[var(--color-danger)]"
                       >
                         {action.label}
@@ -878,7 +913,23 @@ export function ExternalQuotesManagementView() {
 
                 <div ref={detailActionsRef} tabIndex={-1} className="mt-4 flex flex-col gap-3 outline-none">
                   {detailActions?.primary ? (
-                    <Link href={detailActions.primary.href} className="admin-button-danger justify-center">
+                    <Link
+                      href={detailActions.primary.href}
+                      onClick={(event) => {
+                        const req = selectedDetail.activeClarificationRequest;
+                        if (req?.status === "ANSWERED" && req.adminSeenAt == null) {
+                          event.preventDefault();
+                          startTransition(async () => {
+                            try {
+                              await markClarificationSeen(selectedDetail.id, req.id);
+                            } finally {
+                              window.location.assign(detailActions.primary!.href);
+                            }
+                          });
+                        }
+                      }}
+                      className="admin-button-danger justify-center"
+                    >
                       {detailActions.primary.label}
                     </Link>
                   ) : null}

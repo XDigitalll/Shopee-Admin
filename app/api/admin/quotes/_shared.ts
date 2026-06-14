@@ -46,6 +46,14 @@ type BackendOrder = {
     answeredAt?: string | null;
     adminSeenAt?: string | null;
   } | null;
+  latestClarificationRequest?: {
+    id?: number | null;
+    status?: string | null;
+    message?: string | null;
+    requestedFields?: string[] | null;
+    answeredAt?: string | null;
+    adminSeenAt?: string | null;
+  } | null;
   activeQuote?: {
     quotedAt?: string | null;
     finalAmountMzn?: number | null;
@@ -180,6 +188,21 @@ function extractSummaryItems(externalCartUrl: string | null | undefined) {
     .filter(Boolean);
 }
 
+function getClarificationForAttention(order: BackendOrder) {
+  const active = order.activeClarificationRequest;
+  const latest = order.latestClarificationRequest;
+
+  if (active?.status === "ANSWERED" || active?.status === "PENDING") {
+    return active;
+  }
+
+  if (latest?.status === "ANSWERED" || latest?.status === "PENDING") {
+    return latest;
+  }
+
+  return active ?? latest ?? null;
+}
+
 async function fetchExternalOrders(request: NextRequest) {
   const response = await fetchBackend(request, "/admin/orders?page=0&size=250");
   await relayAuthFailure(response);
@@ -209,9 +232,10 @@ function buildQuoteCardBase(order: BackendOrder) {
     quoteQueueStatus = "WAITING_CUSTOMER";
   }
 
-  const clarificationStatus = (order.activeClarificationRequest?.status as "PENDING" | "ANSWERED" | "CANCELLED" | undefined) ?? null;
-  const clarificationId = order.activeClarificationRequest?.id ?? null;
-  const clarificationAdminSeenAt = order.activeClarificationRequest?.adminSeenAt ?? null;
+  const clarification = getClarificationForAttention(order);
+  const clarificationStatus = (clarification?.status as "PENDING" | "ANSWERED" | "CANCELLED" | undefined) ?? null;
+  const clarificationId = clarification?.id ?? null;
+  const clarificationAdminSeenAt = clarification?.adminSeenAt ?? null;
   if (clarificationStatus === "ANSWERED" && quoteQueueStatus === "WAITING_CUSTOMER") {
     quoteQueueStatus = "QUOTE_ANALYSIS";
   }
