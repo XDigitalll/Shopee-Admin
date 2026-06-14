@@ -14,6 +14,9 @@
   --color-danger-soft: #ff8066;
   --color-success: #15803d;
   --shadow-card: 0 2px 16px rgba(15, 23, 42, 0.06);
+  --admin-page-padding-x: clamp(1rem, 2.4vw, 2rem);
+  --admin-page-padding-y: clamp(1rem, 2vw, 1.5rem);
+  --admin-card-radius: 20px;
 }
 
 @theme inline {
@@ -53,6 +56,12 @@ body {
   font-family: var(--font-dm-sans), sans-serif;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 a {
   text-decoration: none;
 }
@@ -67,8 +76,14 @@ textarea {
 .admin-card {
   border: 1px solid var(--color-border);
   background: var(--color-background-secondary);
-  border-radius: 24px;
+  border-radius: var(--admin-card-radius);
   box-shadow: var(--shadow-card);
+}
+
+.admin-main-shell {
+  width: 100%;
+  max-width: 100vw;
+  padding: var(--admin-page-padding-y) var(--admin-page-padding-x);
 }
 
 .admin-input {
@@ -91,9 +106,11 @@ textarea {
 .admin-button-muted {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.6rem;
   border-radius: 999px;
   padding: 0.82rem 1.2rem;
+  min-height: 44px;
   font-size: 0.95rem;
   font-weight: 600;
   transition: transform 160ms ease, opacity 160ms ease, border-color 160ms ease, background-color 160ms ease;
@@ -114,6 +131,166 @@ textarea {
   border: 1px solid var(--color-border-strong);
   color: var(--color-text-primary);
   background: var(--color-background-secondary);
+}
+
+.admin-icon-button {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 14px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.admin-icon-button:hover {
+  border-color: rgba(232, 67, 26, 0.3);
+  transform: translateY(-1px);
+}
+
+.admin-responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: clamp(0.75rem, 1.5vw, 1rem);
+}
+
+.admin-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-mobile-card-list {
+  display: none;
+}
+
+.admin-modal-panel {
+  max-height: min(92vh, 900px);
+  overflow: hidden;
+}
+
+.admin-modal-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-modal-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-background-secondary);
+}
+
+.admin-tracker-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.admin-tracker-steps {
+  min-width: 720px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --admin-page-padding-x: 0.875rem;
+    --admin-page-padding-y: 0.875rem;
+    --admin-card-radius: 16px;
+  }
+
+  .admin-card {
+    box-shadow: 0 1px 8px rgba(15, 23, 42, 0.05);
+  }
+
+  .admin-button-danger,
+  .admin-button-muted {
+    width: 100%;
+    padding-inline: 1rem;
+    white-space: normal;
+  }
+
+  .admin-desktop-table {
+    display: none;
+  }
+
+  .admin-mobile-card-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .admin-modal-panel {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 1rem);
+    border-radius: 18px;
+  }
+
+  .admin-tracker-scroll {
+    overflow-x: visible;
+  }
+
+  .admin-tracker-steps {
+    min-width: 0;
+  }
+
+  .admin-tracker-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .admin-tracker-item {
+    align-items: flex-start;
+    gap: 0.75rem;
+    min-height: 58px;
+  }
+
+  .admin-tracker-marker {
+    width: 100%;
+    align-items: flex-start;
+    text-align: left;
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+
+  .admin-tracker-marker span:first-child {
+    height: 2rem;
+    width: 2rem;
+    font-size: 0.75rem;
+  }
+
+  .admin-tracker-marker span:last-child {
+    margin-top: 0.45rem;
+    line-height: 1.2;
+  }
+
+  .admin-tracker-line {
+    display: block;
+    width: 2px;
+    height: 22px;
+    flex: none;
+    margin: 0.25rem 0 0.25rem 1rem;
+  }
+
+  .admin-tracker-dates {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .admin-orders-table th:nth-child(3),
+  .admin-orders-table td:nth-child(3),
+  .admin-orders-table th:nth-child(6),
+  .admin-orders-table td:nth-child(6),
+  .admin-orders-table th:nth-child(8),
+  .admin-orders-table td:nth-child(8),
+  .admin-orders-table th:nth-child(9),
+  .admin-orders-table td:nth-child(9) {
+    display: none;
+  }
 }
 
 .admin-sidebar {
