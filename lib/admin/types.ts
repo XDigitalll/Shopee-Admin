@@ -96,6 +96,7 @@ export type AdminOrderListItem = {
   actionHref: string;
   paymentStatus: string | null;
   paymentMethod: string | null;
+  remainingAmountOnDelivery?: number | null;
   deliveryMethod: "DELIVERY" | "STORE_PICKUP" | null;
   actionRequired?: boolean;
   actionModule?: string | null;

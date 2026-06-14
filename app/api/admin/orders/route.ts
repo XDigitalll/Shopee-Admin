@@ -43,6 +43,7 @@ type BackendOrder = {
   totalBeforeDiscount?: number | null;
   discountAmount?: number | null;
   totalAfterDiscount?: number | null;
+  remainingAmountOnDelivery?: number | null;
   couponCode?: string | null;
   status?: string;
   orderStatus?: string | null;
@@ -148,6 +149,7 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     actionHref: `/admin/orders/${order.id}`,
     paymentStatus: order.payment?.status ?? null,
     paymentMethod: order.payment?.method ?? null,
+    remainingAmountOnDelivery: order.remainingAmountOnDelivery == null ? null : Number(order.remainingAmountOnDelivery),
     deliveryMethod: order.deliveryMethod ?? null,
     actionRequired: Boolean(order.actionRequired?.required ?? false),
     actionModule: order.actionModule ?? order.actionRequired?.module ?? null,

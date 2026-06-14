@@ -376,6 +376,17 @@ function OrdersDrawer({
     if (!order) return;
 
     await actionRunner.run(async () => {
+      if (order.type === "INTERNAL" && order.paymentMethod === "CASH_ON_DELIVERY") {
+        const amountCollected = Number(order.remainingAmountOnDelivery ?? order.totalAmount ?? 0);
+        await adminApiFetch(`/api/admin/orders/${order.id}/cod/confirm-collected`, {
+          method: "PATCH",
+          body: JSON.stringify({ amountCollected }),
+        });
+        onFeedback({ message: "COD recebido e pedido entregue.", tone: "success" });
+        onActionComplete();
+        return;
+      }
+
       window.location.assign(`/admin/payments?orderId=${order.id}`);
     });
   }

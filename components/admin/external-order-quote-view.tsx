@@ -340,19 +340,6 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   useEffect(() => {
-    if (
-      detail?.activeClarificationRequest?.status === "ANSWERED" &&
-      detail.activeClarificationRequest.adminSeenAt == null &&
-      detail.activeClarificationRequest.id
-    ) {
-      adminApiFetch(
-        `/api/admin/orders/${detail.id}/clarification/${detail.activeClarificationRequest.id}/mark-seen`,
-        { method: "PATCH" }
-      ).catch(() => undefined);
-    }
-  }, [detail?.activeClarificationRequest?.id, detail?.activeClarificationRequest?.status, detail?.activeClarificationRequest?.adminSeenAt, detail?.id]);
-
-  useEffect(() => {
     if (!draft?.currency || !isQuoteCurrency(draft.currency)) {
       setActiveRate(null);
       setActiveRateError("Moeda de cotacao invalida.");
