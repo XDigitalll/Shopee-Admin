@@ -107,9 +107,7 @@ function primaryAction(orderItem, mode = "orders", effectiveRole = "ORDERS") {
     return { label: "Marcar como chegado a sede", action: "mark-arrived" };
   }
   if (orderItem.type === "EXTERNAL" && status === "ARRIVED") {
-    return effectiveRole === "SUPER_ADMIN"
-      ? { label: "Mandar para entrega", action: "handoff", targetQueue: "DELIVERY" }
-      : { label: "Enviar para equipa de delivery", action: "handoff", targetQueue: "DELIVERY" };
+    return { label: "Marcar pronto para entrega", action: "mark-status", targetStatus: "READY_FOR_DELIVERY" };
   }
   if (orderItem.type === "EXTERNAL" && status === "READY_FOR_DELIVERY") {
     return { label: "Ver em entregas", href: "/admin/delivery/pending" };
@@ -267,6 +265,28 @@ describe("primaryAction — TO_PURCHASE external order", () => {
     const action = primaryAction(externalOrder("IN_TRANSIT"));
     assert.ok(action !== null);
     assert.equal(action.action, "mark-arrived");
+  });
+
+  test("ARRIVED external uses status transition to READY_FOR_DELIVERY", () => {
+    const action = primaryAction(externalOrder("ARRIVED"));
+    assert.ok(action !== null);
+    assert.equal(action.label, "Marcar pronto para entrega");
+    assert.equal(action.action, "mark-status");
+    assert.equal(action.targetStatus, "READY_FOR_DELIVERY");
+  });
+
+  test("READY_FOR_DELIVERY external can go OUT_FOR_DELIVERY in delivery mode", () => {
+    const action = primaryAction(externalOrder("READY_FOR_DELIVERY"), "delivery");
+    assert.ok(action !== null);
+    assert.equal(action.action, "mark-status");
+    assert.equal(action.targetStatus, "OUT_FOR_DELIVERY");
+  });
+
+  test("OUT_FOR_DELIVERY external can go DELIVERED in delivery mode", () => {
+    const action = primaryAction(externalOrder("OUT_FOR_DELIVERY"), "delivery");
+    assert.ok(action !== null);
+    assert.equal(action.action, "mark-status");
+    assert.equal(action.targetStatus, "DELIVERED");
   });
 
   test("DELIVERED external returns 'Ver recibo' link", () => {

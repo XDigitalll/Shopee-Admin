@@ -469,6 +469,15 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       }
 
       if (action === "mark-ready-for-delivery") {
+        if (detail.type === "EXTERNAL") {
+          await adminApiFetch(`/api/admin/orders/${detail.id}/status`, {
+            method: "PUT",
+            body: JSON.stringify({ status: "READY_FOR_DELIVERY" }),
+          });
+          await refreshData();
+          return;
+        }
+
         await adminApiFetch(`/api/admin/orders/${detail.id}/mark-ready-for-delivery`, {
           method: "PATCH",
         });

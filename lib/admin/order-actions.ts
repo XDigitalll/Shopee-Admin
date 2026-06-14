@@ -41,7 +41,7 @@ export type AdminOrderAction =
         | "validate-payment"
         | "handoff"
         | "purchase-proof";
-      targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "OUT_FOR_DELIVERY" | "DELIVERED";
+      targetStatus?: "ORDERED" | "IN_TRANSIT" | "ARRIVED" | "READY_FOR_DELIVERY" | "OUT_FOR_DELIVERY" | "DELIVERED";
       targetQueue?: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT";
     };
 
@@ -212,7 +212,7 @@ export function getAvailableOrderActions(
       actions.push({ key: "external-arrived", label: "Marcar como chegado a sede", action: options.surface === "list" ? "mark-arrived" : "mark-status", targetStatus: "ARRIVED" });
     }
     if (status === "ARRIVED" && canManageOrders(currentUser)) {
-      actions.push({ key: "external-ready-delivery", label: "Marcar pronto para entrega", action: "mark-ready-for-delivery" });
+      actions.push({ key: "external-ready-delivery", label: "Marcar pronto para entrega", action: "mark-status", targetStatus: "READY_FOR_DELIVERY" });
     }
     if (status === "READY_FOR_DELIVERY" && canManageDelivery(currentUser)) {
       actions.push({ key: "send-external-delivery", label: "Mandar para entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" });

@@ -1560,8 +1560,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         </aside>
       </div>
       {clarificationOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-[rgba(15,23,42,0.72)] px-4 py-6">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[30px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
             <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">

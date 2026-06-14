@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 const EXTERNAL_STATUS_STEPS = [
   "CREATED", "UNDER_REVIEW", "QUOTED", "PENDING_PAYMENT",
   "TO_PURCHASE", "ORDERED", "IN_TRANSIT", "ARRIVED",
-  "OUT_FOR_DELIVERY", "DELIVERED",
+  "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "DELIVERED",
 ];
 
 const PICKUP_STATUS_STEPS = [
@@ -103,6 +103,9 @@ function buildPrimaryAction(detail, isSuperAdmin = false) {
   }
   if (status === "ORDERED") return { label: "Marcar em trânsito", targetStatus: "IN_TRANSIT" };
   if (status === "IN_TRANSIT") return { label: "Marcar como chegado a sede", targetStatus: "ARRIVED" };
+  if (status === "ARRIVED") return { label: "Marcar pronto para entrega", action: "mark-status", targetStatus: "READY_FOR_DELIVERY" };
+  if (status === "READY_FOR_DELIVERY") return { label: "Mandar para entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" };
+  if (status === "OUT_FOR_DELIVERY") return { label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" };
   return null;
 }
 
