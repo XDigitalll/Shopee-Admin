@@ -368,25 +368,27 @@ export function AdminConfirmDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(15,23,42,0.58)] px-4 py-6" onClick={onCancel}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-[rgba(15,23,42,0.58)] px-3 py-4 sm:px-4 sm:py-6" onClick={onCancel}>
       <div
-        className="w-full max-w-lg rounded-[30px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-6 shadow-[0_24px_80px_rgba(15,23,42,0.22)]"
+        className="admin-modal-panel flex w-full max-w-lg flex-col rounded-[22px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:rounded-[30px]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className={`flex h-12 w-12 items-center justify-center rounded-full ${danger ? "bg-[rgba(232,67,26,0.12)] text-[var(--color-danger)]" : "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"}`}>
-          {danger ? "!" : "?"}
+        <div className="admin-modal-body p-5 sm:p-6">
+          <div className={`flex h-12 w-12 items-center justify-center rounded-full ${danger ? "bg-[rgba(232,67,26,0.12)] text-[var(--color-danger)]" : "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"}`}>
+            {danger ? "!" : "?"}
+          </div>
+          <h2 className="mt-4 font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">
+            {title}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{message}</p>
+          {children ? <div className="mt-4">{children}</div> : null}
         </div>
-        <h2 className="mt-4 font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">
-          {title}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{message}</p>
-        {children ? <div className="mt-4">{children}</div> : null}
-        <div className="mt-6 flex flex-wrap gap-3">
+        <div className="admin-modal-footer flex flex-col-reverse gap-3 border-t border-[var(--color-border)] p-4 sm:flex-row sm:p-6">
           <button
             type="button"
             onClick={onConfirm}
             disabled={pending}
-            className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:opacity-60 ${danger ? "bg-[#B42318] hover:bg-[#991b1b]" : "bg-[var(--color-danger)] hover:opacity-90"}`}
+            className={`admin-button-danger rounded-2xl text-sm font-semibold text-white transition disabled:opacity-60 ${danger ? "bg-[#B42318] hover:bg-[#991b1b]" : "bg-[var(--color-danger)] hover:opacity-90"}`}
           >
             {pending ? "A processar..." : confirmLabel}
           </button>

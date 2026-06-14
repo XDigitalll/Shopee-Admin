@@ -183,6 +183,70 @@ function PriorityBadge({
   );
 }
 
+function OrderMobileCard({
+  order,
+  onSelect,
+  operationalContext,
+}: {
+  order: AdminOrderListItem;
+  onSelect: (id: number) => void;
+  operationalContext: OperationalContext;
+}) {
+  const needsAttention = isActionRequired(order, operationalContext);
+
+  return (
+    <article
+      className={`admin-card p-4 ${needsAttention ? "ring-1 ring-[rgba(249,115,22,0.2)]" : ""}`}
+      onClick={() => onSelect(order.id)}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="inline-flex items-center gap-2 font-[family-name:var(--font-sora)] text-base font-semibold">
+            {needsAttention ? <AttentionDot label="Pedido ainda precisa de acao" /> : null}
+            {order.number}
+          </p>
+          <p className="mt-1 truncate text-sm font-medium text-[var(--color-text-primary)]">{order.customer}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{order.customerEmail || order.sourceStore}</p>
+        </div>
+        <TypeBadge type={order.type} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">Estado</p>
+          <div className="mt-1"><OperationalStatusBadge order={order} /></div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">Valor</p>
+          <p className="mt-1 font-[family-name:var(--font-sora)] font-semibold">{formatMoney(order.totalAmount)}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">Fila</p>
+          <div className="mt-1"><QueueBadge queueStatus={order.queueStatus} /></div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">Data</p>
+          <p className="mt-1 text-[var(--color-text-secondary)]">{formatDate(order.createdAt)}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2">
+        <button type="button" className="admin-button-danger" onClick={(event) => { event.stopPropagation(); onSelect(order.id); }}>
+          Abrir pedido
+        </button>
+        {order.customerPhone ? (
+          <WhatsAppPhone
+            phone={order.customerPhone}
+            message={buildOrderWhatsAppMessage(order.number)}
+            stopPropagation
+            className="admin-button-muted"
+          />
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function OrdersDrawer({
   order,
   onClose,
@@ -847,7 +911,7 @@ function SharedOrdersView({
       {feedback ? <AdminBanner message={feedback.message} tone={feedback.tone} /> : null}
 
       {showStatusCards ? (
-        <section className="grid gap-4 xl:grid-cols-5">
+        <section className="admin-responsive-grid">
           {STATUS_CARDS.map((card) => {
             const active = filters.status === card.key;
             return (
@@ -877,7 +941,7 @@ function SharedOrdersView({
         </section>
       ) : null}
 
-      <section className="admin-card p-5">
+      <section className="admin-card p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex flex-wrap gap-2">
@@ -940,14 +1004,14 @@ function SharedOrdersView({
                 value={filters.search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Pesquisar por ID, cliente ou loja"
-                className="admin-input min-w-[280px] pl-11"
+                className="admin-input min-w-0 pl-11 md:min-w-[280px]"
               />
             </label>
             <input
               type="date"
               value={filters.date}
               onChange={(event) => setFilter("date", event.target.value)}
-              className="admin-input min-w-[180px]"
+              className="admin-input min-w-0 md:min-w-[180px]"
             />
           </div>
         </div>
@@ -955,8 +1019,34 @@ function SharedOrdersView({
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="admin-card relative overflow-hidden" aria-busy={isLoading}>
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
+          <div className="admin-mobile-card-list p-3">
+            {sortedOrders?.content.map((order) => (
+              <OrderMobileCard
+                key={order.id}
+                order={order}
+                onSelect={onSelectOrder}
+                operationalContext={operationalContext}
+              />
+            ))}
+            {!sortedOrders?.content.length && !isLoading ? (
+              <AdminStateCard
+                title="Sem pedidos nesta vista"
+                message="Ajuste os filtros ou pesquise outro cliente, loja ou periodo para continuar."
+                compact
+              />
+            ) : null}
+            {isLoading && !sortedOrders?.content.length ? (
+              <AdminStateCard
+                title="A carregar pedidos"
+                message="Estamos a actualizar filas, estatisticas e proximas accoes desta operacao."
+                tone="loading"
+                compact
+              />
+            ) : null}
+          </div>
+
+          <div className="admin-desktop-table admin-table-scroll">
+            <table className="admin-orders-table min-w-full">
               <thead className="bg-[var(--color-background-tertiary)] text-left text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
                 <tr>
                   {["Numero do pedido", "Cliente", "Tipo", "Valor em MZN", "Status operacional", "Fila", "Proxima acao", "Prioridade", "Data", "Accao"].map((heading) => (
@@ -1056,11 +1146,11 @@ function SharedOrdersView({
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-6 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-[var(--color-text-secondary)]">
               Pagina {(sortedOrders?.page ?? 0) + 1} de {sortedOrders?.totalPages ?? 1}
             </p>
-            <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 sm:flex">
               {Array.from({ length: sortedOrders?.totalPages ?? 1 }).map((_, index) => (
                 <button
                   key={index}
@@ -1076,6 +1166,24 @@ function SharedOrdersView({
                   {index + 1}
                 </button>
               ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setPage(Math.max(0, (sortedOrders?.page ?? 0) - 1))}
+                disabled={isLoading || (sortedOrders?.page ?? 0) <= 0}
+                className="admin-button-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage(Math.min((sortedOrders?.totalPages ?? 1) - 1, (sortedOrders?.page ?? 0) + 1))}
+                disabled={isLoading || (sortedOrders?.page ?? 0) >= (sortedOrders?.totalPages ?? 1) - 1}
+                className="admin-button-danger disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Seguinte
+              </button>
             </div>
           </div>
           <AdminListLoadingOverlay

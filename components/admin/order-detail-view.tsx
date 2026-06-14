@@ -726,8 +726,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     && !detail.purchaseProofUrl;
 
   return (
-    <div className="space-y-6">
-      <section className="sticky top-[88px] z-10 rounded-[28px] border border-[var(--color-border)] bg-[color:var(--color-surface-overlay)]/95 px-6 py-5 backdrop-blur-xl">
+    <div className="space-y-4 sm:space-y-6">
+      <section className="sticky top-[68px] z-10 rounded-[20px] border border-[var(--color-border)] bg-[color:var(--color-surface-overlay)]/95 px-4 py-4 backdrop-blur-xl sm:top-[88px] sm:rounded-[28px] sm:px-6 sm:py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
@@ -738,8 +738,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               <span>Detalhe do pedido</span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h1 className="font-[family-name:var(--font-sora)] text-3xl font-semibold">Detalhe do pedido</h1>
-              <span className="font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-danger)]">
+              <h1 className="font-[family-name:var(--font-sora)] text-2xl font-semibold sm:text-3xl">Detalhe do pedido</h1>
+              <span className="font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-danger)] sm:text-xl">
                 {detail.number}
               </span>
               <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_THEME[currentStatus] ?? "bg-[var(--color-background-tertiary)] text-[var(--color-text-secondary)]"}`}>
@@ -747,7 +747,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               </span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             <button type="button" onClick={() => window.print()} className="admin-button-muted">
               Exportar PDF
             </button>
@@ -848,9 +848,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-6">
-          <section className="admin-card p-6">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4 sm:space-y-6">
+          <section className="admin-card p-4 sm:p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
               <div className="flex items-start gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[rgba(232,67,26,0.1)] font-[family-name:var(--font-sora)] text-lg font-semibold text-[var(--color-danger)]">
@@ -951,7 +951,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             ) : null}
           </section>
 
-          <section className="admin-card p-6">
+          <section className="admin-card p-4 sm:p-6">
             <div className="mb-5">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">
                 {externalOrder ? "Cotacao internacional" : "Produtos comprados"}
@@ -961,8 +961,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               </h2>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
+            <div className="admin-table-scroll">
+              <table className="min-w-[680px] lg:min-w-full">
                 <thead className="bg-[var(--color-background-tertiary)] text-left text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
                   <tr>
                     {["Produto", "Nome do produto", "Variante", "Quantidade", "Preço unitário", "Subtotal"].map((heading) => (
@@ -1063,23 +1063,23 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             </div>
           </section>
 
-          <section className="admin-card p-6">
+          <section className="admin-card admin-tracker p-4 sm:p-6">
             <div className="mb-5">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Rastreador</p>
               <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold">Estado do ciclo de vida</h2>
             </div>
 
-            <div className="overflow-x-auto">
-              <div className="min-w-[720px]">
-                <div className="flex items-center justify-between">
+            <div className="admin-tracker-scroll">
+              <div className="admin-tracker-steps">
+                <div className="admin-tracker-row flex items-center justify-between">
                   {trackingSteps.map((step, index) => {
                     const done = index < currentStepIndex;
                     const active = step === currentStatus;
                     const future = index > currentStepIndex;
 
                     return (
-                      <div key={step} className="flex flex-1 items-center">
-                        <div className="flex flex-col items-center text-center">
+                      <div key={step} className="admin-tracker-item flex flex-1 items-center">
+                        <div className="admin-tracker-marker flex flex-col items-center text-center">
                           <span
                             className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-semibold ${
                               done
@@ -1096,14 +1096,14 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                           </span>
                         </div>
                         {index < trackingSteps.length - 1 ? (
-                          <span className={`mx-2 h-0.5 flex-1 ${done ? "bg-[var(--color-danger)]" : "bg-[var(--color-border)]"}`} />
+                          <span className={`admin-tracker-line mx-2 h-0.5 flex-1 ${done ? "bg-[var(--color-danger)]" : "bg-[var(--color-border)]"}`} />
                         ) : null}
                       </div>
                     );
                   })}
                 </div>
 
-                <div className="mt-6 grid grid-flow-col auto-cols-fr gap-2 text-center text-xs text-[var(--color-text-secondary)]">
+                <div className="admin-tracker-dates mt-6 grid grid-flow-col auto-cols-fr gap-2 text-center text-xs text-[var(--color-text-secondary)]">
                   {trackingSteps.map((step) => {
                     const event = history.find((item) => item.id === step.toLowerCase());
                     return (
@@ -1292,10 +1292,10 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
           </section>
         </div>
 
-        <aside className="space-y-6">
-          <section className="admin-card p-6">
+        <aside className="space-y-4 sm:space-y-6 xl:sticky xl:top-[96px] xl:h-fit">
+          <section className="admin-card p-4 sm:p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Ações rápidas</p>
-            <div className="mt-4 flex flex-col gap-3">
+            <div className="mt-4 flex flex-col gap-2 sm:gap-3">
               {quickActions.map((action) =>
                 "href" in action ? (
                   <Link key={action.label} href={action.href} className="admin-button-danger justify-center">
@@ -1329,7 +1329,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             </div>
           </section>
 
-          <section className="admin-card p-6">
+          <section className="admin-card p-4 sm:p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Histórico de eventos</p>
             <div className="mt-4 space-y-4">
               {timelineDesc.map((event) => (
@@ -1347,7 +1347,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
             </div>
           </section>
 
-          <section className="admin-card p-6">
+          <section className="admin-card p-4 sm:p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Notas internas</p>
             <label className="mt-4 block">
               <textarea

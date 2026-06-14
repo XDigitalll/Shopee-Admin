@@ -250,8 +250,16 @@ function ChangePasswordModal({
 
 export function AdminSidebar({
   counters,
+  collapsed = false,
+  mobileOpen = false,
+  onCloseMobile,
+  onToggleCollapsed,
 }: {
   counters: SidebarCounters;
+  collapsed?: boolean;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+  onToggleCollapsed?: () => void;
 }) {
   const pathname = usePathname();
   const { effectiveRole, logout, profile } = useAdminAuth();
@@ -354,16 +362,18 @@ export function AdminSidebar({
       <div key={item.href} className="relative">
         <Link
           href={item.href}
+          title={collapsed ? item.label : undefined}
           className={[
-            "group flex items-center gap-3 rounded-2xl border-l-2 px-3 py-2.5 transition",
-            item.indent ? "ml-4 pl-4" : "",
+            "group flex min-h-11 items-center gap-3 rounded-2xl border-l-2 px-3 py-2.5 transition",
+            collapsed ? "justify-center" : "",
+            item.indent && !collapsed ? "ml-4 pl-4" : "",
             isActive
               ? "border-[#E8431A] bg-[rgba(232,67,26,0.12)] text-[#FF8066]"
               : "border-transparent text-white/75 hover:bg-white/5 hover:text-white",
           ].join(" ")}
         >
           <Icon className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
+          {!collapsed ? <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span> : null}
           {isProductsItem && productAttentionCount > 0 ? (
             <span
               role="button"
@@ -399,7 +409,7 @@ export function AdminSidebar({
           ) : null}
           {typeof count === "number" && count > 0 ? (
             <span className="rounded-full bg-[#E8431A] px-2 py-0.5 text-[11px] font-semibold text-white">
-              {count}
+              {collapsed && count > 9 ? "9+" : count}
             </span>
           ) : null}
         </Link>
@@ -438,41 +448,57 @@ export function AdminSidebar({
     .filter((section) => section.items.length > 0);
 
   return (
-    <aside className="admin-sidebar fixed inset-y-0 left-0 z-30 flex w-[220px] flex-col border-r border-white/5 bg-[#111827] text-white">
-      <div className="border-b border-white/8 px-5 py-5">
-        <div className="flex items-center gap-3">
+    <aside
+      className={[
+        "admin-sidebar fixed inset-y-0 left-0 z-40 flex flex-col border-r border-white/5 bg-[#111827] text-white transition-[transform,width] duration-200",
+        collapsed ? "w-[76px]" : "w-[220px]",
+        mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+      ].join(" ")}
+    >
+      <div className={`border-b border-white/8 ${collapsed ? "px-3 py-4" : "px-5 py-5"}`}>
+        <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(232,67,26,0.14)] text-sm font-black text-[#FF8066]">
             SX
           </div>
-          <div>
+          {!collapsed ? <div className="min-w-0">
             <p className="font-[family-name:var(--font-sora)] text-base font-semibold">ShopeeX Admin</p>
             <span className="mt-2 inline-flex rounded-full bg-[#E8431A] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
               {humanizeRole(effectiveRole)}
             </span>
-          </div>
+          </div> : null}
+          {!collapsed ? (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="ml-auto rounded-xl border border-white/10 px-2 py-1 text-lg leading-none text-white/70 md:hidden"
+              aria-label="Fechar menu"
+            >
+              x
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
         {visibleSections.map((section) => (
-          <div key={section.title} className="mb-6">
-            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
+          <div key={section.title} className={collapsed ? "mb-4" : "mb-6"}>
+            {!collapsed ? <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
               {section.title}
-            </p>
+            </p> : null}
             <nav className="space-y-1">{section.items.map(renderNavItem)}</nav>
           </div>
         ))}
 
         {canAccessSuperAdmin(profile) ? (
           <div className="mt-8 border-t border-white/8 pt-4">
-            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
+            {!collapsed ? <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
               Super Admin
-            </p>
+            </p> : null}
             <nav className="space-y-1">{superAdminSection.map(renderNavItem)}</nav>
           </div>
         ) : null}
 
-        {counters.orphanOrders > 0 ? (
+        {counters.orphanOrders > 0 && !collapsed ? (
           <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/8 px-3 py-2.5">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.55)]" />
@@ -486,29 +512,29 @@ export function AdminSidebar({
         ) : null}
       </div>
 
-      <div className="border-t border-white/8 px-4 py-4">
-        <div className="flex items-center gap-3 rounded-2xl bg-white/5 p-3">
+      <div className={`border-t border-white/8 ${collapsed ? "px-3 py-4" : "px-4 py-4"}`}>
+        <div className={`flex items-center rounded-2xl bg-white/5 p-3 ${collapsed ? "justify-center" : "gap-3"}`}>
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[rgba(232,67,26,0.18)] font-[family-name:var(--font-sora)] text-sm font-semibold text-[#FF8066]">
             {profile.name.slice(0, 2).toUpperCase()}
           </div>
-          <div className="min-w-0 flex-1">
+          {!collapsed ? <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">{profile.name}</p>
             <p className="truncate text-xs text-white/55">{profile.email || "sem-email@admin"}</p>
-          </div>
+          </div> : null}
         </div>
-        <button
+        {!collapsed ? <button
           type="button"
           onClick={() => setPasswordModalOpen(true)}
           className="mt-3 w-full rounded-2xl border border-white/10 px-3 py-2.5 text-sm font-medium text-white/75 transition hover:border-[rgba(232,67,26,0.4)] hover:text-white"
         >
           Alterar senha
-        </button>
+        </button> : null}
         <button
           type="button"
-          onClick={() => void logout()}
+          onClick={collapsed ? onToggleCollapsed : () => void logout()}
           className="mt-3 w-full rounded-2xl border border-white/10 px-3 py-2.5 text-sm font-medium text-white/75 transition hover:border-[rgba(232,67,26,0.4)] hover:text-white"
         >
-          Terminar sessao
+          {collapsed ? ">" : "Terminar sessao"}
         </button>
       </div>
       <ChangePasswordModal
