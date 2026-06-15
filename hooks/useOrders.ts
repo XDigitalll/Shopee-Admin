@@ -96,20 +96,21 @@ export function useOrders(initial: Partial<OrdersFilterState> = {}) {
   }, [filters]);
 
   useEffect(() => {
+    const debounceMs = filters.search.trim() || filters.date ? 450 : 0;
     const timeoutId = window.setTimeout(() => {
       void loadOrdersData(false);
-    }, 0);
+    }, debounceMs);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [loadOrdersData, refreshKey]);
+  }, [filters.search, filters.date, loadOrdersData, refreshKey]);
 
   useAdminLiveRefresh(() => loadOrdersData(true), {
-    intervalMs: 15_000,
+    intervalMs: 60_000,
     enabled: true,
     runOnMount: false,
-    minIntervalMs: 5_000,
+    minIntervalMs: 30_000,
   });
 
   function setFilter<K extends keyof OrdersFilterState>(key: K, value: OrdersFilterState[K]) {

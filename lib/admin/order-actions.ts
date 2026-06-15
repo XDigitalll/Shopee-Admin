@@ -35,6 +35,7 @@ export type AdminOrderAction =
         | "cancel-order"
         | "mark-status"
         | "mark-ready-for-delivery"
+        | "advance-order"
         | "mark-purchased"
         | "mark-in-transit"
         | "mark-arrived"
@@ -176,7 +177,7 @@ export function getAvailableOrderActions(
 
   if (internalDeliveryOrder) {
     if (["CREATED", "PAID", "PAYMENT_ON_DELIVERY_PENDING", "READY_FOR_FULFILLMENT"].includes(status) && canManageOrders(currentUser)) {
-      actions.push({ key: "prepare-internal", label: "Preparar produto", action: "mark-ready-for-delivery" });
+      actions.push({ key: "prepare-internal", label: "Preparar produto", action: "advance-order" });
     }
     if (["PICKING", "PREPARING"].includes(status) && canManageOrders(currentUser)) {
       actions.push({ key: "ready-internal-delivery", label: "Marcar pronto para entrega", action: "mark-ready-for-delivery" });

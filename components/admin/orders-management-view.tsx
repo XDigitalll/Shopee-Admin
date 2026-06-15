@@ -326,6 +326,18 @@ function OrdersDrawer({
     });
   }
 
+  async function handlePrepareProduct() {
+    if (!order) return;
+
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/advance`, {
+        method: "PATCH",
+      });
+      onFeedback({ message: "Produto em preparação.", tone: "success" });
+      onActionComplete();
+    });
+  }
+
   async function handleMarkReadyForDelivery() {
     if (!order) return;
 
@@ -737,6 +749,11 @@ function OrdersDrawer({
 
                       if (action.action === "handoff" && action.targetQueue) {
                         void handleHandoff(action.targetQueue);
+                        return;
+                      }
+
+                      if (action.action === "advance-order") {
+                        void handlePrepareProduct();
                         return;
                       }
 
