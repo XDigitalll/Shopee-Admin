@@ -478,6 +478,14 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         return;
       }
 
+      if (action === "start-delivery") {
+        await adminApiFetch(`/api/orders/${detail.id}/delivery-start`, {
+          method: "POST",
+        });
+        await refreshData();
+        return;
+      }
+
       if (action === "advance-order") {
         await adminApiFetch(`/api/admin/orders/${detail.id}/advance`, {
           method: "PATCH",
