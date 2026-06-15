@@ -95,7 +95,7 @@ const DELIVERY_NEXT_ACTION: Record<
 };
 
 function isPaymentValidated(status: string | null) {
-  return String(status ?? "") === "SUCCESS";
+  return ["SUCCESS", "COD_COLLECTED"].includes(String(status ?? ""));
 }
 
 function isCashOnDelivery(order: AdminOrderListItem | null) {
@@ -442,9 +442,14 @@ function OrdersDrawer({
     await actionRunner.run(async () => {
       if (order.type === "INTERNAL" && order.paymentMethod === "CASH_ON_DELIVERY") {
         const amountCollected = Number(order.remainingAmountOnDelivery ?? order.totalAmount ?? 0);
-        await adminApiFetch(`/api/admin/orders/${order.id}/cod/confirm-collected`, {
+        await adminApiFetch(`/api/admin/orders/${order.id}/cod/confirm-cash-collected`, {
           method: "PATCH",
-          body: JSON.stringify({ amountCollected }),
+          body: JSON.stringify({
+            amountCollected,
+            collectorRole: "ADMIN",
+            note: "Confirmado no admin.",
+            deliveryConfirmation: "Confirmado no admin.",
+          }),
         });
         onFeedback({ message: "COD recebido e pedido entregue.", tone: "success" });
         onActionComplete();
@@ -611,7 +616,7 @@ function OrdersDrawer({
                 ["Valor", formatMoney(order.totalAmount)],
                 ["Fila", humanizeOrderStatus(order.queueStatus)],
                 ["Status operacional", order.operationalStatusLabel || humanizeOrderStatus(getOperationalStatus(order))],
-                ["Estado do cliente", order.customerStatusLabel || humanizeOrderStatus(order.customerStage)],
+                ["Estado do cliente", order.customerDisplayStatus || order.customerStatusLabel || humanizeOrderStatus(order.customerStage)],
                 ["Data", formatDate(order.createdAt)],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-3">
@@ -643,7 +648,7 @@ function OrdersDrawer({
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-[var(--color-text-secondary)]">Estado do pagamento</span>
-                    <strong>{paymentValidated ? "Confirmado" : cashOnDelivery ? "Por cobrar" : "Pendente"}</strong>
+                    <strong>{order.paymentDisplayStatus ?? (paymentValidated ? "Confirmado" : cashOnDelivery ? "Pagamento na entrega - pendente" : "Pendente")}</strong>
                   </div>
                   {cashOnDelivery ? (
                     <div className="flex items-center justify-between gap-4">
@@ -905,7 +910,14 @@ function SharedOrdersView({
         </div>
       </section>
 
-      {error ? <AdminBanner message={error} tone="error" /> : null}
+      {error ? (
+        <div className="admin-card flex flex-col gap-3 border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[#7F1D1D] sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold">{error}</p>
+          <button type="button" onClick={refresh} className="admin-button-muted justify-center">
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
 
       {notice ? <AdminBanner message={notice} tone="success" /> : null}
       {feedback ? <AdminBanner message={feedback.message} tone={feedback.tone} /> : null}

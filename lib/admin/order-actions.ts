@@ -91,7 +91,7 @@ function isCashOnDelivery(order: OrderLike) {
 }
 
 function isPaymentValidated(order: OrderLike) {
-  return String(order.paymentStatus ?? "") === "SUCCESS";
+  return ["SUCCESS", "COD_COLLECTED"].includes(String(order.paymentStatus ?? ""));
 }
 
 function isPickupOrder(order: OrderLike) {
@@ -175,7 +175,7 @@ export function getAvailableOrderActions(
   }
 
   if (internalDeliveryOrder) {
-    if (["PAID", "PAYMENT_ON_DELIVERY_PENDING", "READY_FOR_FULFILLMENT"].includes(status) && canManageOrders(currentUser)) {
+    if (["CREATED", "PAID", "PAYMENT_ON_DELIVERY_PENDING", "READY_FOR_FULFILLMENT"].includes(status) && canManageOrders(currentUser)) {
       actions.push({ key: "prepare-internal", label: "Preparar produto", action: "mark-ready-for-delivery" });
     }
     if (["PICKING", "PREPARING"].includes(status) && canManageOrders(currentUser)) {
@@ -187,7 +187,7 @@ export function getAvailableOrderActions(
     if (status === "OUT_FOR_DELIVERY" && canCompleteDelivery(currentUser)) {
       actions.push({
         key: "deliver-internal",
-        label: isCashOnDelivery(order) && !isPaymentValidated(order) ? "Confirmar cobranca e entrega" : "Confirmar entrega",
+        label: isCashOnDelivery(order) && !isPaymentValidated(order) ? "Solicitar pagamento na entrega" : "Confirmar entrega",
         action: isCashOnDelivery(order) && !isPaymentValidated(order) ? "collect-and-close" : "mark-status",
         targetStatus: "DELIVERED",
       });

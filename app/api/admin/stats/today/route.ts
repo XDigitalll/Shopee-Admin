@@ -27,6 +27,9 @@ type WorkQueueSummary = {
   delivery?: number | null;
   customers?: number | null;
   orphanOrders?: number | null;
+  prepareProductCount?: number | null;
+  internalOrdersNeedingAction?: number | null;
+  internalCodPrepareCount?: number | null;
 };
 
 type ManualPaymentQueueSummary = {
@@ -104,6 +107,9 @@ async function getOrderBadges(request: NextRequest) {
       payments,
       delivery: Number(queue.delivery ?? 0),
       orphanOrders: Number(queue.orphanOrders ?? 0),
+      prepareProductCount: Number(queue.prepareProductCount ?? queue.orders ?? 0),
+      internalOrdersNeedingAction: Number(queue.internalOrdersNeedingAction ?? queue.orders ?? 0),
+      internalCodPrepareCount: Number(queue.internalCodPrepareCount ?? 0),
     };
   }
 
@@ -131,6 +137,9 @@ async function getOrderBadges(request: NextRequest) {
     payments,
     delivery: deliveryBadges.delivery,
     orphanOrders: 0,
+    prepareProductCount: 0,
+    internalOrdersNeedingAction: 0,
+    internalCodPrepareCount: 0,
   };
 }
 
@@ -141,7 +150,7 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
   ]);
 
   if ("error" in pendingResult || "error" in activeResult) {
-    return { orders: 0, quotes: 0, payments: 0, delivery: 0, orphanOrders: 0 };
+    return { orders: 0, quotes: 0, payments: 0, delivery: 0, orphanOrders: 0, prepareProductCount: 0, internalOrdersNeedingAction: 0, internalCodPrepareCount: 0 };
   }
 
   const deliveryIds = new Set([
@@ -149,7 +158,7 @@ async function getDeliveryOnlyBadges(request: NextRequest) {
     ...activeResult.map((order) => order.id),
   ]);
 
-  return { orders: 0, quotes: 0, payments: 0, delivery: deliveryIds.size, orphanOrders: 0 };
+  return { orders: 0, quotes: 0, payments: 0, delivery: deliveryIds.size, orphanOrders: 0, prepareProductCount: 0, internalOrdersNeedingAction: 0, internalCodPrepareCount: 0 };
 }
 
 export async function GET(request: NextRequest) {
