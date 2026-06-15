@@ -91,7 +91,7 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
-  useAdminLiveRefresh(loadCounters, { intervalMs: 15_000, minIntervalMs: 5_000 });
+  useAdminLiveRefresh(loadCounters, { intervalMs: 60_000, minIntervalMs: 30_000 });
 
   return (
     <>

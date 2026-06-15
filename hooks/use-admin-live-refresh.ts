@@ -21,6 +21,8 @@ export function useAdminLiveRefresh(
     minIntervalMs = Math.min(intervalMs, 4_000),
     runOnMount = true,
   } = options;
+  const effectiveIntervalMs = Math.max(intervalMs, 45_000);
+  const effectiveMinIntervalMs = Math.max(minIntervalMs, 20_000);
   const callbackRef = useRef(callback);
 
   useEffect(() => {
@@ -35,10 +37,18 @@ export function useAdminLiveRefresh(
     let disposed = false;
     let running = false;
     let lastRunAt = 0;
+    let errorCount = 0;
 
     const run = async () => {
       const now = Date.now();
-      if (disposed || running || now - lastRunAt < minIntervalMs) {
+      const backoffMs = errorCount > 0 ? Math.min(120_000, effectiveMinIntervalMs * 2 ** errorCount) : effectiveMinIntervalMs;
+      if (
+        disposed
+        || running
+        || document.visibilityState !== "visible"
+        || navigator.onLine === false
+        || now - lastRunAt < backoffMs
+      ) {
         return;
       }
 
@@ -46,6 +56,9 @@ export function useAdminLiveRefresh(
       lastRunAt = now;
       try {
         await callbackRef.current();
+        errorCount = 0;
+      } catch {
+        errorCount += 1;
       } finally {
         running = false;
       }
@@ -67,7 +80,7 @@ export function useAdminLiveRefresh(
       void run();
     }
 
-    const intervalId = window.setInterval(tick, intervalMs);
+    const intervalId = window.setInterval(tick, effectiveIntervalMs);
     window.addEventListener("focus", tick);
     window.addEventListener(ADMIN_DATA_CHANGED_EVENT, tick);
     document.addEventListener("visibilitychange", handleVisibility);
@@ -79,5 +92,5 @@ export function useAdminLiveRefresh(
       window.removeEventListener(ADMIN_DATA_CHANGED_EVENT, tick);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [enabled, intervalMs, minIntervalMs, runOnMount]);
+  }, [enabled, effectiveIntervalMs, effectiveMinIntervalMs, runOnMount]);
 }
