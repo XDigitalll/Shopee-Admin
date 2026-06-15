@@ -318,6 +318,18 @@ function OrdersDrawer({
     });
   }
 
+  async function handleStartDelivery() {
+    if (!order) return;
+
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/orders/${order.id}/delivery-start`, {
+        method: "POST",
+      });
+      onFeedback({ message: "Entrega iniciada. Pedido em rota.", tone: "success" });
+      onActionComplete();
+    });
+  }
+
   async function handlePaymentValidation() {
     if (!order) return;
 
@@ -764,6 +776,11 @@ function OrdersDrawer({
                         return;
                       }
 
+                      if (action.action === "start-delivery") {
+                        void handleStartDelivery();
+                        return;
+                      }
+
                       if (action.action === "handoff" && action.targetQueue) {
                         void handleHandoff(action.targetQueue);
                         return;
@@ -811,17 +828,6 @@ function OrdersDrawer({
                 <p className="rounded-2xl border border-[#BAE6FD] bg-[#F0F9FF] px-4 py-3 text-xs font-medium text-[#0C4A6E]">
                   {actionHint}
                 </p>
-              ) : null}
-
-              {mode === "delivery" && cashOnDelivery && !paymentValidated && getOperationalStatus(order) !== "OUT_FOR_DELIVERY" && !isPickupOrder(order) ? (
-                <button
-                  type="button"
-                  onClick={() => void handlePaymentValidation()}
-                  disabled={isPending}
-                  className="admin-button-muted justify-center"
-                >
-                  {isPending ? <AdminSpinner label="A processar..." /> : "Confirmar cobrança na entrega"}
-                </button>
               ) : null}
 
               <Link

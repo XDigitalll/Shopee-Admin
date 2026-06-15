@@ -34,6 +34,7 @@ export type AdminOrderAction =
         | "collect-and-deliver"
         | "cod-request-payment"
         | "cancel-order"
+        | "start-delivery"
         | "mark-status"
         | "mark-ready-for-delivery"
         | "advance-order"
@@ -184,11 +185,11 @@ export function getAvailableOrderActions(
       actions.push({ key: "ready-internal-delivery", label: "Marcar pronto para entrega", action: "mark-ready-for-delivery" });
     }
     if (status === "READY_FOR_DELIVERY" && canManageDelivery(currentUser)) {
-      actions.push({ key: "send-internal-delivery", label: "Mandar para entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" });
+      actions.push({ key: "start-internal-delivery", label: "Iniciar entrega", action: "start-delivery" });
     }
     if (status === "OUT_FOR_DELIVERY" && canCompleteDelivery(currentUser)) {
       if (isCashOnDelivery(order) && !isPaymentValidated(order)) {
-        actions.push({ key: "cod-arrive", label: "Cheguei ao cliente / Solicitar pagamento", action: "cod-request-payment" });
+        actions.push({ key: "cod-arrive", label: "Cobrar cliente", action: "cod-request-payment" });
       } else {
         actions.push({ key: "deliver-internal", label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" });
       }

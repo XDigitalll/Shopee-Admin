@@ -1419,13 +1419,13 @@ export function DeliveryActiveView() {
 
   async function requestCodPayment(order: DeliveryActiveOrder) {
     setBusyId(order.id);
-    setFeedback({ tone: "loading", message: `A registar chegada ao cliente para ${order.number}.` });
+    setFeedback({ tone: "loading", message: `A solicitar cobranca COD para ${order.number}.` });
     try {
       await adminApiFetch(`/api/admin/orders/${order.id}/cod/request-delivery-payment`, {
         method: "PATCH",
       });
       await loadData(true);
-      setFeedback({ tone: "success", message: `Pagamento COD solicitado para ${order.number}. Aguarda o cliente pagar.` });
+      setFeedback({ tone: "success", message: `Cobranca COD solicitada para ${order.number}. Aguarda o cliente pagar.` });
       router.refresh();
     } catch (saveError) {
       setFeedback({
@@ -1591,7 +1591,7 @@ export function DeliveryActiveView() {
                       disabled={busyId === order.id}
                       className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {busyId === order.id ? "A registar..." : "Cheguei ao cliente / Solicitar pagamento"}
+                      {busyId === order.id ? "A registar..." : "Cobrar cliente"}
                     </button>
                   ) : (
                     <button
