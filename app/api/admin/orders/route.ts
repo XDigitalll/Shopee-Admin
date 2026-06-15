@@ -51,6 +51,11 @@ type BackendOrder = {
   operationalStatus?: string | null;
   quoteQueueStatus?: string | null;
   customerStatusLabel?: string | null;
+  customerDisplayStatus?: string | null;
+  paymentDisplayStatus?: string | null;
+  timelineType?: string | null;
+  currentTimelineStep?: string | null;
+  completedTimelineSteps?: string[] | null;
   fulfillmentStatus?: string | null;
   orderDate?: string;
   externalCartUrl?: string | null;
@@ -80,6 +85,11 @@ type BackendOrder = {
   trackingSummarySteps?: TrackingStep[] | null;
   trackingDetailSteps?: TrackingStep[] | null;
 };
+
+function isInternalCodOrder(order: BackendOrder) {
+  return order.type === "INTERNAL"
+    && (order.payment?.method === "CASH_ON_DELIVERY" || order.payment?.status === "COD_PENDING");
+}
 
 function getOrderNumber(order: Pick<BackendOrder, "id" | "code" | "orderCode">) {
   return order.code || order.orderCode || `#${order.id}`;
@@ -121,6 +131,9 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
   const priority = mapPriority(order);
   const operationalStatus = order.orderStatus ?? order.status ?? "UNDER_REVIEW";
   const rawStatus = order.payment?.status === "FAILED" ? "FAILED" : operationalStatus;
+  const queueStatus = isInternalCodOrder(order) && ["CREATED", "PAYMENT_ON_DELIVERY_PENDING", "READY_FOR_FULFILLMENT"].includes(operationalStatus)
+    ? "EXECUTION"
+    : resolveOrderQueueStatus(operationalStatus);
 
   return {
     id: order.id,
@@ -137,9 +150,14 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     operationalStatus: order.operationalStatus ?? operationalStatus,
     quoteQueueStatus: (order.quoteQueueStatus as AdminOrderListItem["quoteQueueStatus"]) ?? null,
     customerStatusLabel: order.customerStatusLabel ?? null,
+    customerDisplayStatus: order.customerDisplayStatus ?? null,
+    paymentDisplayStatus: order.paymentDisplayStatus ?? null,
+    timelineType: order.timelineType ?? null,
+    currentTimelineStep: order.currentTimelineStep ?? null,
+    completedTimelineSteps: order.completedTimelineSteps ?? null,
     fulfillmentStatus: order.fulfillmentStatus ?? order.orderStatus ?? order.status ?? null,
     uiStatus: resolveUiOrderStatus(rawStatus, order.type ?? "INTERNAL"),
-    queueStatus: resolveOrderQueueStatus(operationalStatus),
+    queueStatus,
     customerStage: resolveCustomerOrderStage(rawStatus),
     priority: priority.priority,
     priorityLabel: priority.priorityLabel,

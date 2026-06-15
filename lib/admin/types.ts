@@ -28,6 +28,9 @@ export type TodayStatsResponse = {
     payments: number;
     delivery: number;
     orphanOrders: number;
+    prepareProductCount?: number;
+    internalOrdersNeedingAction?: number;
+    internalCodPrepareCount?: number;
   };
 };
 
@@ -82,6 +85,11 @@ export type AdminOrderListItem = {
   orderStatus?: string | null;
   operationalStatusLabel?: string | null;
   customerStatusLabel?: string | null;
+  customerDisplayStatus?: string | null;
+  paymentDisplayStatus?: string | null;
+  timelineType?: string | null;
+  currentTimelineStep?: string | null;
+  completedTimelineSteps?: string[] | null;
   fulfillmentStatus?: string | null;
   operationalStatus?: string | null;
   quoteQueueStatus?: AdminQuoteQueueStatus | null;
@@ -333,6 +341,11 @@ export type ExternalOrderDetail = {
   status: string;
   quoteQueueStatus: AdminQuoteQueueStatus | null;
   operationalStatus: string;
+  timelineType?: string | null;
+  currentTimelineStep?: string | null;
+  completedTimelineSteps?: string[] | null;
+  paymentDisplayStatus?: string | null;
+  customerDisplayStatus?: string | null;
   actionRequired: boolean;
   nextActionLabel: string | null;
   nextActionModule: string | null;

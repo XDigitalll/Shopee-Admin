@@ -88,6 +88,18 @@ type BackendOrderDetail = {
   urgent?: boolean | null;
   status?: string;
   operationalStatus?: string | null;
+  timelineType?: string | null;
+  currentTimelineStep?: string | null;
+  completedTimelineSteps?: string[] | null;
+  paymentDisplayStatus?: string | null;
+  customerDisplayStatus?: string | null;
+  trackingDetailSteps?: Array<{
+    key?: string | null;
+    label?: string | null;
+    description?: string | null;
+    state?: "COMPLETED" | "CURRENT" | "PENDING" | "FAILED" | string | null;
+    occurredAt?: string | null;
+  }> | null;
   quoteQueueStatus?: ExternalOrderDetail["quoteQueueStatus"] | null;
   nextActionLabel?: string | null;
   nextActionModule?: string | null;
@@ -473,6 +485,32 @@ function buildHistory(
   return timeline;
 }
 
+function buildDisplayHistory(
+  order: BackendOrderDetail,
+  quoteHistory: BackendQuoteHistory[],
+  payment: BackendPaymentDetail | null,
+  trackingCode: string
+): OrderHistoryEntry[] {
+  if (order.timelineType === "INTERNAL_COD" && order.trackingDetailSteps?.length) {
+    return order.trackingDetailSteps.map((step) => ({
+      id: String(step.key ?? step.label ?? "cod-step").toLowerCase(),
+      label: step.label ?? "Evento COD",
+      date: step.occurredAt ?? null,
+      state:
+        step.state === "COMPLETED"
+          ? "done"
+          : step.state === "CURRENT" || step.state === "FAILED"
+            ? "current"
+            : "future",
+      description: step.description ?? undefined,
+      actor: step.key === "RECEIVED" ? "Cliente" : "Admin",
+      iconColor: step.key === "COD_COLLECTED" ? "#15803d" : "#E8431A",
+    }));
+  }
+
+  return buildHistory(order, quoteHistory, payment, trackingCode);
+}
+
 function mapAuditHistory(items: AuditLogItem[] | null | undefined): OrderHistoryEntry[] {
   return (items ?? []).map((item) => ({
     id: `audit-${item.id}`,
@@ -632,6 +670,11 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     status: effectiveOrderStatus,
     quoteQueueStatus: order.quoteQueueStatus ?? null,
     operationalStatus: order.operationalStatus ?? order.status ?? "UNDER_REVIEW",
+    timelineType: order.timelineType ?? null,
+    currentTimelineStep: order.currentTimelineStep ?? null,
+    completedTimelineSteps: order.completedTimelineSteps ?? null,
+    paymentDisplayStatus: order.paymentDisplayStatus ?? null,
+    customerDisplayStatus: order.customerDisplayStatus ?? null,
     actionRequired: Boolean(order.actionRequired?.required && order.actionRequired?.module === "EXTERNAL_QUOTES"),
     nextActionLabel: order.nextActionLabel ?? order.actionRequired?.nextActionLabel ?? null,
     nextActionModule: order.nextActionModule ?? order.actionRequired?.module ?? null,
@@ -773,7 +816,7 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     detail,
     history: [
       ...mapAuditHistory(timelinePayload),
-      ...buildHistory(order, historyPayload ?? [], paymentPayload, trackingCode),
+      ...buildDisplayHistory(order, historyPayload ?? [], paymentPayload, trackingCode),
     ],
     initials: getInitials(detail.customerName),
   };

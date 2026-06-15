@@ -35,6 +35,8 @@ export function useOrders(initial: Partial<OrdersFilterState> = {}) {
 
   const loadOrdersData = useCallback(async (background = false) => {
     const requestId = ++lastRequestId.current;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
 
     if (background) {
       setIsRefreshing(true);
@@ -54,8 +56,12 @@ export function useOrders(initial: Partial<OrdersFilterState> = {}) {
       });
 
       const [ordersPayload, statsPayload] = await Promise.all([
-        adminApiFetch<OrdersPageResponse>(`/api/admin/orders?${params.toString()}`),
-        adminApiFetch<OrdersStatsResponse>("/api/admin/orders/stats"),
+        adminApiFetch<OrdersPageResponse>(`/api/admin/orders?${params.toString()}`, {
+          signal: controller.signal,
+        }),
+        adminApiFetch<OrdersStatsResponse>("/api/admin/orders/stats", {
+          signal: controller.signal,
+        }),
       ]);
 
       if (requestId !== lastRequestId.current) {
@@ -70,8 +76,13 @@ export function useOrders(initial: Partial<OrdersFilterState> = {}) {
         return;
       }
 
-      setError(loadError instanceof Error ? loadError.message : "Nao foi possivel carregar pedidos.");
+      setError(
+        loadError instanceof DOMException && loadError.name === "AbortError"
+          ? "A lista de pedidos demorou demasiado a responder. Tenta novamente."
+          : loadError instanceof Error ? loadError.message : "Nao foi possivel carregar pedidos."
+      );
     } finally {
+      window.clearTimeout(timeoutId);
       if (requestId !== lastRequestId.current) {
         return;
       }

@@ -14,7 +14,15 @@ type RouteContext = {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
-  const body = (await request.json().catch(() => null)) as { amountCollected?: number | string } | null;
+  const body = (await request.json().catch(() => null)) as {
+    amountCollected?: number | string;
+    collectedBy?: string | null;
+    collectorRole?: string | null;
+    note?: string | null;
+    receivedAt?: string | null;
+    cashLocation?: string | null;
+    deliveryConfirmation?: string | null;
+  } | null;
   const amountCollected = Number(body?.amountCollected ?? 0);
 
   if (!Number.isFinite(amountCollected) || amountCollected <= 0) {
@@ -23,10 +31,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const response = await fetchBackend(
     request,
-    `/admin/orders/${encodeURIComponent(id)}/cod/confirm-collected`,
+    `/admin/orders/${encodeURIComponent(id)}/cod/confirm-cash-collected`,
     {
       method: "PATCH",
-      body: JSON.stringify({ amountCollected }),
+      body: JSON.stringify({
+        ...body,
+        amountCollected,
+        collectorRole: body?.collectorRole ?? "ADMIN",
+        deliveryConfirmation: body?.deliveryConfirmation ?? "Confirmado no admin.",
+      }),
       headers: { "Content-Type": "application/json" },
     }
   );

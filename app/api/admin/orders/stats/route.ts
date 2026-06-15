@@ -15,7 +15,17 @@ type BackendPage<T> = {
 
 type BackendOrder = {
   status?: string | null;
+  type?: "EXTERNAL" | "INTERNAL" | null;
+  payment?: {
+    status?: string | null;
+    method?: string | null;
+  } | null;
 };
+
+function isInternalCodOrder(order: BackendOrder) {
+  return order.type === "INTERNAL"
+    && (order.payment?.method === "CASH_ON_DELIVERY" || order.payment?.status === "COD_PENDING");
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,7 +41,10 @@ export async function GET(request: NextRequest) {
 
     const result = orders.reduce<OrdersStatsResponse>(
       (stats, order) => {
-        const queueStatus = resolveOrderQueueStatus(order.status ?? "UNDER_REVIEW");
+        const status = order.status ?? "UNDER_REVIEW";
+        const queueStatus = isInternalCodOrder(order) && ["CREATED", "PAYMENT_ON_DELIVERY_PENDING", "READY_FOR_FULFILLMENT"].includes(status)
+          ? "EXECUTION"
+          : resolveOrderQueueStatus(status);
         stats.total += 1;
 
         if (queueStatus === "ANALYSIS") stats.analysis += 1;

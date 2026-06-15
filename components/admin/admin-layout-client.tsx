@@ -15,13 +15,19 @@ const emptyCounters = {
   payments: 0,
   delivery: 0,
   orphanOrders: 0,
+  prepareProductCount: 0,
+  internalOrdersNeedingAction: 0,
+  internalCodPrepareCount: 0,
 };
 
 function InnerLayout({ children }: { children: React.ReactNode }) {
   const [counters, setCounters] = useState(emptyCounters);
   const [paymentNotice, setPaymentNotice] = useState<{ count: number; id: number } | null>(null);
+  const [codNotice, setCodNotice] = useState<{ count: number; id: number } | null>(null);
   const previousPaymentsRef = useRef<number | null>(null);
+  const previousCodPrepareRef = useRef<number | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
+  const codNoticeTimerRef = useRef<number | null>(null);
 
   function notifyManualPayment(count: number) {
     setPaymentNotice({ count, id: Date.now() });
@@ -46,16 +52,40 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
+  function notifyInternalCod(count: number) {
+    setCodNotice({ count, id: Date.now() });
+
+    if (codNoticeTimerRef.current) {
+      window.clearTimeout(codNoticeTimerRef.current);
+    }
+    codNoticeTimerRef.current = window.setTimeout(() => setCodNotice(null), 10_000);
+
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification("Novo pedido COD interno para preparar", {
+          body: `${count} pedido(s) COD interno(s) aguardam preparacao.`,
+          tag: "internal-cod-prepare",
+        });
+      } catch {}
+    }
+  }
+
   async function loadCounters() {
     try {
       const payload = await adminApiFetch<TodayStatsResponse>("/api/admin/stats/today");
       const nextPayments = Number(payload.badges.payments ?? 0);
+      const nextCodPrepare = Number(payload.badges.internalCodPrepareCount ?? 0);
       const previousPayments = previousPaymentsRef.current;
+      const previousCodPrepare = previousCodPrepareRef.current;
       if (previousPayments !== null && nextPayments > previousPayments) {
         notifyManualPayment(nextPayments);
       }
+      if (previousCodPrepare !== null && nextCodPrepare > previousCodPrepare) {
+        notifyInternalCod(nextCodPrepare);
+      }
       previousPaymentsRef.current = nextPayments;
-      setCounters(payload.badges);
+      previousCodPrepareRef.current = nextCodPrepare;
+      setCounters({ ...emptyCounters, ...payload.badges });
     } catch {
       setCounters(emptyCounters);
     }
@@ -90,6 +120,33 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
             className="mt-3 inline-flex rounded-2xl bg-[#166534] px-4 py-2 text-sm font-semibold text-white"
           >
             Abrir validação
+          </Link>
+        </div>
+      ) : null}
+      {codNotice ? (
+        <div className="fixed right-5 top-5 z-[70] mt-28 w-[min(360px,calc(100vw-2rem))] rounded-[24px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[#7F1D1D] shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-[family-name:var(--font-sora)] text-sm font-semibold">Novo pedido COD interno para preparar</p>
+              <p className="mt-1 text-sm leading-5">
+                {codNotice.count} pedido(s) COD interno(s) aguardam preparacao.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCodNotice(null)}
+              className="rounded-full px-2 text-lg font-semibold leading-6 text-[#7F1D1D] hover:bg-[#FEE2E2]"
+              aria-label="Fechar notificacao COD"
+            >
+              ×
+            </button>
+          </div>
+          <Link
+            href="/admin/orders?status=EXECUTION&type=INTERNAL"
+            onClick={() => setCodNotice(null)}
+            className="mt-3 inline-flex rounded-2xl bg-[#B42318] px-4 py-2 text-sm font-semibold text-white"
+          >
+            Abrir pedidos internos
           </Link>
         </div>
       ) : null}
