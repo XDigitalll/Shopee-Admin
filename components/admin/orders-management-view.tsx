@@ -472,6 +472,18 @@ function OrdersDrawer({
     });
   }
 
+  async function handleCodRequestPayment() {
+    if (!order) return;
+
+    await actionRunner.run(async () => {
+      await adminApiFetch(`/api/admin/orders/${order.id}/cod/request-delivery-payment`, {
+        method: "PATCH",
+      });
+      onFeedback({ message: "Chegada ao cliente registada. Pagamento COD solicitado.", tone: "success" });
+      onActionComplete();
+    });
+  }
+
   async function handleHandoff(targetQueue: "PAYMENTS" | "QUOTES" | "DELIVERY" | "EXECUTION" | "SUPPORT") {
     if (!order) return;
 
@@ -744,6 +756,11 @@ function OrdersDrawer({
 
                       if (action.action === "collect-and-close") {
                         void handleCollectAndClose("DELIVERED");
+                        return;
+                      }
+
+                      if (action.action === "cod-request-payment") {
+                        void handleCodRequestPayment();
                         return;
                       }
 

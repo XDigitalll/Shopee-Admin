@@ -32,6 +32,7 @@ export type AdminOrderAction =
         | "focus-tracking"
         | "collect-and-close"
         | "collect-and-deliver"
+        | "cod-request-payment"
         | "cancel-order"
         | "mark-status"
         | "mark-ready-for-delivery"
@@ -186,12 +187,14 @@ export function getAvailableOrderActions(
       actions.push({ key: "send-internal-delivery", label: "Mandar para entrega", action: "mark-status", targetStatus: "OUT_FOR_DELIVERY" });
     }
     if (status === "OUT_FOR_DELIVERY" && canCompleteDelivery(currentUser)) {
-      actions.push({
-        key: "deliver-internal",
-        label: isCashOnDelivery(order) && !isPaymentValidated(order) ? "Solicitar pagamento na entrega" : "Confirmar entrega",
-        action: isCashOnDelivery(order) && !isPaymentValidated(order) ? "collect-and-close" : "mark-status",
-        targetStatus: "DELIVERED",
-      });
+      if (isCashOnDelivery(order) && !isPaymentValidated(order)) {
+        actions.push({ key: "cod-arrive", label: "Cheguei ao cliente / Solicitar pagamento", action: "cod-request-payment" });
+      } else {
+        actions.push({ key: "deliver-internal", label: "Confirmar entrega", action: "mark-status", targetStatus: "DELIVERED" });
+      }
+    }
+    if (status === "AWAITING_DELIVERY_PAYMENT" && isCashOnDelivery(order) && canCompleteDelivery(currentUser)) {
+      actions.push({ key: "confirm-cod-cash", label: "Confirmar dinheiro recebido", action: "collect-and-close" });
     }
     return addCancelAction(actions, order, currentUser, detailSurface);
   }
