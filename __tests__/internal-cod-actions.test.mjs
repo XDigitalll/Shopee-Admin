@@ -102,7 +102,7 @@ describe("internal COD prepare-product action wiring", () => {
 
     assert.match(
       orderActions,
-      /label:\s*"Iniciar entrega",\s*action:\s*"start-delivery"/,
+      /label:\s*"Mandar para entrega",\s*action:\s*"start-delivery"/,
       "READY_FOR_DELIVERY must start the route, not request payment",
     );
     assert.match(

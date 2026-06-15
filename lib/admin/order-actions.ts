@@ -185,7 +185,7 @@ export function getAvailableOrderActions(
       actions.push({ key: "ready-internal-delivery", label: "Marcar pronto para entrega", action: "mark-ready-for-delivery" });
     }
     if (status === "READY_FOR_DELIVERY" && canManageDelivery(currentUser)) {
-      actions.push({ key: "start-internal-delivery", label: "Iniciar entrega", action: "start-delivery" });
+      actions.push({ key: "start-internal-delivery", label: "Mandar para entrega", action: "start-delivery" });
     }
     if (status === "OUT_FOR_DELIVERY" && canCompleteDelivery(currentUser)) {
       if (isCashOnDelivery(order) && !isPaymentValidated(order)) {

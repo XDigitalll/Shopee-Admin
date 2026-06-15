@@ -88,7 +88,7 @@ type BackendOrder = {
 };
 
 const PENDING_DELIVERY_STATUSES = new Set(["READY_FOR_DELIVERY", "DELIVERY_FAILED"]);
-const ACTIVE_DELIVERY_STATUSES = new Set(["OUT_FOR_DELIVERY"]);
+const ACTIVE_DELIVERY_STATUSES = new Set(["OUT_FOR_DELIVERY", "AWAITING_DELIVERY_PAYMENT"]);
 
 type BackendDriver = {
   id?: string | number | null;
@@ -446,7 +446,9 @@ export async function fetchActiveDeliveryOrders(request: NextRequest): Promise<D
   if (response.ok) {
     const payload = await parseBackendJson<BackendPage<BackendOrder> | BackendOrder[]>(response);
     const list = Array.isArray(payload) ? payload : payload?.content ?? [];
-    return list.map(mapActiveOrder);
+    return list
+      .filter((order) => ACTIVE_DELIVERY_STATUSES.has(readString(order.status)))
+      .map(mapActiveOrder);
   }
 
   const orders = await fetchOrdersFallback(request);

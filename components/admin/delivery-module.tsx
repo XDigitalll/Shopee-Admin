@@ -1246,7 +1246,7 @@ export function DeliveryPendingView() {
                         title={!canStart ? startBlockReason : undefined}
                         className="rounded-full bg-[#111827] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45"
                       >
-                        Iniciar entrega
+                        Mandar para entrega
                       </button>
                     </div>
                     {!canStart && startBlockReason ? (
@@ -1425,7 +1425,7 @@ export function DeliveryActiveView() {
         method: "PATCH",
       });
       await loadData(true);
-      setFeedback({ tone: "success", message: `Cobranca COD solicitada para ${order.number}. Aguarda o cliente pagar.` });
+      setFeedback({ tone: "success", message: `Cobrança enviada ao cliente para ${order.number}.` });
       router.refresh();
     } catch (saveError) {
       setFeedback({
