@@ -508,6 +508,29 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         return;
       }
 
+      if (action === "collect-and-close") {
+        const amountCollected = Number(detail.remainingAmountOnDelivery ?? detail.totalAmount ?? 0);
+        await adminApiFetch(`/api/admin/orders/${detail.id}/cod/confirm-cash-collected`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            amountCollected,
+            collectorRole: "ADMIN",
+            note: "Confirmado nos detalhes do pedido.",
+            deliveryConfirmation: "Confirmado nos detalhes do pedido.",
+          }),
+        });
+        await refreshData();
+        return;
+      }
+
+      if (action === "cod-request-payment") {
+        await adminApiFetch(`/api/admin/orders/${detail.id}/cod/request-delivery-payment`, {
+          method: "PATCH",
+        });
+        await refreshData();
+        return;
+      }
+
       if (action === "cancel-order") {
         setCancelDialogOpen(true);
       }

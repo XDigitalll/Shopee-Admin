@@ -220,6 +220,8 @@ export type DeliveryActiveOrder = {
   status: string;
   urgent: boolean;
   deliveryAttempt: number | null;
+  paymentMethod?: string | null;
+  totalAmountDue?: number | null;
 };
 
 export type DeliveryHistoryStatus = "DELIVERED" | "PROBLEM";

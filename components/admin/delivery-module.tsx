@@ -1417,6 +1417,46 @@ export function DeliveryActiveView() {
     }
   }
 
+  async function requestCodPayment(order: DeliveryActiveOrder) {
+    setBusyId(order.id);
+    setFeedback({ tone: "loading", message: `A registar chegada ao cliente para ${order.number}.` });
+    try {
+      await adminApiFetch(`/api/admin/orders/${order.id}/cod/request-delivery-payment`, {
+        method: "PATCH",
+      });
+      await loadData(true);
+      setFeedback({ tone: "success", message: `Pagamento COD solicitado para ${order.number}. Aguarda o cliente pagar.` });
+      router.refresh();
+    } catch (saveError) {
+      setFeedback({
+        tone: "error",
+        message: saveError instanceof Error ? saveError.message : "Nao foi possivel solicitar pagamento na entrega.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmCodCash(order: DeliveryActiveOrder) {
+    setBusyId(order.id);
+    setFeedback({ tone: "loading", message: `A confirmar recebimento de dinheiro para ${order.number}.` });
+    try {
+      await adminApiFetch(`/api/admin/orders/${order.id}/cod/confirm-cash-collected`, {
+        method: "PATCH",
+      });
+      await loadData(true);
+      setFeedback({ tone: "success", message: `Pagamento COD confirmado para ${order.number}. Entrega concluida.` });
+      router.refresh();
+    } catch (saveError) {
+      setFeedback({
+        tone: "error",
+        message: saveError instanceof Error ? saveError.message : "Nao foi possivel confirmar o pagamento COD.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (loading) {
     return (
       <AdminSectionSkeleton
@@ -1446,7 +1486,9 @@ export function DeliveryActiveView() {
       ) : (
         <div className="grid gap-4">
           {visibleOrders.map((order) => {
-            const isOnRoute = order.status === "OUT_FOR_DELIVERY";
+            const isAwaitingPayment = order.status === "AWAITING_DELIVERY_PAYMENT";
+            const isOnRoute = order.status === "OUT_FOR_DELIVERY" || isAwaitingPayment;
+            const isCod = order.paymentMethod === "CASH_ON_DELIVERY";
             const needsAttention = isDeliveryActionRequired(order);
 
             return (
@@ -1463,6 +1505,15 @@ export function DeliveryActiveView() {
                     {!isOnRoute ? (
                       <span className="rounded-full bg-[#FAEEDA] px-3 py-1 text-xs font-semibold text-[#8A5A00]">
                         Viagem por iniciar
+                      </span>
+                    ) : isAwaitingPayment ? (
+                      <span className="rounded-full bg-[#EEF2FF] px-3 py-1 text-xs font-semibold text-[#4338CA]">
+                        Aguardando pagamento COD
+                      </span>
+                    ) : null}
+                    {isCod ? (
+                      <span className="rounded-full bg-[#FEF3C7] px-3 py-1 text-xs font-semibold text-[#92400E]">
+                        COD
                       </span>
                     ) : null}
                     <span className="rounded-full bg-[var(--color-background-tertiary)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
@@ -1510,22 +1561,59 @@ export function DeliveryActiveView() {
                       {busyId === order.id ? "A iniciar..." : "Iniciar viagem"}
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setConfirmOrder(order)}
-                    disabled={!isOnRoute}
-                    className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Confirmar entrega
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProblemModal({ order, type: ISSUE_OPTIONS[0].value, note: "" })}
-                    disabled={!isOnRoute}
-                    className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Reportar problema
-                  </button>
+
+                  {isAwaitingPayment && isCod ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void confirmCodCash(order)}
+                        disabled={busyId === order.id}
+                        className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyId === order.id ? "A confirmar..." : "Confirmar dinheiro recebido"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProblemModal({ order, type: ISSUE_OPTIONS[0].value, note: "" })}
+                        disabled={busyId === order.id}
+                        className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Nao coletado
+                      </button>
+                      <p className="rounded-[18px] bg-[#EEF2FF] px-4 py-3 text-sm font-medium text-[#4338CA]">
+                        Estafeta chegou ao cliente. Aguarda o pagamento ou confirma o dinheiro recebido.
+                      </p>
+                    </>
+                  ) : !isOnRoute ? null : isCod ? (
+                    <button
+                      type="button"
+                      onClick={() => void requestCodPayment(order)}
+                      disabled={busyId === order.id}
+                      className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busyId === order.id ? "A registar..." : "Cheguei ao cliente / Solicitar pagamento"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmOrder(order)}
+                      disabled={!isOnRoute}
+                      className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Confirmar entrega
+                    </button>
+                  )}
+
+                  {isOnRoute && !isAwaitingPayment ? (
+                    <button
+                      type="button"
+                      onClick={() => setProblemModal({ order, type: ISSUE_OPTIONS[0].value, note: "" })}
+                      className="admin-button-muted justify-center"
+                    >
+                      Reportar problema
+                    </button>
+                  ) : null}
+
                   {!isOnRoute ? (
                     <p className="rounded-[18px] bg-[#FAEEDA] px-4 py-3 text-sm font-medium text-[#8A5A00]">
                       Ja te foi atribuido. Clica em iniciar viagem quando saires do escritorio.
