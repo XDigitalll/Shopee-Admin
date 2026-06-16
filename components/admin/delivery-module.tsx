@@ -149,8 +149,9 @@ function getDurationTone(minutes: number | null | undefined) {
 }
 
 function resolveDeliveryChargeAmount(order: DeliveryActiveOrder) {
+  // totalAmountDue is not serialized by DeliveryActiveOrderDTO — skip it.
+  // Use remainingAmountOnDelivery (now populated) as the primary source.
   const candidates = [
-    order.totalAmountDue,
     order.remainingAmountOnDelivery,
     order.deliveryFee,
     order.totalAmount,
@@ -1337,6 +1338,7 @@ export function DeliveryActiveView() {
   } | null>(null);
   const [confirmOrder, setConfirmOrder] = useState<DeliveryActiveOrder | null>(null);
   const [collectionModal, setCollectionModal] = useState<DeliveryCollectionModalState | null>(null);
+  const [markNotCollectedModal, setMarkNotCollectedModal] = useState<{ order: DeliveryActiveOrder; reason: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const loadData = useCallback(async (background = false) => {
@@ -1476,6 +1478,34 @@ export function DeliveryActiveView() {
     }
   }
 
+  async function markNotCollected() {
+    if (!markNotCollectedModal) return;
+    const reason = markNotCollectedModal.reason.trim();
+    if (!reason) {
+      setFeedback({ tone: "error", message: "Informe o motivo pelo qual nao foi possivel cobrar." });
+      return;
+    }
+    setBusyId(markNotCollectedModal.order.id);
+    setFeedback({ tone: "loading", message: `A registar cobranca nao realizada para ${markNotCollectedModal.order.number}.` });
+    try {
+      await adminApiFetch(`/api/admin/orders/${markNotCollectedModal.order.id}/cod/mark-not-collected`, {
+        method: "PATCH",
+        body: JSON.stringify({ reason }),
+      });
+      await loadData(true);
+      setFeedback({ tone: "success", message: `Cobranca nao realizada registada para ${markNotCollectedModal.order.number}. Pedido voltou ao escritorio.` });
+      setMarkNotCollectedModal(null);
+      router.refresh();
+    } catch (saveError) {
+      setFeedback({
+        tone: "error",
+        message: saveError instanceof Error ? saveError.message : "Nao foi possivel registar cobranca nao realizada.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function sendPaySuiteDeliveryCharge(order: DeliveryActiveOrder) {
     setBusyId(order.id);
     setFeedback({ tone: "loading", message: `A preparar link PaySuite para ${order.number}.` });
@@ -1565,9 +1595,19 @@ export function DeliveryActiveView() {
           amount: amountCollected,
         }),
       });
-      await loadData(true);
-      setFeedback({ tone: "success", message: `Dinheiro recebido para ${order.number}. Ja podes confirmar a entrega.` });
       setCollectionModal(null);
+      // Auto-complete delivery after cash received — consistent with PaySuite flow.
+      // deliveryPaymentStatus is now RECEIVED so the BFF pre-check passes.
+      try {
+        await adminApiFetch(`/api/orders/${order.id}/delivery-complete`, {
+          method: "POST",
+          body: JSON.stringify({ deliveryNote: "Dinheiro recebido em maos. Entrega concluida." }),
+        });
+        setFeedback({ tone: "success", message: `Entrega ${order.number} concluida. Dinheiro recebido em maos.` });
+      } catch {
+        setFeedback({ tone: "success", message: `Dinheiro recebido para ${order.number}. Ja podes confirmar a entrega.` });
+      }
+      await loadData(true);
       router.refresh();
     } catch (saveError) {
       setFeedback({
@@ -1688,21 +1728,23 @@ export function DeliveryActiveView() {
 
                   {isOnRoute ? (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => setCollectionModal({
-                          order,
-                          cashConfirmed: false,
-                          transferReference: "",
-                          transferPayerName: "",
-                          transferPayerBank: "",
-                          paymentUrl: null,
-                        })}
-                        disabled={busyId === order.id}
-                        className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {busyId === order.id ? "A registar..." : "Cobrar cliente"}
-                      </button>
+                      {(isCod || deliveryChargePending) ? (
+                        <button
+                          type="button"
+                          onClick={() => setCollectionModal({
+                            order,
+                            cashConfirmed: false,
+                            transferReference: "",
+                            transferPayerName: "",
+                            transferPayerBank: "",
+                            paymentUrl: null,
+                          })}
+                          disabled={busyId === order.id}
+                          className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyId === order.id ? "A registar..." : "Cobrar cliente"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => setConfirmOrder(order)}
@@ -1726,6 +1768,17 @@ export function DeliveryActiveView() {
                       className="admin-button-muted justify-center"
                     >
                       Reportar problema
+                    </button>
+                  ) : null}
+
+                  {isAwaitingPayment ? (
+                    <button
+                      type="button"
+                      onClick={() => setMarkNotCollectedModal({ order, reason: "" })}
+                      disabled={busyId === order.id}
+                      className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Nao consegui cobrar
                     </button>
                   ) : null}
 
@@ -1883,6 +1936,30 @@ export function DeliveryActiveView() {
           startTransition(() => void confirmDelivery(confirmOrder, "Entrega confirmada no modulo de delivery."));
         }}
       />
+
+      <AdminConfirmDialog
+        open={Boolean(markNotCollectedModal)}
+        title="Marcar cobranca como nao realizada?"
+        message="O pedido voltara para DELIVERY_FAILED e sai da lista de entregas activas. Confirma o motivo."
+        confirmLabel="Confirmar"
+        danger
+        pending={busyId === markNotCollectedModal?.order.id}
+        onCancel={() => setMarkNotCollectedModal(null)}
+        onConfirm={() => void markNotCollected()}
+      >
+        {markNotCollectedModal ? (
+          <textarea
+            value={markNotCollectedModal.reason}
+            onChange={(event) =>
+              setMarkNotCollectedModal((current) =>
+                current ? { ...current, reason: event.target.value } : current,
+              )
+            }
+            className="admin-input min-h-[80px] w-full resize-none"
+            placeholder="Motivo: cliente ausente, recusou pagar, telefone desligado..."
+          />
+        ) : null}
+      </AdminConfirmDialog>
 
       <AdminConfirmDialog
         open={Boolean(problemModal)}

@@ -84,4 +84,28 @@ describe("delivery active collection flow", () => {
     assert.match(transferHandler, /admin\/payments\?orderId=\$\{order\.id\}&queue=AWAITING/);
     assert.match(transferHandler, /pagamentos manuais/);
   });
+
+  it("cash collection auto-calls delivery-complete after success", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const cashHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function confirmCodCash"),
+      deliveryModule.indexOf("if (loading)", deliveryModule.indexOf("async function confirmCodCash")),
+    );
+
+    assert.match(cashHandler, /delivery-complete/);
+    assert.match(cashHandler, /Dinheiro recebido em maos. Entrega concluida\./);
+    assert.match(cashHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
+  });
+
+  it("mark-not-collected button and modal are wired to cod/mark-not-collected", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const notCollectedFn = deliveryModule.slice(
+      deliveryModule.indexOf("async function markNotCollected()"),
+      deliveryModule.indexOf("async function confirmCodCash"),
+    );
+
+    assert.match(notCollectedFn, /cod\/mark-not-collected/);
+    assert.match(notCollectedFn, /reason\.trim\(\)/);
+    assert.match(deliveryModule, /markNotCollectedModal/);
+  });
 });
