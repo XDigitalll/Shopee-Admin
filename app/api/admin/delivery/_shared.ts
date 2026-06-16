@@ -83,6 +83,15 @@ type BackendOrder = {
   deliveredAt?: string | null;
   baseAmount?: number | null;
   totalAmount?: number | null;
+  totalAmountDue?: number | null;
+  remainingAmountOnDelivery?: number | null;
+  deliveryPaymentStatus?: string | null;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
+  payment?: {
+    method?: string | null;
+    status?: string | null;
+  } | null;
   deliveryAttempt?: number | null;
   lastIssueType?: string | null;
 };
@@ -281,6 +290,11 @@ function mapActiveOrder(raw: BackendOrder): DeliveryActiveOrder {
     status: readString(raw.status) || "OUT_FOR_DELIVERY",
     urgent: readBoolean(raw.urgent, false),
     deliveryAttempt: readNullableNumber(raw.deliveryAttempt),
+    paymentMethod: readNullableString(raw.paymentMethod ?? raw.payment?.method),
+    paymentStatus: readNullableString(raw.paymentStatus ?? raw.payment?.status),
+    deliveryPaymentStatus: readNullableString(raw.deliveryPaymentStatus),
+    remainingAmountOnDelivery: readNullableNumber(raw.remainingAmountOnDelivery),
+    totalAmountDue: readNullableNumber(raw.totalAmountDue ?? raw.remainingAmountOnDelivery),
   };
 }
 

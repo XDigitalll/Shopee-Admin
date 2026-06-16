@@ -68,6 +68,25 @@ type PendingFormState = {
   driverId: string;
 };
 
+type DeliveryCollectionModalState = {
+  order: DeliveryActiveOrder;
+  cashConfirmed: boolean;
+  transferReference: string;
+  transferPayerName: string;
+  transferPayerBank: string;
+  paymentUrl: string | null;
+};
+
+type DeliveryCollectionResponse = {
+  orderId: number;
+  status: string;
+  deliveryPaymentStatus: string | null;
+  pendingDeliveryAmount: number | null;
+  paymentUrl?: string | null;
+  checkoutUrl?: string | null;
+  message?: string | null;
+};
+
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
     return "—";
@@ -127,6 +146,37 @@ function getDurationTone(minutes: number | null | undefined) {
   if (minutes <= 45) return "bg-[rgba(21,128,61,0.12)] text-[#86efac]";
   if (minutes <= 120) return "bg-[rgba(245,158,11,0.14)] text-[#facc15]";
   return "bg-[rgba(232,67,26,0.14)] text-[#fb923c]";
+}
+
+function resolveDeliveryChargeAmount(order: DeliveryActiveOrder) {
+  // totalAmountDue is not serialized by DeliveryActiveOrderDTO — skip it.
+  // Use remainingAmountOnDelivery (now populated) as the primary source.
+  const candidates = [
+    order.remainingAmountOnDelivery,
+    order.deliveryFee,
+    order.totalAmount,
+  ];
+  const amount = candidates.find((value) => Number(value ?? 0) > 0);
+  return Number(amount ?? 0);
+}
+
+function isDeliveryPaymentResolved(order: DeliveryActiveOrder) {
+  const paymentStatus = String(order.paymentStatus ?? "").toUpperCase();
+  const deliveryPaymentStatus = String(order.deliveryPaymentStatus ?? "").toUpperCase();
+  return ["SUCCESS", "VALIDATED", "CONFIRMED", "APPROVED", "COD_COLLECTED", "RECEIVED", "PAID"].includes(paymentStatus)
+    || ["RECEIVED", "WAIVED", "PAID", "CONFIRMED"].includes(deliveryPaymentStatus);
+}
+
+function hasPendingDeliveryCharge(order: DeliveryActiveOrder) {
+  const status = String(order.status ?? "").toUpperCase();
+  const paymentStatus = String(order.paymentStatus ?? "").toUpperCase();
+  const deliveryPaymentStatus = String(order.deliveryPaymentStatus ?? "").toUpperCase();
+  return (
+    status === "AWAITING_DELIVERY_PAYMENT"
+    || deliveryPaymentStatus === "PENDING"
+    || paymentStatus === "COD_PENDING"
+    || Number(order.remainingAmountOnDelivery ?? 0) > 0
+  ) && !isDeliveryPaymentResolved(order);
 }
 
 function buildDeliveryAddressUrl(orderNumber: string, phone: string | null | undefined) {
@@ -1287,6 +1337,8 @@ export function DeliveryActiveView() {
     note: string;
   } | null>(null);
   const [confirmOrder, setConfirmOrder] = useState<DeliveryActiveOrder | null>(null);
+  const [collectionModal, setCollectionModal] = useState<DeliveryCollectionModalState | null>(null);
+  const [markNotCollectedModal, setMarkNotCollectedModal] = useState<{ order: DeliveryActiveOrder; reason: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const loadData = useCallback(async (background = false) => {
@@ -1325,10 +1377,19 @@ export function DeliveryActiveView() {
   const visibleOrders = useMemo(() => orders, [orders]);
 
   async function confirmDelivery(order: DeliveryActiveOrder, deliveryNote: string) {
-    if (order.status !== "OUT_FOR_DELIVERY") {
+    if (order.status !== "OUT_FOR_DELIVERY" && order.status !== "AWAITING_DELIVERY_PAYMENT") {
       setFeedback({
         tone: "error",
         message: `${order.number} ainda nao saiu do escritorio. Inicia a entrega antes de confirmar.`,
+      });
+      setConfirmOrder(null);
+      return;
+    }
+
+    if (hasPendingDeliveryCharge(order)) {
+      setFeedback({
+        tone: "error",
+        message: "Ainda existe valor pendente. Faca a cobranca antes de concluir a entrega.",
       });
       setConfirmOrder(null);
       return;
@@ -1417,35 +1478,136 @@ export function DeliveryActiveView() {
     }
   }
 
-  async function requestCodPayment(order: DeliveryActiveOrder) {
-    setBusyId(order.id);
-    setFeedback({ tone: "loading", message: `A solicitar cobranca COD para ${order.number}.` });
+  async function markNotCollected() {
+    if (!markNotCollectedModal) return;
+    const reason = markNotCollectedModal.reason.trim();
+    if (!reason) {
+      setFeedback({ tone: "error", message: "Informe o motivo pelo qual nao foi possivel cobrar." });
+      return;
+    }
+    setBusyId(markNotCollectedModal.order.id);
+    setFeedback({ tone: "loading", message: `A registar cobranca nao realizada para ${markNotCollectedModal.order.number}.` });
     try {
-      await adminApiFetch(`/api/admin/orders/${order.id}/cod/request-delivery-payment`, {
+      await adminApiFetch(`/api/admin/orders/${markNotCollectedModal.order.id}/cod/mark-not-collected`, {
         method: "PATCH",
+        body: JSON.stringify({ reason }),
       });
       await loadData(true);
-      setFeedback({ tone: "success", message: `Cobrança enviada ao cliente para ${order.number}.` });
+      setFeedback({ tone: "success", message: `Cobranca nao realizada registada para ${markNotCollectedModal.order.number}. Pedido voltou ao escritorio.` });
+      setMarkNotCollectedModal(null);
       router.refresh();
     } catch (saveError) {
       setFeedback({
         tone: "error",
-        message: saveError instanceof Error ? saveError.message : "Nao foi possivel solicitar pagamento na entrega.",
+        message: saveError instanceof Error ? saveError.message : "Nao foi possivel registar cobranca nao realizada.",
       });
     } finally {
       setBusyId(null);
     }
   }
 
+  async function sendPaySuiteDeliveryCharge(order: DeliveryActiveOrder) {
+    setBusyId(order.id);
+    setFeedback({ tone: "loading", message: `A preparar link PaySuite para ${order.number}.` });
+    try {
+      const result = await adminApiFetch<DeliveryCollectionResponse>(`/api/admin/delivery/orders/${order.id}/collection`, {
+        method: "POST",
+        body: JSON.stringify({
+          method: "PAYSUITE",
+          amount: resolveDeliveryChargeAmount(order),
+          paySuiteMethod: "MPESA",
+          returnUrl: typeof window !== "undefined" ? `${window.location.origin}/orders/${order.id}/payment?delivery=1` : undefined,
+        }),
+      });
+      await loadData(true);
+      const paymentUrl = result.paymentUrl ?? result.checkoutUrl ?? null;
+      if (paymentUrl && typeof navigator !== "undefined") {
+        await navigator.clipboard?.writeText(paymentUrl).catch(() => undefined);
+      }
+      setCollectionModal((current) =>
+        current && current.order.id === order.id ? { ...current, paymentUrl } : current,
+      );
+      setFeedback({ tone: "success", message: "Link de pagamento enviado ao cliente." });
+      router.refresh();
+    } catch (saveError) {
+      setFeedback({
+        tone: "error",
+        message: saveError instanceof Error ? saveError.message : "Nao foi possivel criar a cobranca PaySuite da entrega.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+  async function registerManualTransfer(order: DeliveryActiveOrder) {
+    const transferReference = collectionModal?.transferReference.trim() ?? "";
+    if (!transferReference) {
+      setFeedback({ tone: "error", message: "Regista a referencia da transferencia antes de enviar para o financeiro." });
+      return;
+    }
+
+    setBusyId(order.id);
+    setFeedback({ tone: "loading", message: `A abrir cobranca manual para ${order.number}.` });
+    try {
+      await adminApiFetch<DeliveryCollectionResponse>(`/api/admin/delivery/orders/${order.id}/collection`, {
+        method: "POST",
+        body: JSON.stringify({
+          method: "MANUAL_TRANSFER",
+          amount: resolveDeliveryChargeAmount(order),
+          transactionReference: transferReference,
+          payerName: collectionModal?.transferPayerName.trim() || order.customerName,
+          payerBank: collectionModal?.transferPayerBank.trim() || "Transferencia bancaria",
+        }),
+      });
+      await loadData(true);
+      setCollectionModal(null);
+      setFeedback({ tone: "success", message: `Transferencia registada para ${order.number}. Ficou na fila de pagamentos manuais.` });
+      router.push(`/admin/payments?orderId=${order.id}&queue=AWAITING`);
+      router.refresh();
+    } catch (saveError) {
+      setFeedback({
+        tone: "error",
+        message: saveError instanceof Error ? saveError.message : "Nao foi possivel abrir o fluxo de transferencia.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
   async function confirmCodCash(order: DeliveryActiveOrder) {
+    const amountCollected = resolveDeliveryChargeAmount(order);
+    if (!collectionModal?.cashConfirmed || collectionModal.order.id !== order.id) {
+      setFeedback({ tone: "error", message: "Confirmo que recebi o dinheiro em maos deve estar assinalado." });
+      return;
+    }
+
+    if (!Number.isFinite(amountCollected) || amountCollected <= 0) {
+      setFeedback({ tone: "error", message: "Nao foi possivel determinar o valor recebido em dinheiro." });
+      return;
+    }
+
     setBusyId(order.id);
     setFeedback({ tone: "loading", message: `A confirmar recebimento de dinheiro para ${order.number}.` });
     try {
-      await adminApiFetch(`/api/admin/orders/${order.id}/cod/confirm-cash-collected`, {
-        method: "PATCH",
+      await adminApiFetch<DeliveryCollectionResponse>(`/api/admin/delivery/orders/${order.id}/collection`, {
+        method: "POST",
+        body: JSON.stringify({
+          method: "CASH",
+          amountCollected,
+          amount: amountCollected,
+        }),
       });
+      setCollectionModal(null);
+      // Auto-complete delivery after cash received — consistent with PaySuite flow.
+      // deliveryPaymentStatus is now RECEIVED so the BFF pre-check passes.
+      try {
+        await adminApiFetch(`/api/orders/${order.id}/delivery-complete`, {
+          method: "POST",
+          body: JSON.stringify({ deliveryNote: "Dinheiro recebido em maos. Entrega concluida." }),
+        });
+        setFeedback({ tone: "success", message: `Entrega ${order.number} concluida. Dinheiro recebido em maos.` });
+      } catch {
+        setFeedback({ tone: "success", message: `Dinheiro recebido para ${order.number}. Ja podes confirmar a entrega.` });
+      }
       await loadData(true);
-      setFeedback({ tone: "success", message: `Pagamento COD confirmado para ${order.number}. Entrega concluida.` });
       router.refresh();
     } catch (saveError) {
       setFeedback({
@@ -1489,6 +1651,8 @@ export function DeliveryActiveView() {
             const isAwaitingPayment = order.status === "AWAITING_DELIVERY_PAYMENT";
             const isOnRoute = order.status === "OUT_FOR_DELIVERY" || isAwaitingPayment;
             const isCod = order.paymentMethod === "CASH_ON_DELIVERY";
+            const chargeAmount = resolveDeliveryChargeAmount(order);
+            const deliveryChargePending = hasPendingDeliveryCharge(order);
             const needsAttention = isDeliveryActionRequired(order);
 
             return (
@@ -1508,7 +1672,7 @@ export function DeliveryActiveView() {
                       </span>
                     ) : isAwaitingPayment ? (
                       <span className="rounded-full bg-[#EEF2FF] px-3 py-1 text-xs font-semibold text-[#4338CA]">
-                        Aguardando pagamento COD
+                        Aguardando pagamento da entrega
                       </span>
                     ) : null}
                     {isCod ? (
@@ -1562,47 +1726,40 @@ export function DeliveryActiveView() {
                     </button>
                   ) : null}
 
-                  {isAwaitingPayment && isCod ? (
+                  {isOnRoute ? (
                     <>
+                      {(isCod || deliveryChargePending) ? (
+                        <button
+                          type="button"
+                          onClick={() => setCollectionModal({
+                            order,
+                            cashConfirmed: false,
+                            transferReference: "",
+                            transferPayerName: "",
+                            transferPayerBank: "",
+                            paymentUrl: null,
+                          })}
+                          disabled={busyId === order.id}
+                          className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyId === order.id ? "A registar..." : "Cobrar cliente"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        onClick={() => void confirmCodCash(order)}
-                        disabled={busyId === order.id}
-                        className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {busyId === order.id ? "A confirmar..." : "Confirmar dinheiro recebido"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setProblemModal({ order, type: ISSUE_OPTIONS[0].value, note: "" })}
-                        disabled={busyId === order.id}
+                        onClick={() => setConfirmOrder(order)}
+                        disabled={busyId === order.id || deliveryChargePending}
                         className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Nao coletado
+                        Confirmar entrega
                       </button>
-                      <p className="rounded-[18px] bg-[#EEF2FF] px-4 py-3 text-sm font-medium text-[#4338CA]">
-                        Estafeta chegou ao cliente. Aguarda o pagamento ou confirma o dinheiro recebido.
-                      </p>
+                      {deliveryChargePending ? (
+                        <p className="rounded-[18px] bg-[#EEF2FF] px-4 py-3 text-sm font-medium text-[#4338CA]">
+                          Valor pendente: {formatMoney(chargeAmount)}. Resolve a cobranca antes de concluir a entrega.
+                        </p>
+                      ) : null}
                     </>
-                  ) : !isOnRoute ? null : isCod ? (
-                    <button
-                      type="button"
-                      onClick={() => void requestCodPayment(order)}
-                      disabled={busyId === order.id}
-                      className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {busyId === order.id ? "A registar..." : "Cobrar cliente"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmOrder(order)}
-                      disabled={!isOnRoute}
-                      className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Confirmar entrega
-                    </button>
-                  )}
+                  ) : null}
 
                   {isOnRoute && !isAwaitingPayment ? (
                     <button
@@ -1611,6 +1768,17 @@ export function DeliveryActiveView() {
                       className="admin-button-muted justify-center"
                     >
                       Reportar problema
+                    </button>
+                  ) : null}
+
+                  {isAwaitingPayment ? (
+                    <button
+                      type="button"
+                      onClick={() => setMarkNotCollectedModal({ order, reason: "" })}
+                      disabled={busyId === order.id}
+                      className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Nao consegui cobrar
                     </button>
                   ) : null}
 
@@ -1627,6 +1795,132 @@ export function DeliveryActiveView() {
         </div>
       )}
 
+      {collectionModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-[rgba(15,23,42,0.58)] px-3 py-4 sm:px-4 sm:py-6" onClick={() => setCollectionModal(null)}>
+          <div
+            className="admin-modal-panel flex w-full max-w-xl flex-col rounded-[22px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:rounded-[30px]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="admin-modal-body p-5 sm:p-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(232,67,26,0.12)] text-[var(--color-danger)]">
+                MT
+              </div>
+              <h2 className="mt-4 font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">
+                Cobranca da entrega
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+                Escolhe como o cliente vai liquidar a taxa local, saldo pendente ou total de entrega.
+              </p>
+              <div className="mt-4 rounded-[18px] bg-[var(--color-background-tertiary)] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Valor a cobrar</p>
+                <p className="mt-1 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
+                  {formatMoney(resolveDeliveryChargeAmount(collectionModal.order))}
+                </p>
+              </div>
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => void sendPaySuiteDeliveryCharge(collectionModal.order)}
+                  disabled={busyId === collectionModal.order.id}
+                  className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Enviar link PaySuite ao cliente
+                </button>
+                {collectionModal.paymentUrl ? (
+                  <div className="rounded-[18px] border border-[#BFDBFE] bg-[#EFF6FF] p-3 text-sm text-[#1D4ED8]">
+                    <p className="font-semibold">Link disponivel e copiado.</p>
+                    <p className="mt-1 break-all text-xs">{collectionModal.paymentUrl}</p>
+                    <a
+                      href={collectionModal.paymentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex text-xs font-black underline"
+                    >
+                      Abrir link PaySuite
+                    </a>
+                  </div>
+                ) : null}
+                <div className="rounded-[18px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-4">
+                  <div className="grid gap-3">
+                    <input
+                      value={collectionModal.transferReference}
+                      onChange={(event) =>
+                        setCollectionModal((current) =>
+                          current ? { ...current, transferReference: event.target.value } : current,
+                        )
+                      }
+                      className="admin-input w-full"
+                      placeholder="Referencia da transferencia"
+                    />
+                    <input
+                      value={collectionModal.transferPayerName}
+                      onChange={(event) =>
+                        setCollectionModal((current) =>
+                          current ? { ...current, transferPayerName: event.target.value } : current,
+                        )
+                      }
+                      className="admin-input w-full"
+                      placeholder="Nome do pagador"
+                    />
+                    <input
+                      value={collectionModal.transferPayerBank}
+                      onChange={(event) =>
+                        setCollectionModal((current) =>
+                          current ? { ...current, transferPayerBank: event.target.value } : current,
+                        )
+                      }
+                      className="admin-input w-full"
+                      placeholder="Banco"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void registerManualTransfer(collectionModal.order)}
+                  disabled={busyId === collectionModal.order.id || !collectionModal.transferReference.trim()}
+                  className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Registar transferencia
+                </button>
+                <div className="rounded-[18px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-4">
+                  <label className="flex items-start gap-3 text-sm font-semibold text-[var(--color-text-primary)]">
+                    <input
+                      type="checkbox"
+                      checked={collectionModal.cashConfirmed}
+                      onChange={(event) =>
+                        setCollectionModal((current) =>
+                          current ? { ...current, cashConfirmed: event.target.checked } : current,
+                        )
+                      }
+                      className="mt-1 h-4 w-4"
+                    />
+                    <span>Confirmo que recebi o dinheiro em maos</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void confirmCodCash(collectionModal.order)}
+                    disabled={busyId === collectionModal.order.id || !collectionModal.cashConfirmed}
+                    className="admin-button-muted mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Receber em dinheiro
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-footer border-t border-[var(--color-border)] p-4 sm:p-6">
+              <button
+                type="button"
+                onClick={() => setCollectionModal(null)}
+                disabled={busyId === collectionModal.order.id}
+                className="admin-button-muted w-full justify-center disabled:opacity-60"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <AdminConfirmDialog
         open={Boolean(confirmOrder)}
         title="Confirmar entrega ao cliente?"
@@ -1642,6 +1936,30 @@ export function DeliveryActiveView() {
           startTransition(() => void confirmDelivery(confirmOrder, "Entrega confirmada no modulo de delivery."));
         }}
       />
+
+      <AdminConfirmDialog
+        open={Boolean(markNotCollectedModal)}
+        title="Marcar cobranca como nao realizada?"
+        message="O pedido voltara para DELIVERY_FAILED e sai da lista de entregas activas. Confirma o motivo."
+        confirmLabel="Confirmar"
+        danger
+        pending={busyId === markNotCollectedModal?.order.id}
+        onCancel={() => setMarkNotCollectedModal(null)}
+        onConfirm={() => void markNotCollected()}
+      >
+        {markNotCollectedModal ? (
+          <textarea
+            value={markNotCollectedModal.reason}
+            onChange={(event) =>
+              setMarkNotCollectedModal((current) =>
+                current ? { ...current, reason: event.target.value } : current,
+              )
+            }
+            className="admin-input min-h-[80px] w-full resize-none"
+            placeholder="Motivo: cliente ausente, recusou pagar, telefone desligado..."
+          />
+        ) : null}
+      </AdminConfirmDialog>
 
       <AdminConfirmDialog
         open={Boolean(problemModal)}
