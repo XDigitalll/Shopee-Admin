@@ -91,7 +91,7 @@ describe("internal COD prepare-product action wiring", () => {
     );
     const codRequestHandler = sliceBetween(
       deliveryModule,
-      "async function requestCodPayment(order: DeliveryActiveOrder)",
+      "async function sendPaySuiteDeliveryCharge(order: DeliveryActiveOrder)",
       "async function confirmCodCash(order: DeliveryActiveOrder)",
     );
     const codAction = sliceBetween(
@@ -117,7 +117,7 @@ describe("internal COD prepare-product action wiring", () => {
     assert.match(startDeliveryBranch, /\/api\/orders\/\$\{detail\.id\}\/delivery-start/);
     assert.doesNotMatch(startDeliveryBranch, /request-delivery-payment|confirm-cash-collected|delivery-complete/);
 
-    assert.match(codRequestHandler, /\/api\/admin\/orders\/\$\{order\.id\}\/cod\/request-delivery-payment/);
+    assert.match(codRequestHandler, /\/api\/admin\/delivery\/orders\/\$\{order\.id\}\/collection/);
     assert.doesNotMatch(codRequestHandler, /delivery-start|delivery-complete|confirm-cash-collected/);
   });
 });

@@ -221,6 +221,9 @@ export type DeliveryActiveOrder = {
   urgent: boolean;
   deliveryAttempt: number | null;
   paymentMethod?: string | null;
+  paymentStatus?: string | null;
+  deliveryPaymentStatus?: string | null;
+  remainingAmountOnDelivery?: number | null;
   totalAmountDue?: number | null;
 };
 

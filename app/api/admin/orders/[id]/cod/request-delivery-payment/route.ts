@@ -15,10 +15,18 @@ type RouteContext = {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
+  const body = (await request.json().catch(() => null)) as { method?: string | null } | null;
+  const requestedMethod = String(body?.method ?? "").trim().toUpperCase();
+  const requestPayload = requestedMethod ? { method: requestedMethod } : undefined;
+
   const response = await fetchBackend(
     request,
-    `/admin/orders/${encodeURIComponent(id)}/cod/request-delivery-payment`,
-    { method: "PATCH" }
+    `/admin/delivery/orders/${encodeURIComponent(id)}/collection`,
+    {
+      method: "POST",
+      body: JSON.stringify({ method: "PAYSUITE", ...(requestPayload ?? {}) }),
+      headers: { "Content-Type": "application/json" },
+    }
   );
   await relayAuthFailure(response);
 
