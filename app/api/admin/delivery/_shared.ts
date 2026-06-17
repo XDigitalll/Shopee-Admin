@@ -92,6 +92,7 @@ type BackendOrder = {
     method?: string | null;
     status?: string | null;
   } | null;
+  codPaymentCollectionMethod?: string | null;
   deliveryAttempt?: number | null;
   lastIssueType?: string | null;
 };
@@ -295,6 +296,7 @@ function mapActiveOrder(raw: BackendOrder): DeliveryActiveOrder {
     deliveryPaymentStatus: readNullableString(raw.deliveryPaymentStatus),
     remainingAmountOnDelivery: readNullableNumber(raw.remainingAmountOnDelivery),
     totalAmountDue: readNullableNumber(raw.totalAmountDue ?? raw.remainingAmountOnDelivery),
+    codPaymentCollectionMethod: readNullableString(raw.codPaymentCollectionMethod),
   };
 }
 

@@ -176,6 +176,13 @@ function hasPendingDeliveryCharge(order: DeliveryActiveOrder) {
   ) && !isDeliveryPaymentResolved(order);
 }
 
+function hasActiveCodPaySuiteCharge(order: DeliveryActiveOrder) {
+  const paymentStatus = String(order.paymentStatus ?? "").toUpperCase();
+  const method = String(order.codPaymentCollectionMethod ?? "").toUpperCase();
+  return method === "PAYSUITE"
+    && (paymentStatus === "COD_PAYMENT_REQUESTED" || paymentStatus === "PENDING");
+}
+
 function buildDeliveryAddressUrl(orderNumber: string, phone: string | null | undefined) {
   const url = new URL(`${CLIENT_APP_URL}/delivery-address/${encodeURIComponent(orderNumber)}`);
   if (phone) {
@@ -1659,6 +1666,7 @@ export function DeliveryActiveView() {
             const isCod = order.paymentMethod === "CASH_ON_DELIVERY";
             const chargeAmount = resolveDeliveryChargeAmount(order);
             const deliveryChargePending = hasPendingDeliveryCharge(order);
+            const activeCodPaySuite = hasActiveCodPaySuiteCharge(order);
             const needsAttention = isDeliveryActionRequired(order);
 
             return (
@@ -1734,7 +1742,22 @@ export function DeliveryActiveView() {
 
                   {isOnRoute ? (
                     <>
-                      {(isCod || deliveryChargePending) ? (
+                      {activeCodPaySuite ? (
+                        <>
+                          <div className="rounded-[18px] bg-[#EEF2FF] px-4 py-3 text-sm font-medium text-[#4338CA]">
+                            <p className="font-semibold">Pagamento em curso (PaySuite)</p>
+                            <p className="mt-1 text-xs">Aguarda a confirmacao do cliente antes de cobrar novamente.</p>
+                          </div>
+                          <a
+                            href={`${CLIENT_APP_URL}/orders/${order.id}/payment?mode=paysuite&purpose=delivery`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="admin-button-muted justify-center text-center"
+                          >
+                            Reenviar link
+                          </a>
+                        </>
+                      ) : (isCod || deliveryChargePending) ? (
                         <button
                           type="button"
                           onClick={() => setCollectionModal({
@@ -1759,7 +1782,7 @@ export function DeliveryActiveView() {
                       >
                         Confirmar entrega
                       </button>
-                      {deliveryChargePending ? (
+                      {deliveryChargePending && !activeCodPaySuite ? (
                         <p className="rounded-[18px] bg-[#EEF2FF] px-4 py-3 text-sm font-medium text-[#4338CA]">
                           Valor pendente: {formatMoney(chargeAmount)}. Resolve a cobranca antes de concluir a entrega.
                         </p>
