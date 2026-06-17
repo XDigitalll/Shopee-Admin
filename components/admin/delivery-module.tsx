@@ -1848,7 +1848,8 @@ export function DeliveryActiveView() {
                 </button>
                 {collectionModal.paymentUrl ? (
                   <div className="rounded-[18px] border border-[#BFDBFE] bg-[#EFF6FF] p-3 text-sm text-[#1D4ED8]">
-                    <p className="font-semibold">Link disponivel e copiado.</p>
+                    <p className="font-semibold">Link de pagamento gerado e copiado.</p>
+                    <p className="mt-1 text-xs" style={{ color: "#3B82F6" }}>Envia este link ao cliente para ele escolher o método de pagamento.</p>
                     <p className="mt-1 break-all text-xs">{collectionModal.paymentUrl}</p>
                     <a
                       href={collectionModal.paymentUrl}
@@ -1856,7 +1857,7 @@ export function DeliveryActiveView() {
                       rel="noreferrer"
                       className="mt-2 inline-flex text-xs font-black underline"
                     >
-                      Abrir link PaySuite
+                      Abrir página de pagamento
                     </a>
                   </div>
                 ) : null}

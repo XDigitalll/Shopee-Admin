@@ -58,7 +58,7 @@ describe("delivery active collection flow", () => {
     assert.match(cashHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
   });
 
-  it("PaySuite charge puts the order in awaiting delivery payment flow", () => {
+  it("PaySuite admin action marks collection method and returns client payment page, not gateway URL", () => {
     const deliveryModule = read("components/admin/delivery-module.tsx");
     const paySuiteHandler = deliveryModule.slice(
       deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
@@ -66,10 +66,13 @@ describe("delivery active collection flow", () => {
     );
     const shared = read("app/api/admin/delivery/_shared.ts");
 
-    assert.match(paySuiteHandler, /link PaySuite/);
     assert.match(paySuiteHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
     assert.match(paySuiteHandler, /paymentUrl|checkoutUrl/);
     assert.match(shared, /"AWAITING_DELIVERY_PAYMENT"/);
+    // Admin modal shows "link de pagamento gerado", not a gateway-specific label
+    assert.match(deliveryModule, /Link de pagamento gerado e copiado/);
+    assert.match(deliveryModule, /Abrir página de pagamento/);
+    assert.doesNotMatch(deliveryModule, /Abrir link PaySuite/);
   });
 
   it("manual transfer opens the finance manual payments queue", () => {
