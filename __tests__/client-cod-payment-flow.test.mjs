@@ -31,6 +31,19 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       assert.doesNotMatch(block, /mode=manual/);
     });
 
+    it("PAYSUITE button uses activeDeliveryPaymentUrl directly when available, mode=paysuite as fallback", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+
+      // Nullish coalescing: direct checkout URL first, payment page as fallback
+      assert.match(block, /activeDeliveryPaymentUrl/);
+      assert.match(block, /\?\?/);
+      assert.match(block, /mode=paysuite/);
+    });
+
     it("MANUAL_TRANSFER branch shows only 'Enviar comprovativo' with mode=manual URL", () => {
       const page = readClient("app/(client)/orders/page.tsx");
       // MANUAL_TRANSFER is 3rd branch; slice to the default/null branch marker
