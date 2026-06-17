@@ -1818,10 +1818,24 @@ export function DeliveryActiveView() {
                 Escolhe como o cliente vai liquidar a taxa local, saldo pendente ou total de entrega.
               </p>
               <div className="mt-4 rounded-[18px] bg-[var(--color-background-tertiary)] px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Valor a cobrar</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Total pendente a cobrar</p>
                 <p className="mt-1 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
                   {formatMoney(resolveDeliveryChargeAmount(collectionModal.order))}
                 </p>
+                {collectionModal.order.remainingAmountOnDelivery != null &&
+                  collectionModal.order.deliveryFee != null &&
+                  collectionModal.order.deliveryFee > 0 ? (
+                  <div className="mt-2 space-y-1 border-t border-[var(--color-border)] pt-2">
+                    <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
+                      <span>Produto pendente</span>
+                      <span>{formatMoney(Math.max(0, Number(collectionModal.order.remainingAmountOnDelivery) - Number(collectionModal.order.deliveryFee)))}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
+                      <span>Taxa de entrega</span>
+                      <span>{formatMoney(collectionModal.order.deliveryFee)}</span>
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="mt-5 grid gap-3">
                 <button

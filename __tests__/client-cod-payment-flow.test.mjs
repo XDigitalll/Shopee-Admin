@@ -17,7 +17,7 @@ function readClient(relativePath) {
 
 describe("Phase 4 — client COD/delivery payment flow", () => {
   describe("orders/page.tsx — AWAITING_DELIVERY_PAYMENT conditional buttons", () => {
-    it("PAYSUITE branch shows only 'Pagar taxa de entrega' with mode=paysuite URL", () => {
+    it("PAYSUITE branch shows only 'Pagar valor pendente' with mode=paysuite URL", () => {
       const page = readClient("app/(client)/orders/page.tsx");
       // Code order: CASH_IN_HAND → PAYSUITE → MANUAL_TRANSFER → default
       const block = page.slice(
@@ -26,7 +26,7 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       );
 
       assert.match(block, /mode=paysuite/);
-      assert.match(block, /Pagar taxa de entrega/);
+      assert.match(block, /Pagar valor pendente/);
       assert.doesNotMatch(block, /Enviar comprovativo/);
       assert.doesNotMatch(block, /mode=manual/);
     });
@@ -87,9 +87,9 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
         page.indexOf("order.adminMessageForClient", page.indexOf('status === "AWAITING_DELIVERY_PAYMENT" && isInternalCod')),
       );
 
-      const payButton = awaitingBlock.indexOf("Pagar taxa de entrega");
+      const payButton = awaitingBlock.indexOf("Pagar valor pendente");
       const proofButton = awaitingBlock.indexOf("Enviar comprovativo");
-      assert.ok(payButton !== -1, "Pagar taxa de entrega must exist in block");
+      assert.ok(payButton !== -1, "Pagar valor pendente must exist in block");
       assert.ok(proofButton !== -1, "Enviar comprovativo must exist in block");
       // They must be in separate conditional branches — the null/default branch
       // must NOT contain either button (it has "Aguarda instrução" instead).
@@ -187,6 +187,65 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       assert.match(orderType, /deliveryCollectionMethod/);
       assert.match(orderType, /activeDeliveryPaymentUrl/);
       assert.match(orderType, /hasActiveDeliveryPaymentAttempt/);
+    });
+  });
+
+  describe("orders/page.tsx — COD delivery amount and text corrections", () => {
+    it("heading is 'Pagamento pendente na entrega', not 'da entrega pendente'", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      assert.match(page, /Pagamento pendente na entrega/);
+      assert.doesNotMatch(page, /Pagamento da entrega pendente/);
+    });
+
+    it("PAYSUITE button says 'Pagar valor pendente', not 'Pagar taxa de entrega'", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /Pagar valor pendente/);
+      assert.doesNotMatch(block, /Pagar taxa de entrega/);
+    });
+
+    it("PAYSUITE branch text says 'valor pendente', not 'taxa de entrega'", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /Paga o valor pendente/);
+      assert.doesNotMatch(block, /Paga a taxa de entrega/);
+    });
+
+    it("PAYSUITE branch shows breakdown: remainingAmountOnDelivery, deliveryFee, and produto/entrega labels", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /remainingAmountOnDelivery/);
+      assert.match(block, /deliveryFee/);
+      assert.match(block, /Produto:/);
+      assert.match(block, /Entrega:/);
+      assert.match(block, /Total a pagar agora/);
+    });
+
+    it("'Valor do pedido' becomes 'Valor pendente' for AWAITING_DELIVERY_PAYMENT COD orders", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf("Total pago"),
+        page.indexOf("Valor do pedido") + 30,
+      );
+      assert.match(block, /isInternalCod.*AWAITING_DELIVERY_PAYMENT.*Valor pendente|Valor pendente.*isInternalCod.*AWAITING_DELIVERY_PAYMENT/s);
+    });
+
+    it("'Valor do pedido' amount uses remainingAmountOnDelivery for AWAITING_DELIVERY_PAYMENT COD orders", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const labelLine = page.slice(
+        page.indexOf("Total pago"),
+        page.indexOf("Valor do pedido") + 300,
+      );
+      assert.match(labelLine, /remainingAmountOnDelivery/);
     });
   });
 });

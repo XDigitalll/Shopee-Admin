@@ -160,4 +160,28 @@ describe("delivery active collection flow", () => {
     assert.match(paySuiteHandler, /chargeAmount <= 0/);
     assert.match(paySuiteHandler, /Nao foi possivel determinar o valor a cobrar/);
   });
+
+  it("admin modal label is 'Total pendente a cobrar', not 'Valor a cobrar'", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const modal = deliveryModule.slice(
+      deliveryModule.indexOf("collectionModal ? ("),
+      deliveryModule.indexOf("AdminConfirmDialog", deliveryModule.indexOf("collectionModal ? (")),
+    );
+
+    assert.match(modal, /Total pendente a cobrar/);
+    assert.doesNotMatch(modal, /Valor a cobrar/);
+  });
+
+  it("admin modal shows breakdown: Produto pendente and Taxa de entrega when deliveryFee > 0", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const modal = deliveryModule.slice(
+      deliveryModule.indexOf("collectionModal ? ("),
+      deliveryModule.indexOf("AdminConfirmDialog", deliveryModule.indexOf("collectionModal ? (")),
+    );
+
+    assert.match(modal, /Produto pendente/);
+    assert.match(modal, /Taxa de entrega/);
+    assert.match(modal, /remainingAmountOnDelivery/);
+    assert.match(modal, /deliveryFee/);
+  });
 });
