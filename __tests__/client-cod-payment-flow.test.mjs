@@ -17,7 +17,7 @@ function readClient(relativePath) {
 
 describe("Phase 4 — client COD/delivery payment flow", () => {
   describe("orders/page.tsx — AWAITING_DELIVERY_PAYMENT conditional buttons", () => {
-    it("PAYSUITE branch shows only 'Pagar taxa de entrega' with mode=paysuite URL", () => {
+    it("PAYSUITE branch shows 'Escolher forma de pagamento' or 'Continuar pagamento' with mode=paysuite URL", () => {
       const page = readClient("app/(client)/orders/page.tsx");
       // Code order: CASH_IN_HAND → PAYSUITE → MANUAL_TRANSFER → default
       const block = page.slice(
@@ -26,9 +26,25 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       );
 
       assert.match(block, /mode=paysuite/);
-      assert.match(block, /Pagar taxa de entrega/);
+      assert.match(block, /Escolher forma de pagamento/);
+      assert.match(block, /Continuar pagamento/);
       assert.doesNotMatch(block, /Enviar comprovativo/);
       assert.doesNotMatch(block, /mode=manual/);
+    });
+
+    it("PAYSUITE button uses activeDeliveryPaymentUrl for continuation, payment page for method selection", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+
+      // Ternary: gateway URL when active attempt exists, payment page otherwise
+      assert.match(block, /hasActiveDeliveryPaymentAttempt/);
+      assert.match(block, /activeDeliveryPaymentUrl/);
+      assert.match(block, /mode=paysuite/);
+      assert.match(block, /Continuar pagamento/);
+      assert.match(block, /Escolher forma de pagamento/);
     });
 
     it("MANUAL_TRANSFER branch shows only 'Enviar comprovativo' with mode=manual URL", () => {
@@ -74,9 +90,9 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
         page.indexOf("order.adminMessageForClient", page.indexOf('status === "AWAITING_DELIVERY_PAYMENT" && isInternalCod')),
       );
 
-      const payButton = awaitingBlock.indexOf("Pagar taxa de entrega");
+      const payButton = awaitingBlock.indexOf("Escolher forma de pagamento");
       const proofButton = awaitingBlock.indexOf("Enviar comprovativo");
-      assert.ok(payButton !== -1, "Pagar taxa de entrega must exist in block");
+      assert.ok(payButton !== -1, "Escolher forma de pagamento must exist in block");
       assert.ok(proofButton !== -1, "Enviar comprovativo must exist in block");
       // They must be in separate conditional branches — the null/default branch
       // must NOT contain either button (it has "Aguarda instrução" instead).
@@ -85,7 +101,7 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
         "buttons must appear in separate branches, not together",
       );
       // The key guard: PAYSUITE branch text does not contain "Enviar comprovativo"
-      // and MANUAL_TRANSFER branch text does not contain "Pagar taxa de entrega"
+      // and MANUAL_TRANSFER branch text does not contain "Escolher forma de pagamento"
       assert.match(awaitingBlock, /deliveryCollectionMethod/);
     });
   });
@@ -159,7 +175,53 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       assert.match(fn, /mode\?:\s*string \| null/);
       assert.match(fn, /AWAITING_DELIVERY_PAYMENT.*mode === "paysuite"/s);
       assert.match(fn, /AWAITING_DELIVERY_PAYMENT.*mode === "manual"/s);
-      assert.match(fn, /Finaliza o pagamento da taxa de entrega com PaySuite/);
+      assert.match(fn, /Escolhe o método de pagamento e paga o valor pendente/);
+      assert.doesNotMatch(fn, /Finaliza o pagamento da taxa de entrega com PaySuite/);
+    });
+
+    it("statusCopy AWAITING_DELIVERY_PAYMENT base title is 'Pagamento pendente na entrega'", () => {
+      const page = readClient("app/(client)/orders/[id]/payment/page.tsx");
+      const fn = page.slice(
+        page.indexOf("function statusCopy("),
+        page.indexOf("\n}", page.indexOf("function statusCopy(")) + 2,
+      );
+
+      assert.match(fn, /Pagamento pendente na entrega/);
+      assert.doesNotMatch(fn, /Pagamento da entrega pendente/);
+    });
+
+    it("methodSelectorVisible bypasses verificationOk for COD delivery (deliveryCollectionActive)", () => {
+      const page = readClient("app/(client)/orders/[id]/payment/page.tsx");
+      const line = page.slice(
+        page.indexOf("const methodSelectorVisible"),
+        page.indexOf("\n", page.indexOf("const methodSelectorVisible")),
+      );
+
+      assert.match(line, /deliveryCollectionActive/);
+      assert.match(line, /verificationOk \|\| deliveryCollectionActive/);
+    });
+
+    it("handlePaySuitePayment skips verification redirect for COD delivery orders", () => {
+      const page = readClient("app/(client)/orders/[id]/payment/page.tsx");
+      const fn = page.slice(
+        page.indexOf("async function handlePaySuitePayment()"),
+        page.indexOf("async function handlePaySuiteRetry()"),
+      );
+
+      assert.match(fn, /!verificationOk && !deliveryCollectionActive/);
+      assert.doesNotMatch(fn, /if \(!verificationOk\) \{[\s\S]*?router\.push\("\/profile"\)/);
+    });
+
+    it("handlePaySuitePayment sends purpose=COD_COLLECTION and &purpose=delivery in returnUrl for COD delivery", () => {
+      const page = readClient("app/(client)/orders/[id]/payment/page.tsx");
+      const fn = page.slice(
+        page.indexOf("async function handlePaySuitePayment()"),
+        page.indexOf("async function handlePaySuiteRetry()"),
+      );
+
+      assert.match(fn, /purpose=delivery/);
+      assert.match(fn, /COD_COLLECTION/);
+      assert.match(fn, /deliveryCollectionActive/);
     });
   });
 
@@ -174,6 +236,75 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       assert.match(orderType, /deliveryCollectionMethod/);
       assert.match(orderType, /activeDeliveryPaymentUrl/);
       assert.match(orderType, /hasActiveDeliveryPaymentAttempt/);
+    });
+  });
+
+  describe("orders/page.tsx — COD delivery amount and text corrections", () => {
+    it("heading is 'Pagamento pendente na entrega', not 'da entrega pendente'", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      assert.match(page, /Pagamento pendente na entrega/);
+      assert.doesNotMatch(page, /Pagamento da entrega pendente/);
+    });
+
+    it("PAYSUITE default button is 'Escolher forma de pagamento', not 'Pagar taxa de entrega'", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /Escolher forma de pagamento/);
+      assert.doesNotMatch(block, /Pagar taxa de entrega/);
+    });
+
+    it("PAYSUITE branch text tells client to choose a method", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /Escolhe o método/);
+      assert.doesNotMatch(block, /Paga a taxa de entrega/);
+    });
+
+    it("PAYSUITE branch shows 'Continuar pagamento' when hasActiveDeliveryPaymentAttempt and activeDeliveryPaymentUrl are set", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /hasActiveDeliveryPaymentAttempt.*activeDeliveryPaymentUrl|activeDeliveryPaymentUrl.*hasActiveDeliveryPaymentAttempt/s);
+      assert.match(block, /Continuar pagamento/);
+    });
+
+    it("PAYSUITE branch shows breakdown: remainingAmountOnDelivery, deliveryFee, and produto/entrega labels", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf('deliveryCollectionMethod === "PAYSUITE"'),
+        page.indexOf('deliveryCollectionMethod === "MANUAL_TRANSFER"'),
+      );
+      assert.match(block, /remainingAmountOnDelivery/);
+      assert.match(block, /deliveryFee/);
+      assert.match(block, /Produto:/);
+      assert.match(block, /Entrega:/);
+      assert.match(block, /Total a pagar agora/);
+    });
+
+    it("'Valor do pedido' becomes 'Valor pendente' for AWAITING_DELIVERY_PAYMENT COD orders", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const block = page.slice(
+        page.indexOf("Total pago"),
+        page.indexOf("Valor do pedido") + 30,
+      );
+      assert.match(block, /isInternalCod.*AWAITING_DELIVERY_PAYMENT.*Valor pendente|Valor pendente.*isInternalCod.*AWAITING_DELIVERY_PAYMENT/s);
+    });
+
+    it("'Valor do pedido' amount uses remainingAmountOnDelivery for AWAITING_DELIVERY_PAYMENT COD orders", () => {
+      const page = readClient("app/(client)/orders/page.tsx");
+      const labelLine = page.slice(
+        page.indexOf("Total pago"),
+        page.indexOf("Valor do pedido") + 300,
+      );
+      assert.match(labelLine, /remainingAmountOnDelivery/);
     });
   });
 });

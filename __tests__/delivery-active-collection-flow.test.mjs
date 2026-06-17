@@ -58,7 +58,7 @@ describe("delivery active collection flow", () => {
     assert.match(cashHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
   });
 
-  it("PaySuite charge puts the order in awaiting delivery payment flow", () => {
+  it("PaySuite admin action marks collection method and returns client payment page, not gateway URL", () => {
     const deliveryModule = read("components/admin/delivery-module.tsx");
     const paySuiteHandler = deliveryModule.slice(
       deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
@@ -66,10 +66,13 @@ describe("delivery active collection flow", () => {
     );
     const shared = read("app/api/admin/delivery/_shared.ts");
 
-    assert.match(paySuiteHandler, /link PaySuite/);
     assert.match(paySuiteHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
     assert.match(paySuiteHandler, /paymentUrl|checkoutUrl/);
     assert.match(shared, /"AWAITING_DELIVERY_PAYMENT"/);
+    // Admin modal shows "link de pagamento gerado", not a gateway-specific label
+    assert.match(deliveryModule, /Link de pagamento gerado e copiado/);
+    assert.match(deliveryModule, /Abrir página de pagamento/);
+    assert.doesNotMatch(deliveryModule, /Abrir link PaySuite/);
   });
 
   it("manual transfer opens the finance manual payments queue", () => {
@@ -107,5 +110,81 @@ describe("delivery active collection flow", () => {
     assert.match(notCollectedFn, /cod\/mark-not-collected/);
     assert.match(notCollectedFn, /reason\.trim\(\)/);
     assert.match(deliveryModule, /markNotCollectedModal/);
+  });
+
+  it("sendPaySuiteDeliveryCharge endpoint always uses the clicked card's order.id", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    // Endpoint URL is built from the function parameter `order.id`
+    assert.match(paySuiteHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
+    // The call site passes collectionModal.order — the order locked at modal-open time
+    assert.match(deliveryModule, /sendPaySuiteDeliveryCharge\(collectionModal\.order\)/);
+    // Modal identity guard prevents stale-state mismatch
+    assert.match(paySuiteHandler, /collectionModal\?\.order\.id !== order\.id/);
+  });
+
+  it("returnUrl for PaySuite delivery charge uses CLIENT_APP_URL with correct params, never admin origin", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    assert.match(paySuiteHandler, /CLIENT_APP_URL/);
+    assert.match(paySuiteHandler, /mode=paysuite/);
+    assert.match(paySuiteHandler, /purpose=delivery/);
+    assert.doesNotMatch(paySuiteHandler, /window\.location\.origin/);
+    assert.doesNotMatch(paySuiteHandler, /delivery=1/);
+  });
+
+  it("resolveDeliveryChargeAmount uses remainingAmountOnDelivery or deliveryFee — never totalAmount", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const resolver = deliveryModule.slice(
+      deliveryModule.indexOf("function resolveDeliveryChargeAmount"),
+      deliveryModule.indexOf("\n}", deliveryModule.indexOf("function resolveDeliveryChargeAmount")) + 2,
+    );
+
+    assert.match(resolver, /remainingAmountOnDelivery/);
+    assert.match(resolver, /deliveryFee/);
+    assert.doesNotMatch(resolver, /totalAmount/);
+  });
+
+  it("sendPaySuiteDeliveryCharge aborts with error when charge amount is 0 or unresolvable", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    assert.match(paySuiteHandler, /chargeAmount <= 0/);
+    assert.match(paySuiteHandler, /Nao foi possivel determinar o valor a cobrar/);
+  });
+
+  it("admin modal label is 'Total pendente a cobrar', not 'Valor a cobrar'", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const modal = deliveryModule.slice(
+      deliveryModule.indexOf("collectionModal ? ("),
+      deliveryModule.indexOf("AdminConfirmDialog", deliveryModule.indexOf("collectionModal ? (")),
+    );
+
+    assert.match(modal, /Total pendente a cobrar/);
+    assert.doesNotMatch(modal, /Valor a cobrar/);
+  });
+
+  it("admin modal shows breakdown: Produto pendente and Taxa de entrega when deliveryFee > 0", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const modal = deliveryModule.slice(
+      deliveryModule.indexOf("collectionModal ? ("),
+      deliveryModule.indexOf("AdminConfirmDialog", deliveryModule.indexOf("collectionModal ? (")),
+    );
+
+    assert.match(modal, /Produto pendente/);
+    assert.match(modal, /Taxa de entrega/);
+    assert.match(modal, /remainingAmountOnDelivery/);
+    assert.match(modal, /deliveryFee/);
   });
 });

@@ -149,12 +149,9 @@ function getDurationTone(minutes: number | null | undefined) {
 }
 
 function resolveDeliveryChargeAmount(order: DeliveryActiveOrder) {
-  // totalAmountDue is not serialized by DeliveryActiveOrderDTO — skip it.
-  // Use remainingAmountOnDelivery (now populated) as the primary source.
   const candidates = [
     order.remainingAmountOnDelivery,
     order.deliveryFee,
-    order.totalAmount,
   ];
   const amount = candidates.find((value) => Number(value ?? 0) > 0);
   return Number(amount ?? 0);
@@ -1507,6 +1504,15 @@ export function DeliveryActiveView() {
   }
 
   async function sendPaySuiteDeliveryCharge(order: DeliveryActiveOrder) {
+    if (collectionModal?.order.id !== order.id) {
+      setFeedback({ tone: "error", message: "Estado do modal incoerente. Fecha e abre de novo." });
+      return;
+    }
+    const chargeAmount = resolveDeliveryChargeAmount(order);
+    if (chargeAmount <= 0) {
+      setFeedback({ tone: "error", message: `Nao foi possivel determinar o valor a cobrar para ${order.number}. Verifica o pedido.` });
+      return;
+    }
     setBusyId(order.id);
     setFeedback({ tone: "loading", message: `A preparar link PaySuite para ${order.number}.` });
     try {
@@ -1514,9 +1520,9 @@ export function DeliveryActiveView() {
         method: "POST",
         body: JSON.stringify({
           method: "PAYSUITE",
-          amount: resolveDeliveryChargeAmount(order),
+          amount: chargeAmount,
           paySuiteMethod: "MPESA",
-          returnUrl: typeof window !== "undefined" ? `${window.location.origin}/orders/${order.id}/payment?delivery=1` : undefined,
+          returnUrl: `${CLIENT_APP_URL}/orders/${order.id}/payment?mode=paysuite&purpose=delivery`,
         }),
       });
       await loadData(true);
@@ -1812,10 +1818,24 @@ export function DeliveryActiveView() {
                 Escolhe como o cliente vai liquidar a taxa local, saldo pendente ou total de entrega.
               </p>
               <div className="mt-4 rounded-[18px] bg-[var(--color-background-tertiary)] px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Valor a cobrar</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Total pendente a cobrar</p>
                 <p className="mt-1 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
                   {formatMoney(resolveDeliveryChargeAmount(collectionModal.order))}
                 </p>
+                {collectionModal.order.remainingAmountOnDelivery != null &&
+                  collectionModal.order.deliveryFee != null &&
+                  collectionModal.order.deliveryFee > 0 ? (
+                  <div className="mt-2 space-y-1 border-t border-[var(--color-border)] pt-2">
+                    <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
+                      <span>Produto pendente</span>
+                      <span>{formatMoney(Math.max(0, Number(collectionModal.order.remainingAmountOnDelivery) - Number(collectionModal.order.deliveryFee)))}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
+                      <span>Taxa de entrega</span>
+                      <span>{formatMoney(collectionModal.order.deliveryFee)}</span>
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="mt-5 grid gap-3">
                 <button
@@ -1828,7 +1848,8 @@ export function DeliveryActiveView() {
                 </button>
                 {collectionModal.paymentUrl ? (
                   <div className="rounded-[18px] border border-[#BFDBFE] bg-[#EFF6FF] p-3 text-sm text-[#1D4ED8]">
-                    <p className="font-semibold">Link disponivel e copiado.</p>
+                    <p className="font-semibold">Link de pagamento gerado e copiado.</p>
+                    <p className="mt-1 text-xs" style={{ color: "#3B82F6" }}>Envia este link ao cliente para ele escolher o método de pagamento.</p>
                     <p className="mt-1 break-all text-xs">{collectionModal.paymentUrl}</p>
                     <a
                       href={collectionModal.paymentUrl}
@@ -1836,7 +1857,7 @@ export function DeliveryActiveView() {
                       rel="noreferrer"
                       className="mt-2 inline-flex text-xs font-black underline"
                     >
-                      Abrir link PaySuite
+                      Abrir página de pagamento
                     </a>
                   </div>
                 ) : null}
