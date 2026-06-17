@@ -108,4 +108,56 @@ describe("delivery active collection flow", () => {
     assert.match(notCollectedFn, /reason\.trim\(\)/);
     assert.match(deliveryModule, /markNotCollectedModal/);
   });
+
+  it("sendPaySuiteDeliveryCharge endpoint always uses the clicked card's order.id", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    // Endpoint URL is built from the function parameter `order.id`
+    assert.match(paySuiteHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
+    // The call site passes collectionModal.order — the order locked at modal-open time
+    assert.match(deliveryModule, /sendPaySuiteDeliveryCharge\(collectionModal\.order\)/);
+    // Modal identity guard prevents stale-state mismatch
+    assert.match(paySuiteHandler, /collectionModal\?\.order\.id !== order\.id/);
+  });
+
+  it("returnUrl for PaySuite delivery charge uses CLIENT_APP_URL with correct params, never admin origin", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    assert.match(paySuiteHandler, /CLIENT_APP_URL/);
+    assert.match(paySuiteHandler, /mode=paysuite/);
+    assert.match(paySuiteHandler, /purpose=delivery/);
+    assert.doesNotMatch(paySuiteHandler, /window\.location\.origin/);
+    assert.doesNotMatch(paySuiteHandler, /delivery=1/);
+  });
+
+  it("resolveDeliveryChargeAmount uses remainingAmountOnDelivery or deliveryFee — never totalAmount", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const resolver = deliveryModule.slice(
+      deliveryModule.indexOf("function resolveDeliveryChargeAmount"),
+      deliveryModule.indexOf("\n}", deliveryModule.indexOf("function resolveDeliveryChargeAmount")) + 2,
+    );
+
+    assert.match(resolver, /remainingAmountOnDelivery/);
+    assert.match(resolver, /deliveryFee/);
+    assert.doesNotMatch(resolver, /totalAmount/);
+  });
+
+  it("sendPaySuiteDeliveryCharge aborts with error when charge amount is 0 or unresolvable", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    assert.match(paySuiteHandler, /chargeAmount <= 0/);
+    assert.match(paySuiteHandler, /Nao foi possivel determinar o valor a cobrar/);
+  });
 });

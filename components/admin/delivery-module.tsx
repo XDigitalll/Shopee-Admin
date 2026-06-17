@@ -149,12 +149,9 @@ function getDurationTone(minutes: number | null | undefined) {
 }
 
 function resolveDeliveryChargeAmount(order: DeliveryActiveOrder) {
-  // totalAmountDue is not serialized by DeliveryActiveOrderDTO — skip it.
-  // Use remainingAmountOnDelivery (now populated) as the primary source.
   const candidates = [
     order.remainingAmountOnDelivery,
     order.deliveryFee,
-    order.totalAmount,
   ];
   const amount = candidates.find((value) => Number(value ?? 0) > 0);
   return Number(amount ?? 0);
@@ -1507,6 +1504,15 @@ export function DeliveryActiveView() {
   }
 
   async function sendPaySuiteDeliveryCharge(order: DeliveryActiveOrder) {
+    if (collectionModal?.order.id !== order.id) {
+      setFeedback({ tone: "error", message: "Estado do modal incoerente. Fecha e abre de novo." });
+      return;
+    }
+    const chargeAmount = resolveDeliveryChargeAmount(order);
+    if (chargeAmount <= 0) {
+      setFeedback({ tone: "error", message: `Nao foi possivel determinar o valor a cobrar para ${order.number}. Verifica o pedido.` });
+      return;
+    }
     setBusyId(order.id);
     setFeedback({ tone: "loading", message: `A preparar link PaySuite para ${order.number}.` });
     try {
@@ -1514,9 +1520,9 @@ export function DeliveryActiveView() {
         method: "POST",
         body: JSON.stringify({
           method: "PAYSUITE",
-          amount: resolveDeliveryChargeAmount(order),
+          amount: chargeAmount,
           paySuiteMethod: "MPESA",
-          returnUrl: typeof window !== "undefined" ? `${window.location.origin}/orders/${order.id}/payment?delivery=1` : undefined,
+          returnUrl: `${CLIENT_APP_URL}/orders/${order.id}/payment?mode=paysuite&purpose=delivery`,
         }),
       });
       await loadData(true);
