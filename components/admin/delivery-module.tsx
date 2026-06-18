@@ -149,12 +149,19 @@ function getDurationTone(minutes: number | null | undefined) {
 }
 
 function resolveDeliveryChargeAmount(order: DeliveryActiveOrder) {
-  const candidates = [
-    order.remainingAmountOnDelivery,
-    order.deliveryFee,
-  ];
-  const amount = candidates.find((value) => Number(value ?? 0) > 0);
-  return Number(amount ?? 0);
+  const remainingProductAmount = Math.max(0, Number(order.remainingAmountOnDelivery ?? 0));
+  const deliveryFee = Math.max(0, Number(order.deliveryFee ?? 0));
+  return remainingProductAmount + deliveryFee;
+}
+
+function resolveDeliveryChargeBreakdown(order: DeliveryActiveOrder) {
+  const remainingProductAmount = Math.max(0, Number(order.remainingAmountOnDelivery ?? 0));
+  const deliveryFee = Math.max(0, Number(order.deliveryFee ?? 0));
+  return {
+    remainingProductAmount,
+    deliveryFee,
+    total: remainingProductAmount + deliveryFee,
+  };
 }
 
 function isDeliveryPaymentResolved(order: DeliveryActiveOrder) {
@@ -1366,6 +1373,13 @@ export function DeliveryActiveView() {
     }
   }, []);
 
+  async function revalidateActiveOrderForCollection(order: DeliveryActiveOrder) {
+    const payload = await adminApiFetch<DeliveryActiveOrder[]>("/api/admin/delivery/active");
+    const sorted = [...payload].sort((left, right) => Number(isDeliveryActionRequired(right)) - Number(isDeliveryActionRequired(left)));
+    setOrders(sorted);
+    return sorted.find((item) => item.id === order.id) ?? null;
+  }
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       void loadData(false);
@@ -1515,21 +1529,44 @@ export function DeliveryActiveView() {
       setFeedback({ tone: "error", message: "Estado do modal incoerente. Fecha e abre de novo." });
       return;
     }
-    const chargeAmount = resolveDeliveryChargeAmount(order);
+    let freshOrder: DeliveryActiveOrder | null = null;
+    try {
+      freshOrder = await revalidateActiveOrderForCollection(order);
+    } catch {
+      setFeedback({ tone: "error", message: "Nao foi possivel revalidar o estado do pedido antes de gerar a cobranca." });
+      return;
+    }
+    if (!freshOrder) {
+      setFeedback({ tone: "error", message: "Este pedido ja nao esta disponivel para cobranca. Actualiza a fila." });
+      setCollectionModal(null);
+      return;
+    }
+    if (isDeliveryPaymentResolved(freshOrder)) {
+      setFeedback({ tone: "error", message: "Este pagamento ja foi confirmado. Nao e possivel reenviar a cobranca." });
+      setCollectionModal(null);
+      return;
+    }
+    if (hasActiveCodPaySuiteCharge(freshOrder)) {
+      setFeedback({ tone: "error", message: "Ja existe uma cobranca PaySuite em curso para este pedido." });
+      setCollectionModal((current) => current && current.order.id === order.id ? { ...current, order: freshOrder } : current);
+      return;
+    }
+    const chargeAmount = resolveDeliveryChargeAmount(freshOrder);
     if (chargeAmount <= 0) {
       setFeedback({ tone: "error", message: `Nao foi possivel determinar o valor a cobrar para ${order.number}. Verifica o pedido.` });
       return;
     }
-    setBusyId(order.id);
-    setFeedback({ tone: "loading", message: `A preparar link PaySuite para ${order.number}.` });
+    setBusyId(freshOrder.id);
+    setCollectionModal((current) => current && current.order.id === order.id ? { ...current, order: freshOrder } : current);
+    setFeedback({ tone: "loading", message: `A preparar link PaySuite para ${freshOrder.number}.` });
     try {
-      const result = await adminApiFetch<DeliveryCollectionResponse>(`/api/admin/delivery/orders/${order.id}/collection`, {
+      const result = await adminApiFetch<DeliveryCollectionResponse>(`/api/admin/delivery/orders/${freshOrder.id}/collection`, {
         method: "POST",
         body: JSON.stringify({
           method: "PAYSUITE",
           amount: chargeAmount,
           paySuiteMethod: "MPESA",
-          returnUrl: `${CLIENT_APP_URL}/orders/${order.id}/payment?mode=paysuite&purpose=delivery`,
+          returnUrl: `${CLIENT_APP_URL}/orders/${freshOrder.id}/payment?mode=paysuite&purpose=delivery`,
         }),
       });
       await loadData(true);
@@ -1538,7 +1575,7 @@ export function DeliveryActiveView() {
         await navigator.clipboard?.writeText(paymentUrl).catch(() => undefined);
       }
       setCollectionModal((current) =>
-        current && current.order.id === order.id ? { ...current, paymentUrl } : current,
+        current && current.order.id === freshOrder.id ? { ...current, paymentUrl } : current,
       );
       setFeedback({ tone: "success", message: "Link de pagamento enviado ao cliente." });
       router.refresh();
@@ -1557,6 +1594,19 @@ export function DeliveryActiveView() {
       setFeedback({ tone: "error", message: "Regista a referencia da transferencia antes de enviar para o financeiro." });
       return;
     }
+    if (isDeliveryPaymentResolved(order)) {
+      setFeedback({ tone: "error", message: "Este pagamento ja foi confirmado. Nao e possivel reenviar a cobranca." });
+      return;
+    }
+    if (hasActiveCodPaySuiteCharge(order)) {
+      setFeedback({ tone: "error", message: "Ja existe uma cobranca PaySuite em curso para este pedido." });
+      return;
+    }
+    const chargeAmount = resolveDeliveryChargeAmount(order);
+    if (!Number.isFinite(chargeAmount) || chargeAmount <= 0) {
+      setFeedback({ tone: "error", message: "Nao foi possivel determinar o valor a cobrar para transferencia." });
+      return;
+    }
 
     setBusyId(order.id);
     setFeedback({ tone: "loading", message: `A abrir cobranca manual para ${order.number}.` });
@@ -1565,7 +1615,7 @@ export function DeliveryActiveView() {
         method: "POST",
         body: JSON.stringify({
           method: "MANUAL_TRANSFER",
-          amount: resolveDeliveryChargeAmount(order),
+          amount: chargeAmount,
           transactionReference: transferReference,
           payerName: collectionModal?.transferPayerName.trim() || order.customerName,
           payerBank: collectionModal?.transferPayerBank.trim() || "Transferencia bancaria",
@@ -1589,6 +1639,14 @@ export function DeliveryActiveView() {
     const amountCollected = resolveDeliveryChargeAmount(order);
     if (!collectionModal?.cashConfirmed || collectionModal.order.id !== order.id) {
       setFeedback({ tone: "error", message: "Confirmo que recebi o dinheiro em maos deve estar assinalado." });
+      return;
+    }
+    if (isDeliveryPaymentResolved(order)) {
+      setFeedback({ tone: "error", message: "Este pagamento ja foi confirmado. Nao e possivel confirmar novamente." });
+      return;
+    }
+    if (hasActiveCodPaySuiteCharge(order)) {
+      setFeedback({ tone: "error", message: "Ja existe uma cobranca PaySuite em curso para este pedido." });
       return;
     }
 
@@ -1835,36 +1893,47 @@ export function DeliveryActiveView() {
                 MT
               </div>
               <h2 className="mt-4 font-[family-name:var(--font-sora)] text-xl font-semibold text-[var(--color-text-primary)]">
-                Cobranca da entrega
+                Cobranca pendente do pedido
               </h2>
               <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                Escolhe como o cliente vai liquidar a taxa local, saldo pendente ou total de entrega.
+                Escolhe como o cliente vai pagar o saldo pendente do produto junto com a taxa de entrega.
               </p>
-              <div className="mt-4 rounded-[18px] bg-[var(--color-background-tertiary)] px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Total pendente a cobrar</p>
-                <p className="mt-1 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
-                  {formatMoney(resolveDeliveryChargeAmount(collectionModal.order))}
+              <div className="mt-4 rounded-[20px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">O cliente vai pagar</p>
+                <p className="mt-1 font-[family-name:var(--font-sora)] text-3xl font-semibold text-[var(--color-danger)]">
+                  {formatMoney(resolveDeliveryChargeBreakdown(collectionModal.order).total)}
                 </p>
-                {collectionModal.order.remainingAmountOnDelivery != null &&
-                  collectionModal.order.deliveryFee != null &&
-                  collectionModal.order.deliveryFee > 0 ? (
-                  <div className="mt-2 space-y-1 border-t border-[var(--color-border)] pt-2">
-                    <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
-                      <span>Produto pendente</span>
-                      <span>{formatMoney(Math.max(0, Number(collectionModal.order.remainingAmountOnDelivery) - Number(collectionModal.order.deliveryFee)))}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
-                      <span>Taxa de entrega</span>
-                      <span>{formatMoney(collectionModal.order.deliveryFee)}</span>
-                    </div>
+                <div className="mt-4 space-y-2 border-t border-[var(--color-border)] pt-3">
+                  <div className="flex justify-between gap-4 text-sm text-[var(--color-text-secondary)]">
+                    <span>Produto pendente</span>
+                    <span className="font-semibold text-[var(--color-text-primary)]">
+                      {formatMoney(resolveDeliveryChargeBreakdown(collectionModal.order).remainingProductAmount)}
+                    </span>
                   </div>
-                ) : null}
+                  <div className="flex justify-between gap-4 text-sm text-[var(--color-text-secondary)]">
+                    <span>Taxa de entrega</span>
+                    <span className="font-semibold text-[var(--color-text-primary)]">
+                      {formatMoney(resolveDeliveryChargeBreakdown(collectionModal.order).deliveryFee)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-4 rounded-2xl bg-[var(--color-background-secondary)] px-3 py-2 text-sm">
+                    <span className="font-black text-[var(--color-text-primary)]">TOTAL</span>
+                    <span className="font-[family-name:var(--font-sora)] font-semibold text-[var(--color-danger)]">
+                      {formatMoney(resolveDeliveryChargeBreakdown(collectionModal.order).total)}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="mt-5 grid gap-3">
                 <button
                   type="button"
                   onClick={() => void sendPaySuiteDeliveryCharge(collectionModal.order)}
-                  disabled={busyId === collectionModal.order.id}
+                  disabled={
+                    busyId === collectionModal.order.id
+                    || resolveDeliveryChargeAmount(collectionModal.order) <= 0
+                    || isDeliveryPaymentResolved(collectionModal.order)
+                    || hasActiveCodPaySuiteCharge(collectionModal.order)
+                  }
                   className="admin-button-danger justify-center disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Enviar link PaySuite ao cliente
@@ -1921,7 +1990,13 @@ export function DeliveryActiveView() {
                 <button
                   type="button"
                   onClick={() => void registerManualTransfer(collectionModal.order)}
-                  disabled={busyId === collectionModal.order.id || !collectionModal.transferReference.trim()}
+                  disabled={
+                    busyId === collectionModal.order.id
+                    || !collectionModal.transferReference.trim()
+                    || resolveDeliveryChargeAmount(collectionModal.order) <= 0
+                    || isDeliveryPaymentResolved(collectionModal.order)
+                    || hasActiveCodPaySuiteCharge(collectionModal.order)
+                  }
                   className="admin-button-muted justify-center disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Registar transferencia
@@ -1943,7 +2018,13 @@ export function DeliveryActiveView() {
                   <button
                     type="button"
                     onClick={() => void confirmCodCash(collectionModal.order)}
-                    disabled={busyId === collectionModal.order.id || !collectionModal.cashConfirmed}
+                    disabled={
+                      busyId === collectionModal.order.id
+                      || !collectionModal.cashConfirmed
+                      || resolveDeliveryChargeAmount(collectionModal.order) <= 0
+                      || isDeliveryPaymentResolved(collectionModal.order)
+                      || hasActiveCodPaySuiteCharge(collectionModal.order)
+                    }
                     className="admin-button-muted mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Receber em dinheiro
