@@ -66,7 +66,7 @@ describe("delivery active collection flow", () => {
     );
     const shared = read("app/api/admin/delivery/_shared.ts");
 
-    assert.match(paySuiteHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
+    assert.match(paySuiteHandler, /delivery\/orders\/\$\{freshOrder\.id\}\/collection/);
     assert.match(paySuiteHandler, /paymentUrl|checkoutUrl/);
     assert.match(shared, /"AWAITING_DELIVERY_PAYMENT"/);
     // Admin modal shows "link de pagamento gerado", not a gateway-specific label
@@ -120,11 +120,12 @@ describe("delivery active collection flow", () => {
     );
 
     // Endpoint URL is built from the function parameter `order.id`
-    assert.match(paySuiteHandler, /delivery\/orders\/\$\{order\.id\}\/collection/);
+    assert.match(paySuiteHandler, /delivery\/orders\/\$\{freshOrder\.id\}\/collection/);
     // The call site passes collectionModal.order — the order locked at modal-open time
     assert.match(deliveryModule, /sendPaySuiteDeliveryCharge\(collectionModal\.order\)/);
     // Modal identity guard prevents stale-state mismatch
     assert.match(paySuiteHandler, /collectionModal\?\.order\.id !== order\.id/);
+    assert.match(paySuiteHandler, /revalidateActiveOrderForCollection\(order\)/);
   });
 
   it("returnUrl for PaySuite delivery charge uses CLIENT_APP_URL with correct params, never admin origin", () => {
@@ -150,6 +151,9 @@ describe("delivery active collection flow", () => {
 
     assert.match(resolver, /remainingAmountOnDelivery/);
     assert.match(resolver, /deliveryFee/);
+    assert.match(resolver, /Math\.max\(0, Number\(order\.remainingAmountOnDelivery \?\? 0\)\)/);
+    assert.match(resolver, /Math\.max\(0, Number\(order\.deliveryFee \?\? 0\)\)/);
+    assert.match(resolver, /remainingProductAmount \+ deliveryFee/);
     assert.doesNotMatch(resolver, /totalAmount/);
   });
 
@@ -164,6 +168,19 @@ describe("delivery active collection flow", () => {
     assert.match(paySuiteHandler, /Nao foi possivel determinar o valor a cobrar/);
   });
 
+  it("sendPaySuiteDeliveryCharge revalidates state and blocks duplicate or confirmed charges", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const paySuiteHandler = deliveryModule.slice(
+      deliveryModule.indexOf("async function sendPaySuiteDeliveryCharge"),
+      deliveryModule.indexOf("async function registerManualTransfer"),
+    );
+
+    assert.match(paySuiteHandler, /revalidateActiveOrderForCollection\(order\)/);
+    assert.match(paySuiteHandler, /isDeliveryPaymentResolved\(freshOrder\)/);
+    assert.match(paySuiteHandler, /hasActiveCodPaySuiteCharge\(freshOrder\)/);
+    assert.match(paySuiteHandler, /amount: chargeAmount/);
+  });
+
   it("admin modal label is 'Total pendente a cobrar', not 'Valor a cobrar'", () => {
     const deliveryModule = read("components/admin/delivery-module.tsx");
     const modal = deliveryModule.slice(
@@ -171,8 +188,11 @@ describe("delivery active collection flow", () => {
       deliveryModule.indexOf("AdminConfirmDialog", deliveryModule.indexOf("collectionModal ? (")),
     );
 
-    assert.match(modal, /Total pendente a cobrar/);
+    assert.match(modal, /Cobranca pendente do pedido/);
+    assert.match(modal, /O cliente vai pagar/);
+    assert.match(modal, /TOTAL/);
     assert.doesNotMatch(modal, /Valor a cobrar/);
+    assert.doesNotMatch(modal, /Cobranca da entrega/);
   });
 
   it("admin modal shows breakdown: Produto pendente and Taxa de entrega when deliveryFee > 0", () => {
@@ -184,8 +204,9 @@ describe("delivery active collection flow", () => {
 
     assert.match(modal, /Produto pendente/);
     assert.match(modal, /Taxa de entrega/);
-    assert.match(modal, /remainingAmountOnDelivery/);
-    assert.match(modal, /deliveryFee/);
+    assert.match(modal, /resolveDeliveryChargeBreakdown\(collectionModal\.order\)\.remainingProductAmount/);
+    assert.match(modal, /resolveDeliveryChargeBreakdown\(collectionModal\.order\)\.deliveryFee/);
+    assert.match(modal, /resolveDeliveryChargeBreakdown\(collectionModal\.order\)\.total/);
   });
 
   it("hasActiveCodPaySuiteCharge detects COD_PAYMENT_REQUESTED + PAYSUITE method", () => {
