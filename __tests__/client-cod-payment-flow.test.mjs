@@ -223,6 +223,20 @@ describe("Phase 4 — client COD/delivery payment flow", () => {
       assert.match(fn, /COD_COLLECTION/);
       assert.match(fn, /deliveryCollectionActive/);
     });
+
+    it("continuation block shows 'Pagamento em processamento' and 'não pagues novamente' warning", () => {
+      const page = readClient("app/(client)/orders/[id]/payment/page.tsx");
+      const block = page.slice(
+        page.indexOf("hasCodActivePaySuiteUrl ? ("),
+        page.indexOf(": null}", page.indexOf("hasCodActivePaySuiteUrl ? (")),
+      );
+
+      assert.match(block, /Pagamento em processamento/);
+      assert.match(block, /Já existe uma tentativa de pagamento em curso\. Continua o pagamento abaixo\./);
+      assert.match(block, /não pagues novamente/i);
+      assert.match(block, /Aguarda a confirmação/);
+      assert.match(block, /Continuar pagamento/);
+    });
   });
 
   describe("lib/types.ts — Order type has new COD delivery fields", () => {

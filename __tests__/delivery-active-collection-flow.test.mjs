@@ -187,4 +187,101 @@ describe("delivery active collection flow", () => {
     assert.match(modal, /remainingAmountOnDelivery/);
     assert.match(modal, /deliveryFee/);
   });
+
+  it("hasActiveCodPaySuiteCharge detects COD_PAYMENT_REQUESTED + PAYSUITE method", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const fn = deliveryModule.slice(
+      deliveryModule.indexOf("function hasActiveCodPaySuiteCharge("),
+      deliveryModule.indexOf("\n}", deliveryModule.indexOf("function hasActiveCodPaySuiteCharge(")) + 2,
+    );
+
+    assert.match(fn, /COD_PAYMENT_REQUESTED/);
+    assert.match(fn, /PENDING/);
+    assert.match(fn, /PAYSUITE/);
+    assert.match(fn, /codPaymentCollectionMethod/);
+    assert.match(fn, /paymentStatus/);
+  });
+
+  it("admin card hides 'Cobrar cliente' and shows 'Pagamento em curso' when activeCodPaySuite", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const card = deliveryModule.slice(
+      deliveryModule.indexOf("const activeCodPaySuite"),
+      deliveryModule.indexOf("isOnRoute && !isAwaitingPayment"),
+    );
+
+    assert.match(card, /activeCodPaySuite/);
+    assert.match(card, /Pagamento em curso \(PaySuite\)/);
+    assert.match(card, /Aguarda a confirmacao do cliente/);
+    assert.match(card, /Reenviar link/);
+    // When activeCodPaySuite is true, "Cobrar cliente" must be in the else branch
+    const paySuiteBlock = card.slice(card.indexOf("activeCodPaySuite ?"), card.indexOf(": null}"));
+    assert.doesNotMatch(paySuiteBlock.slice(0, paySuiteBlock.indexOf("Cobrar cliente")), /activeCodPaySuite \? \(/);
+  });
+
+  it("admin card 'Cobrar cliente' appears only when no activeCodPaySuite", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const card = deliveryModule.slice(
+      deliveryModule.indexOf("const activeCodPaySuite"),
+      deliveryModule.indexOf("isOnRoute && !isAwaitingPayment"),
+    );
+
+    // "Cobrar cliente" must come AFTER the activeCodPaySuite ternary (in the else branch)
+    const paySuiteIdx = card.indexOf("activeCodPaySuite ?");
+    const cobrarIdx = card.indexOf("Cobrar cliente");
+    assert.ok(cobrarIdx > paySuiteIdx, "'Cobrar cliente' must be in else branch, after activeCodPaySuite check");
+  });
+
+  it("Reenviar link uses CLIENT_APP_URL with mode=paysuite and purpose=delivery", () => {
+    const deliveryModule = read("components/admin/delivery-module.tsx");
+    const reenviarBlock = deliveryModule.slice(
+      deliveryModule.indexOf("Reenviar link"),
+      deliveryModule.indexOf("Reenviar link") + 400,
+    );
+    // Look backwards for the href that contains the link
+    const linkBlock = deliveryModule.slice(
+      deliveryModule.lastIndexOf("CLIENT_APP_URL", deliveryModule.indexOf("Reenviar link")),
+      deliveryModule.indexOf("Reenviar link") + 50,
+    );
+
+    assert.match(linkBlock, /CLIENT_APP_URL/);
+    assert.match(linkBlock, /mode=paysuite/);
+    assert.match(linkBlock, /purpose=delivery/);
+    void reenviarBlock;
+  });
+
+  it("DeliveryActiveOrder type includes codPaymentCollectionMethod", () => {
+    const types = read("lib/admin/types.ts");
+    const activeOrderType = types.slice(
+      types.indexOf("export type DeliveryActiveOrder = {"),
+      types.indexOf("};", types.indexOf("export type DeliveryActiveOrder = {")),
+    );
+
+    assert.match(activeOrderType, /codPaymentCollectionMethod/);
+  });
+
+  it("mapActiveOrder in _shared.ts reads codPaymentCollectionMethod from backend", () => {
+    const shared = read("app/api/admin/delivery/_shared.ts");
+
+    assert.match(shared, /codPaymentCollectionMethod/);
+    assert.match(shared, /readNullableString.*codPaymentCollectionMethod|codPaymentCollectionMethod.*readNullableString/s);
+  });
+
+  it("backend idempotency guard: collectDeliveryPayment PAYSUITE checks for existing active charge", () => {
+    const service = fs.readFileSync(
+      path.join(
+        path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."),
+        "Xdigital/src/main/java/xdigital/shopee/Service/OrderStateService.java",
+      ),
+      "utf8",
+    );
+    const guard = service.slice(
+      service.indexOf("PAYSUITE: early idempotency guard"),
+      service.indexOf("if (\"CASH\".equals(method)"),
+    );
+
+    assert.match(guard, /COD_PAYMENT_REQUESTED/);
+    assert.match(guard, /PAYSUITE/);
+    assert.match(guard, /PAYSUITE_COLLECTION_IDEMPOTENT/);
+    assert.match(guard, /Pagamento ja recebido/);
+  });
 });

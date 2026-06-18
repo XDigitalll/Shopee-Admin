@@ -225,6 +225,7 @@ export type DeliveryActiveOrder = {
   deliveryPaymentStatus?: string | null;
   remainingAmountOnDelivery?: number | null;
   totalAmountDue?: number | null;
+  codPaymentCollectionMethod?: string | null;
 };
 
 export type DeliveryHistoryStatus = "DELIVERED" | "PROBLEM";
