@@ -29,7 +29,8 @@ export function PricingConfigPanel() {
     name: "",
     currencyCode: "ZAR",
     shippingFee: "",
-    customsPercent: "0",
+    customsType: "PERCENT" as "PERCENT" | "FIXED",
+    customsValue: "0",
     riskPercent: "0",
     sitePercent: "0",
     estimatedMinDays: "",
@@ -98,7 +99,9 @@ export function PricingConfigPanel() {
           originLocationId: Number(routeForm.originLocationId),
           destinationLocationId: Number(routeForm.destinationLocationId),
           shippingFee: numberValue(routeForm.shippingFee),
-          customsPercent: numberValue(routeForm.customsPercent),
+          customsType: routeForm.customsType,
+          customsValue: numberValue(routeForm.customsValue),
+          customsPercent: routeForm.customsType === "PERCENT" ? numberValue(routeForm.customsValue) : 0,
           riskPercent: numberValue(routeForm.riskPercent),
           sitePercent: numberValue(routeForm.sitePercent),
           estimatedMinDays: routeForm.estimatedMinDays ? Number(routeForm.estimatedMinDays) : null,
@@ -138,7 +141,9 @@ export function PricingConfigPanel() {
         name: route.name,
         currencyCode: route.currencyCode,
         shippingFee: route.shippingFee,
-        customsPercent: route.customsPercent,
+        customsType: route.customsType || "PERCENT",
+        customsValue: route.customsValue ?? route.customsPercent,
+        customsPercent: route.customsType === "FIXED" ? 0 : route.customsValue ?? route.customsPercent,
         riskPercent: route.riskPercent,
         sitePercent: route.sitePercent,
         estimatedMinDays: route.estimatedMinDays,
@@ -232,7 +237,16 @@ export function PricingConfigPanel() {
             <div className="grid grid-cols-2 gap-2">
               <input className={inputClass} value={routeForm.currencyCode} onChange={(e) => setRouteForm((f) => ({ ...f, currencyCode: e.target.value.toUpperCase() }))} placeholder="EUR" />
               <input className={inputClass} value={routeForm.shippingFee} onChange={(e) => setRouteForm((f) => ({ ...f, shippingFee: e.target.value }))} placeholder="Envio" />
-              <input className={inputClass} value={routeForm.customsPercent} onChange={(e) => setRouteForm((f) => ({ ...f, customsPercent: e.target.value }))} placeholder="Alfandega %" />
+              <select className={inputClass} value={routeForm.customsType} onChange={(e) => setRouteForm((f) => ({ ...f, customsType: e.target.value as "PERCENT" | "FIXED" }))}>
+                <option value="PERCENT">Percentagem</option>
+                <option value="FIXED">Valor fixo</option>
+              </select>
+              <input
+                className={inputClass}
+                value={routeForm.customsValue}
+                onChange={(e) => setRouteForm((f) => ({ ...f, customsValue: e.target.value }))}
+                placeholder={routeForm.customsType === "FIXED" ? "2500 MZN" : "20%"}
+              />
               <input className={inputClass} value={routeForm.riskPercent} onChange={(e) => setRouteForm((f) => ({ ...f, riskPercent: e.target.value }))} placeholder="Risco %" />
               <input className={inputClass} value={routeForm.sitePercent} onChange={(e) => setRouteForm((f) => ({ ...f, sitePercent: e.target.value }))} placeholder="Site %" />
               <input className={inputClass} value={routeForm.estimatedMinDays} onChange={(e) => setRouteForm((f) => ({ ...f, estimatedMinDays: e.target.value }))} placeholder="Min dias" />
@@ -256,7 +270,7 @@ export function PricingConfigPanel() {
               </span>
             </div>
             <p className="mt-3 text-[var(--color-text-secondary)]">
-              {route.shippingFee} {route.currencyCode} / Alfandega {route.customsPercent}% / Risco {route.riskPercent}% / Site {route.sitePercent}% / {route.estimatedDaysLabel || "prazo a confirmar"}
+              {route.shippingFee} {route.currencyCode} / Alfandega {route.customsType === "FIXED" ? `${route.customsValue ?? route.customsPercent} MZN fixos` : `${route.customsValue ?? route.customsPercent}%`} / Risco {route.riskPercent}% / Site {route.sitePercent}% / {route.estimatedDaysLabel || "prazo a confirmar"}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button type="button" onClick={() => void toggleRoute(route)} className="admin-button-muted px-3 py-2 text-xs">

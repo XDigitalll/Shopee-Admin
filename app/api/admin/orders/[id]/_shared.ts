@@ -160,6 +160,9 @@ type BackendOrderDetail = {
     currency?: string | null;
     commissionPercentage?: number | null;
     returnRiskPercentage?: number | null;
+    customsTypeSnapshot?: string | null;
+    customsValueSnapshot?: number | null;
+    customsPercentSnapshot?: number | null;
     operationalCostPercentage?: number | null;
     urgentPercentage?: number | null;
     urgentAmount?: number | null;
@@ -742,6 +745,8 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
           currency: order.activeQuote.currency || "ZAR",
           commissionPercentage: Number(order.activeQuote.commissionPercentage ?? 0),
           returnRiskPercentage: Number(order.activeQuote.returnRiskPercentage ?? 0),
+          customsType: order.activeQuote.customsTypeSnapshot === "FIXED" ? "FIXED" : "PERCENT",
+          customsValue: Number(order.activeQuote.customsValueSnapshot ?? order.activeQuote.customsPercentSnapshot ?? order.activeQuote.operationalCostPercentage ?? 0),
           operationalCostPercentage: Number(order.activeQuote.operationalCostPercentage ?? 0),
           urgentPercentage: 0,
           urgentAmount: 0,

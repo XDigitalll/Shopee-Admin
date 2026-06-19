@@ -297,6 +297,8 @@ export type ExternalOrderDraft = {
   currency: string;
   commissionPercentage: number;
   returnRiskPercentage: number;
+  customsType?: "PERCENT" | "FIXED";
+  customsValue?: number;
   operationalCostPercentage: number;
   urgentPercentage: number;
   urgentAmount: number;
@@ -464,6 +466,8 @@ export type QuoteSubmissionPayload = {
   currency: string;
   commissionPercentage: number;
   returnRiskPercentage: number;
+  customsType?: "PERCENT" | "FIXED";
+  customsValue?: number;
   operationalCostPercentage: number;
   urgentPercentage?: number;
   urgentAmount?: number;
@@ -528,6 +532,8 @@ export type ShippingRouteOption = {
   name: string;
   currencyCode: CurrencyCode | string;
   shippingFee: number;
+  customsType?: "PERCENT" | "FIXED";
+  customsValue?: number;
   customsPercent: number;
   riskPercent: number;
   sitePercent: number;

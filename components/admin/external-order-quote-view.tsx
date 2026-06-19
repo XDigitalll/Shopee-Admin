@@ -48,6 +48,13 @@ type QuoteSummary = {
   lowMargin: boolean;
 };
 
+function customsDisplay(type?: string | null, value?: number | null) {
+  if ((type || "PERCENT") === "FIXED") {
+    return `${Number(value || 0).toLocaleString("pt-MZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MZN fixos`;
+  }
+  return `${Number(value || 0).toLocaleString("pt-MZ", { maximumFractionDigits: 2 })}%`;
+}
+
 function getErrorStatus(error: unknown) {
   return error && typeof error === "object" && "status" in error
     ? Number((error as { status?: unknown }).status)
@@ -147,7 +154,11 @@ function buildSummary(draft: ExternalOrderDraft): QuoteSummary {
   const shippingValue = Number(draft.shippingFee || 0) * Number(draft.exchangeRate || 0);
   const subtotalConverted = productValue + shippingValue;
   const returnRiskValue = productValue * (Number(draft.returnRiskPercentage || 0) / 100);
-  const operationalCostValue = productValue * (Number(draft.operationalCostPercentage || 0) / 100);
+  const customsType = draft.customsType || "PERCENT";
+  const customsValue = Number(draft.customsValue ?? draft.operationalCostPercentage ?? 0);
+  const operationalCostValue = customsType === "FIXED"
+    ? customsValue
+    : productValue * (customsValue / 100);
   const siteBaseValue = productValue + returnRiskValue + operationalCostValue;
   const siteFeeValue = siteBaseValue * (Number(draft.commissionPercentage || 0) / 100);
   const totalFinal = siteBaseValue + siteFeeValue + shippingValue;
@@ -212,6 +223,11 @@ function buildDraft(
       QUOTE_STORAGE_KEYS.returnRiskPercentage,
       Number(defaults.returnRiskPercentage || 5)
     ),
+    customsType: "PERCENT",
+    customsValue: readStoredNumber(
+      QUOTE_STORAGE_KEYS.operationalCostPercentage,
+      Number(defaults.operationalCostPercentage || 0)
+    ),
     operationalCostPercentage: readStoredNumber(
       QUOTE_STORAGE_KEYS.operationalCostPercentage,
       Number(defaults.operationalCostPercentage || 0)
@@ -250,6 +266,8 @@ function normalizeDraft(
       rawDraft.operationalCostPercentage ||
         readStoredNumber(QUOTE_STORAGE_KEYS.operationalCostPercentage, baseDraft.operationalCostPercentage)
     ),
+    customsType: rawDraft.customsType || baseDraft.customsType || "PERCENT",
+    customsValue: Number(rawDraft.customsValue ?? rawDraft.operationalCostPercentage ?? baseDraft.customsValue ?? 0),
     urgentPercentage: 0,
     urgentAmount: 0,
     currency: rawDraft.currency || (typeof window !== "undefined" ? window.localStorage.getItem(QUOTE_STORAGE_KEYS.currency) : null) || baseDraft.currency,
@@ -438,6 +456,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
           currency: "ZAR",
           commissionPercentage: 0,
           returnRiskPercentage: 0,
+          customsType: "PERCENT",
+          customsValue: 0,
           operationalCostPercentage: 0,
           urgentPercentage: 0,
           urgentAmount: 0,
@@ -481,7 +501,9 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
       currency: route.currencyCode,
       shippingFee: Number(route.shippingFee || 0),
       returnRiskPercentage: Number(route.riskPercent || 0),
-      operationalCostPercentage: Number(route.customsPercent || 0),
+      customsType: route.customsType || "PERCENT",
+      customsValue: Number(route.customsValue ?? route.customsPercent ?? 0),
+      operationalCostPercentage: route.customsType === "FIXED" ? 0 : Number(route.customsValue ?? route.customsPercent ?? 0),
       commissionPercentage: Number(route.sitePercent || 0),
       exchangeRate: useManualExchangeRate ? draft?.exchangeRate ?? 0 : 0,
     });
@@ -563,6 +585,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         currency,
         commissionPercentage: Number(draft.commissionPercentage || 0),
         returnRiskPercentage: Number(draft.returnRiskPercentage || 0),
+        customsType: draft.customsType || "PERCENT",
+        customsValue: Number(draft.customsValue ?? draft.operationalCostPercentage ?? 0),
         operationalCostPercentage: Number(draft.operationalCostPercentage || 0),
         urgentPercentage: 0,
         urgentAmount: 0,
@@ -1132,7 +1156,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                     <span className="mx-2">/</span>
                     <span>Envio {selectedRoute.shippingFee} {selectedRoute.currencyCode}</span>
                     <span className="mx-2">/</span>
-                    <span>Alfandega {selectedRoute.customsPercent}%</span>
+                    <span>Alfandega {customsDisplay(selectedRoute.customsType, selectedRoute.customsValue ?? selectedRoute.customsPercent)}</span>
                     <span className="mx-2">/</span>
                     <span>Prazo {selectedRoute.estimatedDaysLabel || "a confirmar"}</span>
                   </div>
@@ -1288,22 +1312,46 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                  Taxa das alfândegas sul-africana (%)
+                  Alfandega
                 </span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formatInputNumber(draft.operationalCostPercentage)}
-                  onChange={(event) =>
-                    updateDraft({
-                      operationalCostPercentage: Number(event.target.value || 0),
-                    })
-                  }
-                  className={compactNumberInputClass}
-                />
+                <div className="grid grid-cols-[0.8fr_1fr] gap-2">
+                  <select
+                    value={draft.customsType || "PERCENT"}
+                    onChange={(event) => {
+                      const customsType = event.target.value as "PERCENT" | "FIXED";
+                      const customsValue = Number(draft.customsValue ?? draft.operationalCostPercentage ?? 0);
+                      updateDraft({
+                        customsType,
+                        customsValue,
+                        operationalCostPercentage: customsType === "FIXED" ? 0 : customsValue,
+                      });
+                    }}
+                    className="admin-input"
+                  >
+                    <option value="PERCENT">Percentagem</option>
+                    <option value="FIXED">Valor fixo</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    max={(draft.customsType || "PERCENT") === "PERCENT" ? 1000 : undefined}
+                    step="0.01"
+                    value={formatInputNumber(draft.customsValue ?? draft.operationalCostPercentage)}
+                    onChange={(event) => {
+                      const customsValue = Number(event.target.value || 0);
+                      updateDraft({
+                        customsValue,
+                        operationalCostPercentage: (draft.customsType || "PERCENT") === "FIXED" ? 0 : customsValue,
+                      });
+                    }}
+                    placeholder={(draft.customsType || "PERCENT") === "FIXED" ? "2500" : "20"}
+                    className={compactNumberInputClass}
+                  />
+                </div>
                 <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                  Se ficar vazio, o sistema assume 0%.
+                  {(draft.customsType || "PERCENT") === "FIXED"
+                    ? "Valor fixo em MZN, sem nova conversao."
+                    : "Percentagem aplicada sobre o produto."}
                 </p>
               </label>
 
@@ -1356,7 +1404,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   <strong>{formatMoney(summary.returnRiskValue)}</strong>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3 text-sm">
-                  <span>Taxa das alfândegas sul-africana</span>
+                  <span>Alfandega ({customsDisplay(draft.customsType, draft.customsValue ?? draft.operationalCostPercentage)})</span>
                   <strong>{formatMoney(summary.operationalCostValue)}</strong>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3 text-sm">
@@ -1461,7 +1509,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 <strong>{formatMoney(summary.returnRiskValue)}</strong>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[var(--color-text-secondary)]">Taxa das alfândegas sul-africana</span>
+                <span className="text-[var(--color-text-secondary)]">Alfandega ({customsDisplay(draft.customsType, draft.customsValue ?? draft.operationalCostPercentage)})</span>
                 <strong>{formatMoney(summary.operationalCostValue)}</strong>
               </div>
               <div className="flex items-center justify-between gap-3">
