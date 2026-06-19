@@ -159,9 +159,9 @@ function buildSummary(draft: ExternalOrderDraft): QuoteSummary {
   const operationalCostValue = customsType === "FIXED"
     ? customsValue
     : productValue * (customsValue / 100);
-  const siteBaseValue = productValue + returnRiskValue + operationalCostValue;
+  const siteBaseValue = productValue; // commission base: product MZN only (not customs/risk)
   const siteFeeValue = siteBaseValue * (Number(draft.commissionPercentage || 0) / 100);
-  const totalFinal = siteBaseValue + siteFeeValue + shippingValue;
+  const totalFinal = productValue + shippingValue + returnRiskValue + operationalCostValue + siteFeeValue;
   const margin = totalFinal > 0 ? (siteFeeValue / totalFinal) * 100 : 0;
 
   return {
@@ -496,6 +496,10 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
       updateDraft({ routeId });
       return;
     }
+    // When currency stays the same, keep the rate already loaded — loadActiveRate won't
+    // re-fire (its dep didn't change) so resetting to 0 would blank the preview.
+    // When currency changes, reset to 0 so loadActiveRate re-fetches the new rate.
+    const currencyUnchanged = route.currencyCode === draft?.currency;
     updateDraft({
       routeId,
       currency: route.currencyCode,
@@ -505,7 +509,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
       customsValue: Number(route.customsValue ?? route.customsPercent ?? 0),
       operationalCostPercentage: route.customsType === "FIXED" ? 0 : Number(route.customsValue ?? route.customsPercent ?? 0),
       commissionPercentage: Number(route.sitePercent || 0),
-      exchangeRate: useManualExchangeRate ? draft?.exchangeRate ?? 0 : 0,
+      exchangeRate: useManualExchangeRate
+        ? (draft?.exchangeRate ?? 0)
+        : currencyUnchanged
+          ? Number(activeRate?.rate || draft?.exchangeRate || 0)
+          : 0,
     });
   }
 
@@ -572,6 +580,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
     if (useManualExchangeRate && exchangeRateToUse <= 0) {
       setError("Informe um câmbio manual maior que zero antes de enviar a cotação.");
+      return;
+    }
+
+    if (Number(draft.baseAmount || 0) > 0 && exchangeRateToUse <= 0) {
+      setError("A taxa de câmbio não pode ser zero. Aguarda o carregamento da taxa ou usa uma taxa manual.");
       return;
     }
 
