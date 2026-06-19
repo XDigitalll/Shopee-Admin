@@ -7,7 +7,7 @@ import type { CurrencyCode, ExchangeRate, ExchangeRateRequest } from "@/lib/admi
 
 type BaseCurrency = Exclude<CurrencyCode, "MZN">;
 
-const BASE_CURRENCIES: BaseCurrency[] = ["USD", "ZAR"];
+const BASE_CURRENCIES: BaseCurrency[] = ["EUR", "GBP", "CNY", "USD", "ZAR"];
 const HISTORY_PAGE_SIZE = 5;
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -128,14 +128,12 @@ function RateCard({
 }
 
 export function ExchangeRatesPanel() {
-  const [activeRates, setActiveRates] = useState<Record<BaseCurrency, ExchangeRate | null>>({
-    USD: null,
-    ZAR: null,
-  });
-  const [activeErrors, setActiveErrors] = useState<Record<BaseCurrency, string | null>>({
-    USD: null,
-    ZAR: null,
-  });
+  const [activeRates, setActiveRates] = useState<Record<BaseCurrency, ExchangeRate | null>>(
+    () => Object.fromEntries(BASE_CURRENCIES.map((currency) => [currency, null])) as Record<BaseCurrency, ExchangeRate | null>
+  );
+  const [activeErrors, setActiveErrors] = useState<Record<BaseCurrency, string | null>>(
+    () => Object.fromEntries(BASE_CURRENCIES.map((currency) => [currency, null])) as Record<BaseCurrency, string | null>
+  );
   const [history, setHistory] = useState<ExchangeRate[]>([]);
   const [selectedCurrency, setSelectedCurrency] = useState<BaseCurrency>("ZAR");
   const [rate, setRate] = useState("");
@@ -166,8 +164,8 @@ export function ExchangeRatesPanel() {
     setIsLoading(true);
     setFeedback(null);
 
-    const nextRates: Record<BaseCurrency, ExchangeRate | null> = { USD: null, ZAR: null };
-    const nextErrors: Record<BaseCurrency, string | null> = { USD: null, ZAR: null };
+    const nextRates = Object.fromEntries(BASE_CURRENCIES.map((currency) => [currency, null])) as Record<BaseCurrency, ExchangeRate | null>;
+    const nextErrors = Object.fromEntries(BASE_CURRENCIES.map((currency) => [currency, null])) as Record<BaseCurrency, string | null>;
     const historyRows: ExchangeRate[] = [];
 
     await Promise.all(
@@ -261,7 +259,7 @@ export function ExchangeRatesPanel() {
             Taxas activas para cotações
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
-            Controla USD e ZAR para MZN com histórico preservado. Cotações antigas mantêm o snapshot da taxa usada.
+            Controla moedas internacionais para MZN com histórico preservado. Cotações antigas mantêm o snapshot da taxa usada.
           </p>
         </div>
         <button type="button" onClick={() => void loadRates()} className="admin-button-muted" disabled={isLoading}>
@@ -307,8 +305,9 @@ export function ExchangeRatesPanel() {
                 onChange={(event) => setSelectedCurrency(event.target.value as BaseCurrency)}
                 className="admin-input"
               >
-                <option value="ZAR">ZAR</option>
-                <option value="USD">USD</option>
+                {BASE_CURRENCIES.map((currency) => (
+                  <option key={currency} value={currency}>{currency}</option>
+                ))}
               </select>
             </label>
 

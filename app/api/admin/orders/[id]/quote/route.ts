@@ -19,8 +19,9 @@ type ExistingOrderResponse = {
 };
 
 function normalizePayload(payload: QuoteSubmissionPayload) {
-  const normalized: Record<string, number | string> = {
+  const normalized: Record<string, number | string | null> = {
     baseAmount: Number(payload.baseAmount || 0),
+    routeId: payload.routeId ?? null,
     shippingFee: Number(payload.shippingFee || 0),
     currency: payload.currency || "ZAR",
     commissionPercentage: Number(payload.commissionPercentage || 0),
