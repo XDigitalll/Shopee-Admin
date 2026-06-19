@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/admin/format";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { ExchangeRatesPanel } from "@/components/admin/exchange-rates-panel";
+import { PricingConfigPanel } from "@/components/admin/pricing-config-panel";
 import {
   ArrowUpIcon,
   ChartIcon,
@@ -2206,6 +2207,8 @@ export function FinanceView() {
       <CostBreakdownSection data={costBreakdown} isLoading={isLoading} />
 
       <ExchangeRatesPanel />
+
+      <PricingConfigPanel />
 
       <PaymentSettingsSection />
 

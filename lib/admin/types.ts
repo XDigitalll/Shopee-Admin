@@ -292,6 +292,7 @@ export type ExternalOrderLineItem = {
 export type ExternalOrderDraft = {
   exchangeRate: number;
   baseAmount: number;
+  routeId?: number | null;
   shippingFee: number;
   currency: string;
   commissionPercentage: number;
@@ -458,6 +459,7 @@ export type TrackingHistoryEntry = {
 export type QuoteSubmissionPayload = {
   exchangeRate?: number;
   baseAmount: number;
+  routeId?: number | null;
   shippingFee: number;
   currency: string;
   commissionPercentage: number;
@@ -485,7 +487,7 @@ export type QuoteSendResponse = {
   channels: string[];
 };
 
-export type CurrencyCode = "USD" | "ZAR" | "MZN";
+export type CurrencyCode = "EUR" | "GBP" | "CNY" | "USD" | "ZAR" | "MZN";
 
 export type ExchangeRateSource = "MANUAL" | "API" | "ADMIN_OVERRIDE";
 
@@ -501,6 +503,45 @@ export type ExchangeRate = {
   validFrom: string;
   validUntil: string | null;
   notes: string | null;
+};
+
+export type PricingCurrency = {
+  id: number;
+  code: CurrencyCode | string;
+  name: string;
+  symbol?: string | null;
+  active: boolean;
+};
+
+export type ShippingLocationOption = {
+  id: number;
+  country: string;
+  city: string;
+  label: string;
+  active: boolean;
+};
+
+export type ShippingRouteOption = {
+  id: number;
+  origin: ShippingLocationOption;
+  destination: ShippingLocationOption;
+  name: string;
+  currencyCode: CurrencyCode | string;
+  shippingFee: number;
+  customsPercent: number;
+  riskPercent: number;
+  sitePercent: number;
+  estimatedMinDays?: number | null;
+  estimatedMaxDays?: number | null;
+  estimatedDaysLabel?: string | null;
+  active: boolean;
+  notes?: string | null;
+};
+
+export type QuoteOptionsResponse = {
+  currencies: PricingCurrency[];
+  activeRates: ExchangeRate[];
+  routes: ShippingRouteOption[];
 };
 
 export type ExchangeRateRequest = {

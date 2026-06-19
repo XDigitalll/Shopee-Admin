@@ -147,7 +147,7 @@ function difference(submission: PaymentSubmission) {
 
 function hasAmountMismatch(submission: PaymentSubmission | null) {
   if (!submission) return false;
-  return Boolean(submission.amountMismatch) || Math.abs(difference(submission)) > 0.0001 || submission.riskFlags?.includes("AMOUNT_MISMATCH");
+  return Boolean(submission.amountMismatch) || submission.riskFlags?.includes("AMOUNT_MISMATCH");
 }
 
 function proofKind(submission: PaymentSubmission) {
@@ -576,6 +576,12 @@ function SubmissionDrawer({
   const proof = submission ? proofKind(submission) : "none";
   const allowed = allowedActionsFor(submission);
   const canOpenReview = allowed.canStartReview || Boolean(allowed.canReopenReview);
+  const orderProductTotal = (submission?.orderItems ?? []).reduce(
+    (sum, item) => sum + Number(item.subtotal ?? (Number(item.unitPrice ?? 0) * Number(item.quantity ?? 1))),
+    0,
+  );
+  const orderDeliveryFee = Math.max(0, Number(submission?.expectedAmount ?? 0) - orderProductTotal);
+  const hasBreakdown = (submission?.orderItems ?? []).length > 0 && orderProductTotal > 0;
   const reviewAction: PaymentDrawerAction = allowed.canReopenReview ? "reopen-review" : "review";
   const reviewLabel = submission?.status === "UNDER_REVIEW" ? "Já em revisão" : allowed.canReopenReview ? "Reabrir revisão" : "Iniciar revisão";
   const reviewLoadingLabel = allowed.canReopenReview ? "A reabrir..." : "A iniciar...";
@@ -659,8 +665,14 @@ function SubmissionDrawer({
                 <Info label="Telefone comunicacao" value={<WhatsAppPhone phone={submission.customerCommunicationPhone} />} />
                 <Info label="Email" value={submission.customerEmail} />
                 <Info label="Cidade" value={submission.customerCity} />
-                <Info label="Valor esperado" value={formatMoney(submission.expectedAmount ?? 0)} />
-                <Info label="Valor enviado" value={formatMoney(submission.declaredAmount ?? submission.amount ?? 0)} />
+                {hasBreakdown ? (
+                  <>
+                    <Info label="Produto" value={formatMoney(orderProductTotal)} />
+                    <Info label="Entrega" value={formatMoney(orderDeliveryFee)} />
+                  </>
+                ) : null}
+                <Info label="Total esperado" value={formatMoney(submission.expectedAmount ?? 0)} />
+                <Info label="Valor submetido" value={formatMoney(submission.declaredAmount ?? submission.amount ?? 0)} />
                 <Info label="Diferenca" value={formatMoney(difference(submission))} />
                 <Info label="Metodo" value={humanizePaymentMethod(submission.paymentMethod)} />
                 <Info label="Telefone" value={<WhatsAppPhone phone={submission.payerPhone} />} />

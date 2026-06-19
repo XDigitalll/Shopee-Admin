@@ -21,10 +21,12 @@ import type {
   QuoteSendOptions,
   QuoteSendResponse,
   QuoteDefaultsResponse,
+  QuoteOptionsResponse,
   QuoteSubmissionPayload,
+  ShippingRouteOption,
 } from "@/lib/admin/types";
 
-type QuoteCurrency = "USD" | "ZAR";
+type QuoteCurrency = string;
 
 const QUOTE_STORAGE_KEYS = {
   currency: "xdigital_quote_currency",
@@ -84,7 +86,12 @@ function formatRate(value: number) {
 }
 
 function isQuoteCurrency(value: string): value is QuoteCurrency {
-  return value === "USD" || value === "ZAR";
+  return Boolean(value) && value !== "MZN";
+}
+
+function routeLabel(route: ShippingRouteOption | null | undefined) {
+  if (!route) return "Africa do Sul -> Maputo";
+  return `${route.origin?.label || route.origin?.city || "Origem"} -> ${route.destination?.label || route.destination?.city || "Destino"}`;
 }
 
 const compactNumberInputClass =
@@ -194,6 +201,7 @@ function buildDraft(
   return withComputedTotals({
     exchangeRate: 0,
     baseAmount: Number(fallbackBaseAmount || 0),
+    routeId: null,
     shippingFee: 0,
     currency: (typeof window !== "undefined" ? window.localStorage.getItem(QUOTE_STORAGE_KEYS.currency) : null) || "ZAR",
     commissionPercentage: readStoredNumber(
@@ -254,6 +262,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const [detail, setDetail] = useState<ExternalOrderDetail | null>(null);
   const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
   const [draft, setDraft] = useState<ExternalOrderDraft | null>(null);
+  const [quoteOptions, setQuoteOptions] = useState<QuoteOptionsResponse | null>(null);
   const [activeRate, setActiveRate] = useState<ExchangeRate | null>(null);
   const [activeRateError, setActiveRateError] = useState("");
   const [isRateLoading, setIsRateLoading] = useState(false);
@@ -284,14 +293,16 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const canUseManualExchangeRate = canManageFinance(profile);
 
   async function refreshQuoteData() {
-    const [detailPayload, historyPayload, defaultsPayload] = await Promise.all([
+    const [detailPayload, historyPayload, defaultsPayload, optionsPayload] = await Promise.all([
       adminApiFetch<ExternalOrderDetail>(`/api/admin/orders/${orderId}`),
       adminApiFetch<OrderHistoryEntry[]>(`/api/admin/orders/${orderId}/history`),
       adminApiFetch<QuoteDefaultsResponse>("/api/admin/orders/quote-defaults"),
+      adminApiFetch<QuoteOptionsResponse>("/api/admin/quotes/options"),
     ]);
 
     setDetail(detailPayload);
     setHistory(historyPayload);
+    setQuoteOptions(optionsPayload);
     setDraft((currentDraft) =>
       currentDraft
         ? withComputedTotals({
@@ -310,15 +321,17 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
     async function load() {
       try {
-        const [detailPayload, historyPayload, defaultsPayload] = await Promise.all([
+        const [detailPayload, historyPayload, defaultsPayload, optionsPayload] = await Promise.all([
           adminApiFetch<ExternalOrderDetail>(`/api/admin/orders/${orderId}`),
           adminApiFetch<OrderHistoryEntry[]>(`/api/admin/orders/${orderId}/history`),
           adminApiFetch<QuoteDefaultsResponse>("/api/admin/orders/quote-defaults"),
+          adminApiFetch<QuoteOptionsResponse>("/api/admin/quotes/options"),
         ]);
 
         if (!cancelled) {
           setDetail(detailPayload);
           setHistory(historyPayload);
+          setQuoteOptions(optionsPayload);
           setDraft(normalizeDraft(detailPayload.quoteDraft, detailPayload, defaultsPayload));
           setError("");
         }
@@ -420,6 +433,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
         withComputedTotals({
           exchangeRate: 0,
           baseAmount: 0,
+          routeId: null,
           shippingFee: 0,
           currency: "ZAR",
           commissionPercentage: 0,
@@ -450,6 +464,27 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Nao foi possivel guardar o rascunho.");
     }
+  }
+
+  function applyRoute(routeId: number | null) {
+    if (!routeId) {
+      updateDraft({ routeId: null });
+      return;
+    }
+    const route = quoteOptions?.routes.find((item) => item.id === routeId);
+    if (!route) {
+      updateDraft({ routeId });
+      return;
+    }
+    updateDraft({
+      routeId,
+      currency: route.currencyCode,
+      shippingFee: Number(route.shippingFee || 0),
+      returnRiskPercentage: Number(route.riskPercent || 0),
+      operationalCostPercentage: Number(route.customsPercent || 0),
+      commissionPercentage: Number(route.sitePercent || 0),
+      exchangeRate: useManualExchangeRate ? draft?.exchangeRate ?? 0 : 0,
+    });
   }
 
   function toggleClarificationField(field: ClarificationField) {
@@ -523,6 +558,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
       const payload: QuoteSubmissionPayload = {
         baseAmount: Number(draft.baseAmount || 0),
+        routeId: draft.routeId ?? null,
         shippingFee: Number(draft.shippingFee || 0),
         currency,
         commissionPercentage: Number(draft.commissionPercentage || 0),
@@ -631,6 +667,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   }
 
   const selectedCurrency = isQuoteCurrency(draft.currency) ? draft.currency : "ZAR";
+  const selectedRoute = quoteOptions?.routes.find((route) => route.id === draft.routeId) ?? null;
+  const selectedRouteLabel = routeLabel(selectedRoute);
   const activeRateValue = Number(activeRate?.rate || 0);
   const manualRateValue = Number(draft.exchangeRate || 0);
   const screenshotUrls = detail.requestScreenshotUrls.length
@@ -1072,6 +1110,35 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
+                  Rota de transporte
+                </span>
+                <select
+                  value={draft.routeId ?? ""}
+                  onChange={(event) => applyRoute(event.target.value ? Number(event.target.value) : null)}
+                  className="admin-input"
+                >
+                  <option value="">Legado: Africa do Sul - Maputo</option>
+                  {(quoteOptions?.routes ?? []).map((route) => (
+                    <option key={route.id} value={route.id}>
+                      {route.name} - {routeLabel(route)} - {route.currencyCode}
+                    </option>
+                  ))}
+                </select>
+                {selectedRoute ? (
+                  <div className="mt-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
+                    <span>{routeLabel(selectedRoute)}</span>
+                    <span className="mx-2">/</span>
+                    <span>Envio {selectedRoute.shippingFee} {selectedRoute.currencyCode}</span>
+                    <span className="mx-2">/</span>
+                    <span>Alfandega {selectedRoute.customsPercent}%</span>
+                    <span className="mx-2">/</span>
+                    <span>Prazo {selectedRoute.estimatedDaysLabel || "a confirmar"}</span>
+                  </div>
+                ) : null}
+              </label>
+
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
                   Moeda base
@@ -1086,8 +1153,16 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   }
                   className="admin-input"
                 >
-                  <option value="ZAR">ZAR — Rand sul-africano</option>
-                  <option value="USD">USD — Dólar americano</option>
+                  {((quoteOptions?.currencies ?? []).filter((currency) => currency.code !== "MZN").length > 0
+                    ? (quoteOptions?.currencies ?? []).filter((currency) => currency.code !== "MZN")
+                    : [
+                        { code: "ZAR", name: "Rand sul-africano" },
+                        { code: "USD", name: "Dolar americano" },
+                      ]).map((currency) => (
+                    <option key={currency.code} value={currency.code}>
+                      {currency.code} - {currency.name}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -1173,7 +1248,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-[var(--color-text-secondary)]">
-                  Taxa de envio África do Sul → Maputo (na moeda de origem)
+                  Taxa de envio {selectedRouteLabel} (na moeda de origem)
                 </span>
                 <input
                   type="number"
@@ -1269,7 +1344,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   <strong>{formatMoney(summary.productValue)}</strong>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3 text-sm">
-                  <span>Envio África do Sul → Maputo</span>
+                  <span>Envio {selectedRouteLabel}</span>
                   <strong>{formatMoney(summary.shippingValue)}</strong>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-background-secondary)] px-4 py-3 text-sm">
@@ -1374,7 +1449,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                 <strong>{formatMoney(summary.productValue)}</strong>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[var(--color-text-secondary)]">Envio África do Sul → Maputo</span>
+                <span className="text-[var(--color-text-secondary)]">Envio {selectedRouteLabel}</span>
                 <strong>{formatMoney(summary.shippingValue)}</strong>
               </div>
               <div className="flex items-center justify-between gap-3">
