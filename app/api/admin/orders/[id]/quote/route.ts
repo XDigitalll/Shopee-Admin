@@ -26,6 +26,8 @@ function normalizePayload(payload: QuoteSubmissionPayload) {
     currency: payload.currency || "ZAR",
     commissionPercentage: Number(payload.commissionPercentage || 0),
     returnRiskPercentage: Number(payload.returnRiskPercentage || 0),
+    customsType: payload.customsType || "PERCENT",
+    customsValue: Number(payload.customsValue ?? payload.operationalCostPercentage ?? 0),
     operationalCostPercentage: Number(payload.operationalCostPercentage || 0),
     urgentPercentage: 0,
     urgentAmount: 0,
