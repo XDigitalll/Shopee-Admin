@@ -1666,6 +1666,11 @@ export function DeliveryActiveView() {
           amount: amountCollected,
         }),
       });
+      setOrders(prev => prev.map(o =>
+        o.id === order.id
+          ? { ...o, deliveryPaymentStatus: "RECEIVED", remainingAmountOnDelivery: 0, paymentStatus: "COD_COLLECTED" }
+          : o
+      ));
       setCollectionModal(null);
       // Auto-complete delivery after cash received — consistent with PaySuite flow.
       // deliveryPaymentStatus is now RECEIVED so the BFF pre-check passes.
