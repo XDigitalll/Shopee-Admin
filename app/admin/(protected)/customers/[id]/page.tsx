@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AdminConfirmDialog } from "@/components/admin/feedback-state";
+import { AdminConfirmDialog, AdminListLoadingOverlay } from "@/components/admin/feedback-state";
 import { WhatsAppLink, WhatsAppPhone } from "@/components/admin/whatsapp-link";
 import { adminApiFetch } from "@/lib/admin/api-client";
 import { formatMoney } from "@/lib/admin/format";
@@ -79,6 +79,8 @@ const STORE_LABEL: Record<string, string> = {
   MAKRO: "Makro", MR_PRICE: "Mr Price", ALI_EXPRESS: "AliExpress",
   ALI_BABA: "Alibaba", BUFFALO: "Buffalo", ZARA: "Zara", ASOS: "ASOS", EBAY: "eBay",
 };
+
+const CUSTOMER_ORDERS_PAGE_SIZE = 8;
 
 function buildPasswordResetWhatsAppMessage(resetUrl: string) {
   return `Ola 👋
@@ -214,18 +216,27 @@ function OrdersTab({ customerId }: { customerId: number }) {
   const [orders, setOrders] = useState<CustomerOrderSummary[]>([]);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   const load = useCallback(async (p = 0) => {
+    const nextPage = Math.max(0, p);
     setLoading(true);
     try {
-      const data = await adminApiFetch<{ content: CustomerOrderSummary[]; totalPages: number }>(
-        `/api/admin/customers/${customerId}/orders?page=${p}&size=8`
+      const data = await adminApiFetch<{
+        content: CustomerOrderSummary[];
+        page?: number;
+        number?: number;
+        totalElements?: number;
+        totalPages?: number;
+      }>(
+        `/api/admin/customers/${customerId}/orders?page=${nextPage}&size=${CUSTOMER_ORDERS_PAGE_SIZE}`
       );
       setOrders(data?.content ?? []);
-      setTotalPages(data?.totalPages ?? 1);
-      setPage(p);
+      setTotalElements(data?.totalElements ?? 0);
+      setTotalPages(Math.max(data?.totalPages ?? 1, 1));
+      setPage(Number(data?.page ?? data?.number ?? nextPage));
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [customerId]);
 
@@ -233,7 +244,13 @@ function OrdersTab({ customerId }: { customerId: number }) {
     void load(0);
   }, [load]);
 
-  if (loading) {
+  const pageNumbers = (() => {
+    const visible = Math.min(totalPages, 5);
+    const start = Math.min(Math.max(page - Math.floor(visible / 2), 0), Math.max(totalPages - visible, 0));
+    return Array.from({ length: visible }, (_, i) => start + i);
+  })();
+
+  if (loading && orders.length === 0) {
     return (
       <div className="space-y-2 p-1">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -254,8 +271,18 @@ function OrdersTab({ customerId }: { customerId: number }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="relative space-y-3" aria-busy={loading}>
       {/* Header row */}
+      <div className="flex items-center justify-between gap-3 px-1">
+        <p className="text-xs text-[var(--color-text-tertiary)]">
+          {totalElements} pedido{totalElements !== 1 ? "s" : ""} encontrado{totalElements !== 1 ? "s" : ""}
+        </p>
+        {totalPages > 1 && (
+          <p className="text-xs text-[var(--color-text-tertiary)]">
+            Pagina {page + 1} de {totalPages}
+          </p>
+        )}
+      </div>
       <div
         className="grid items-center gap-2 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] rounded-[14px]"
         style={{ gridTemplateColumns: "60px 1fr 120px 140px 120px", background: "var(--color-background-secondary)", color: "var(--color-text-tertiary)" }}
@@ -297,33 +324,53 @@ function OrdersTab({ customerId }: { customerId: number }) {
       })}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-1 pt-2">
-          <button
-            type="button" disabled={page === 0}
-            onClick={() => void load(page - 1)}
-            className="rounded-xl p-1.5 disabled:opacity-30 hover:bg-[var(--color-background-secondary)]"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i).map(n => (
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+          <span className="text-xs text-[var(--color-text-tertiary)]">
+            {Math.min(page * CUSTOMER_ORDERS_PAGE_SIZE + 1, totalElements)}-{Math.min((page + 1) * CUSTOMER_ORDERS_PAGE_SIZE, totalElements)} de {totalElements}
+          </span>
+          <div className="flex items-center gap-1">
             <button
-              key={n} type="button"
-              onClick={() => void load(n)}
-              className="flex h-7 w-7 items-center justify-center rounded-xl text-xs font-semibold transition"
-              style={{ background: n === page ? "#E8431A" : "transparent", color: n === page ? "white" : "var(--color-text-secondary)" }}
+              type="button" disabled={loading || page === 0}
+              onClick={() => void load(page - 1)}
+              className="rounded-xl p-1.5 disabled:opacity-30 hover:bg-[var(--color-background-secondary)]"
+              aria-label="Pagina anterior"
             >
-              {n + 1}
+              <ChevronLeft className="h-4 w-4" />
             </button>
-          ))}
-          <button
-            type="button" disabled={page >= totalPages - 1}
-            onClick={() => void load(page + 1)}
-            className="rounded-xl p-1.5 disabled:opacity-30 hover:bg-[var(--color-background-secondary)]"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
+            {pageNumbers[0] > 0 && (
+              <span className="px-1 text-xs text-[var(--color-text-tertiary)]">...</span>
+            )}
+            {pageNumbers.map(n => (
+              <button
+                key={n} type="button"
+                disabled={loading || n === page}
+                onClick={() => void load(n)}
+                className="flex h-7 w-7 items-center justify-center rounded-xl text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-70"
+                style={{ background: n === page ? "#E8431A" : "transparent", color: n === page ? "white" : "var(--color-text-secondary)" }}
+                aria-current={n === page ? "page" : undefined}
+              >
+                {n + 1}
+              </button>
+            ))}
+            {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
+              <span className="px-1 text-xs text-[var(--color-text-tertiary)]">...</span>
+            )}
+            <button
+              type="button" disabled={loading || page >= totalPages - 1}
+              onClick={() => void load(page + 1)}
+              className="rounded-xl p-1.5 disabled:opacity-30 hover:bg-[var(--color-background-secondary)]"
+              aria-label="Pagina seguinte"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
+      <AdminListLoadingOverlay
+        visible={loading && orders.length > 0}
+        title="A carregar pedidos"
+        message="Estamos a buscar a pagina de pedidos do cliente."
+      />
     </div>
   );
 }
