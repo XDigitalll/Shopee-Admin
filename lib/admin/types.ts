@@ -442,6 +442,26 @@ export type ExternalOrderDetail = {
   history?: OrderHistoryEntry[];
 };
 
+export type OrderStatusReversalCapability = {
+  allowed: boolean;
+  currentStatus: string | null;
+  currentStatusLabel: string | null;
+  targetStatus: string | null;
+  targetStatusLabel: string | null;
+  blockedReason: string | null;
+};
+
+export type OrderStatusReversalResponse = {
+  orderId: number;
+  orderCode: string;
+  previousStatus: string;
+  previousStatusLabel: string;
+  currentStatus: string;
+  currentStatusLabel: string;
+  auditId: number;
+  revertedAt: string;
+};
+
 export type OrderHistoryEntry = {
   id: string;
   label: string;
