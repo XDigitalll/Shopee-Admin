@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   fetchBackend,
   jsonError,
+  jsonErrorPayload,
   parseBackendJson,
   relayAuthFailure,
 } from "@/app/api/admin/_utils";
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   await relayAuthFailure(detailResponse);
 
   if (!detailResponse.ok) {
-    return jsonError("Não foi possível carregar o pedido antes de enviar a cotação.", detailResponse.status);
+    return jsonError("Nao foi possivel carregar o pedido antes de enviar a cotacao.", detailResponse.status);
   }
 
   const detailPayload = await parseBackendJson<{ content?: ExistingOrderResponse[] }>(detailResponse);
@@ -70,12 +71,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   await relayAuthFailure(response);
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
     const action = order?.activeQuote ? "actualizar" : "enviar";
-    return jsonError(errorText || `Não foi possível ${action} a cotação.`, response.status);
+    const payload = await parseBackendJson<unknown>(response);
+    return jsonErrorPayload(payload, response.status, `Nao foi possivel ${action} a cotacao.`);
   }
 
-  // Clear the persisted draft asynchronously — best effort
   void fetchBackend(request, `/admin/orders/${encodeURIComponent(id)}/quote-draft`, { method: "DELETE" });
   return NextResponse.json(await response.json().catch(() => null));
 }

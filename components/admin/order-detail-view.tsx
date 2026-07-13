@@ -13,7 +13,13 @@ import { formatMoney, humanizeOrderStatus, humanizePaymentMethod } from "@/lib/a
 import { getAvailableOrderActions, getOrderActionHint, getPrimaryOrderAction, type AdminOrderAction } from "@/lib/admin/order-actions";
 import { canPerform } from "@/lib/admin/permissions";
 import { buildOrderWhatsAppMessage } from "@/lib/admin/whatsapp";
-import type { ExternalOrderDetail, InternalOrderNote, OrderHistoryEntry } from "@/lib/admin/types";
+import type {
+  ExternalOrderDetail,
+  InternalOrderNote,
+  OrderHistoryEntry,
+  OrderStatusReversalCapability,
+  OrderStatusReversalResponse,
+} from "@/lib/admin/types";
 
 const STANDARD_STATUS_STEPS = [
   "CREATED",
@@ -322,6 +328,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   const [internalNote, setInternalNote] = useState("");
   const [notes, setNotes] = useState<InternalOrderNote[]>([]);
   const [error, setError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [statusReversal, setStatusReversal] = useState<OrderStatusReversalCapability | null>(null);
+  const [reversalDialogOpen, setReversalDialogOpen] = useState(false);
+  const [reversalReason, setReversalReason] = useState("");
+  const [reversalError, setReversalError] = useState("");
+  const [isRevertingStatus, setIsRevertingStatus] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
@@ -359,6 +371,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
           setTrackingCode(detailPayload.trackingCode ?? "");
           setNotes(detailPayload.internalNotes ?? []);
           setError("");
+          setStatusMessage("");
+          void loadStatusReversalCapability(detailPayload.id);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -371,7 +385,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [orderId]);
+  }, [orderId, isSuperAdmin]);
 
   useEffect(() => {
     const req = detail?.activeClarificationRequest;
@@ -431,6 +445,22 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
     setHistory(detailPayload.history ?? []);
     setTrackingCode(detailPayload.trackingCode ?? "");
     setNotes(detailPayload.internalNotes ?? []);
+    await loadStatusReversalCapability(detailPayload.id);
+  }
+
+  async function loadStatusReversalCapability(id: number) {
+    if (!isSuperAdmin) {
+      setStatusReversal(null);
+      return;
+    }
+    try {
+      const capability = await adminApiFetch<OrderStatusReversalCapability>(
+        `/api/admin/orders/${id}/status/reversal-capability`
+      );
+      setStatusReversal(capability);
+    } catch {
+      setStatusReversal(null);
+    }
   }
 
   useAdminLiveRefresh(refreshData, { intervalMs: 15_000, minIntervalMs: 5_000 });
@@ -560,6 +590,33 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       setError(actionError instanceof Error ? actionError.message : "Não foi possível cancelar este pedido.");
     } finally {
       setIsCancelling(false);
+    }
+  }
+
+  async function revertOrderStatus() {
+    if (!detail || !statusReversal?.allowed) return;
+
+    const reason = reversalReason.trim();
+    setReversalError("");
+    setIsRevertingStatus(true);
+    try {
+      const result = await adminApiFetch<OrderStatusReversalResponse>(
+        `/api/admin/orders/${detail.id}/status/revert`,
+        {
+          method: "POST",
+          body: JSON.stringify({ reason }),
+        }
+      );
+      setReversalDialogOpen(false);
+      setReversalReason("");
+      setStatusMessage(
+        `Estado revertido de ${result.previousStatusLabel || result.previousStatus} para ${result.currentStatusLabel || result.currentStatus}.`
+      );
+      await refreshData();
+    } catch (actionError) {
+      setReversalError(actionError instanceof Error ? actionError.message : "Nao foi possivel reverter o estado.");
+    } finally {
+      setIsRevertingStatus(false);
     }
   }
 
@@ -805,6 +862,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 Enviar comprovativo ao cliente
               </button>
             ) : null}
+            {statusReversal?.allowed ? (
+              <button type="button" onClick={() => setReversalDialogOpen(true)} className="admin-button-muted">
+                Reverter ultimo estado
+              </button>
+            ) : null}
             {primaryAction ? (
               "href" in primaryAction ? (
                 <Link href={primaryAction.href} className="admin-button-danger">
@@ -832,6 +894,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       {error ? (
         <div className="rounded-[24px] border border-[rgba(232,67,26,0.18)] bg-[rgba(232,67,26,0.08)] px-5 py-4 text-sm text-[var(--color-danger)]">
           {error}
+        </div>
+      ) : null}
+
+      {statusMessage ? (
+        <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
+          {statusMessage}
         </div>
       ) : null}
 
@@ -1365,6 +1433,15 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   {actionHint}
                 </p>
               ) : null}
+              {statusReversal?.allowed ? (
+                <button
+                  type="button"
+                  onClick={() => setReversalDialogOpen(true)}
+                  className="admin-button-muted justify-center"
+                >
+                  Reverter ultimo estado
+                </button>
+              ) : null}
             </div>
           </section>
 
@@ -1706,6 +1783,75 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                 }}
               >
                 {isPublishingProof ? "A publicar..." : "Publicar comprovativo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reversalDialogOpen && statusReversal?.allowed ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6">
+          <div className="w-full max-w-lg rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-danger)]">Reversao controlada</p>
+            <h2 className="mt-2 font-[family-name:var(--font-sora)] text-2xl font-semibold text-[var(--color-text-primary)]">
+              Reverter ultimo estado
+            </h2>
+            <div className="mt-4 rounded-2xl border border-[#F1D7A8] bg-[#FFF8E7] px-4 py-3 text-sm text-[#7A5712]">
+              <div className="flex items-center justify-between gap-3">
+                <span>{statusReversal.currentStatusLabel || humanizeOrderStatus(statusReversal.currentStatus ?? "")}</span>
+                <span aria-hidden="true">-&gt;</span>
+                <strong className="text-right">
+                  {statusReversal.targetStatusLabel || humanizeOrderStatus(statusReversal.targetStatus ?? "")}
+                </strong>
+              </div>
+            </div>
+            <label className="mt-5 block">
+              <span className="mb-2 block text-sm font-semibold text-[var(--color-text-primary)]">
+                Motivo da reversao
+              </span>
+              <textarea
+                rows={5}
+                value={reversalReason}
+                onChange={(event) => setReversalReason(event.target.value)}
+                className="admin-input min-h-[140px] resize-y"
+                maxLength={500}
+                placeholder="Ex: Cliente pediu ajuste antes de continuar e o estado foi avancado por engano."
+              />
+            </label>
+            <div className="mt-2 flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+              <span>Minimo 10 caracteres.</span>
+              <span>{reversalReason.trim().length}/500</span>
+            </div>
+            {reversalError ? (
+              <div className="mt-4 rounded-2xl border border-[rgba(232,67,26,0.18)] bg-[rgba(232,67,26,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                {reversalError}
+              </div>
+            ) : null}
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isRevertingStatus) {
+                    setReversalDialogOpen(false);
+                    setReversalError("");
+                  }
+                }}
+                className="admin-button-muted justify-center"
+                disabled={isRevertingStatus}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void revertOrderStatus()}
+                className="admin-button-danger justify-center disabled:opacity-60"
+                disabled={
+                  isRevertingStatus ||
+                  reversalReason.trim().length < 10 ||
+                  reversalReason.trim().length > 500
+                }
+              >
+                {isRevertingStatus ? "A reverter..." : "Confirmar reversao"}
               </button>
             </div>
           </div>

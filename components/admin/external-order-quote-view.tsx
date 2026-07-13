@@ -287,6 +287,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   const [useManualExchangeRate, setUseManualExchangeRate] = useState(false);
   const [error, setError] = useState("");
   const [quoteSendOpen, setQuoteSendOpen] = useState(false);
+  const [quoteSendError, setQuoteSendError] = useState("");
+  const [isPublishingQuote, setIsPublishingQuote] = useState(false);
   const [quoteSendOptions, setQuoteSendOptions] = useState<QuoteSendOptions>({
     sendWhatsapp: true,
     sendEmail: true,
@@ -562,8 +564,18 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
   async function sendQuote(options: QuoteSendOptions) {
     if (!detail || !draft) return;
 
+    setQuoteSendError("");
+
     if (detail.needsClarification || detail.activeClarificationRequest?.status === "PENDING") {
       setError("Aguarde a resposta do cliente antes de enviar a cotacao.");
+      setQuoteSendError("Aguarde a resposta do cliente antes de enviar a cotacao.");
+      return;
+    }
+
+    const blockReason = getQuotePublishBlockReason();
+    if (blockReason) {
+      setError(blockReason);
+      setQuoteSendError(blockReason);
       return;
     }
 
@@ -588,6 +600,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
       return;
     }
 
+    setIsPublishingQuote(true);
     try {
       persistQuoteDefaults(draft);
 
@@ -663,6 +676,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
 
       router.refresh();
     } catch (sendError) {
+      setQuoteSendError(sendError instanceof Error ? sendError.message : "Nao foi possivel enviar a cotacao.");
       setError(
         sendError instanceof Error
           ? sendError.message
@@ -670,6 +684,8 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
             ? "Nao foi possivel actualizar a cotacao."
             : "Nao foi possivel enviar a cotacao."
       );
+    } finally {
+      setIsPublishingQuote(false);
     }
   }
 
@@ -719,9 +735,12 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     detail.latestClarificationRequest?.status === "ANSWERED" ? detail.latestClarificationRequest : null;
   const canSendQuote =
     !isPending &&
+    !isPublishingQuote &&
     !isRateLoading &&
     !pendingClarification &&
-    (useManualExchangeRate ? manualRateValue > 0 : activeRateValue > 0);
+    !getQuotePublishBlockReason();
+  const quotePublishBlockReason = getQuotePublishBlockReason();
+  const quotePublishPending = isPending || isPublishingQuote;
   const orderWhatsAppMessage = buildOrderWhatsAppMessage(detail.number);
   const quotePreviewMessage = buildQuoteSharePreview(detail.number, summary.totalFinal, quoteSendResult?.quoteUrl);
   const displayedQuoteSentAt = quoteSendResult?.quoteSentAt || detail.quoteSentAt || detail.latestQuoteSentAt || null;
@@ -731,6 +750,33 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
     if (!quoteSendResult?.quoteUrl || typeof navigator === "undefined") return;
     await navigator.clipboard.writeText(quoteSendResult.quoteUrl);
     setQuoteLinkCopied(true);
+  }
+
+  function getQuotePublishBlockReason(): string | null {
+    if (!draft) {
+      return "Carrega o rascunho da cotacao antes de publicar.";
+    }
+
+    if (!selectedCurrency) {
+      return "Seleciona a moeda base.";
+    }
+
+    const exchangeRateToUse = useManualExchangeRate ? manualRateValue : activeRateValue;
+    if (!exchangeRateToUse || exchangeRateToUse <= 0) {
+      return useManualExchangeRate
+        ? "Informe um cambio manual maior que zero antes de publicar a cotacao."
+        : `Configure a taxa ${selectedCurrency} -> MZN em Financas antes de publicar a cotacao.`;
+    }
+
+    if (!selectedRoute) {
+      return "Seleciona uma rota de transporte.";
+    }
+
+    if (!Number(draft.baseAmount || 0) || Number(draft.baseAmount || 0) <= 0) {
+      return "Indica o valor do produto.";
+    }
+
+    return null;
   }
 
   return (
@@ -1562,8 +1608,14 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               <button
                 type="button"
                 disabled={!canSubmitQuote || !canSendQuote}
+                title={quotePublishBlockReason ?? undefined}
                 onClick={() => {
+                  if (quotePublishBlockReason) {
+                    setError(quotePublishBlockReason);
+                    return;
+                  }
                   setQuoteSendResult(null);
+                  setQuoteSendError("");
                   setQuoteLinkCopied(false);
                   setRegExtraChannels({ sendWhatsapp: false, sendEmail: false });
                   setQuoteSendOpen(true);
@@ -1605,6 +1657,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               {pendingClarification ? (
                 <p className="text-xs font-semibold text-[#9F1239]">
                   O cliente precisa responder aos detalhes pedidos antes do envio da cotacao.
+                </p>
+              ) : null}
+              {canSubmitQuote && quotePublishBlockReason && !pendingClarification ? (
+                <p className="text-xs font-semibold text-[#9F1239]">
+                  {quotePublishBlockReason}
                 </p>
               ) : null}
             </div>
@@ -1815,7 +1872,7 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
               </div>
               <button
                 type="button"
-                onClick={() => { if (!isPending) setQuoteSendOpen(false); }}
+                onClick={() => { if (!quotePublishPending) setQuoteSendOpen(false); }}
                 aria-label="Fechar"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
               >
@@ -1923,12 +1980,18 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   </div>
                 ) : null}
 
+                {quoteSendError ? (
+                  <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                    {quoteSendError}
+                  </div>
+                ) : null}
+
                 {/* ACTIONS */}
                 <div className="mt-7 h-px bg-white/[0.06]" />
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row-reverse">
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={quotePublishPending || Boolean(quotePublishBlockReason)}
                     onClick={() =>
                       startTransition(async () => {
                         await sendQuote({
@@ -1941,11 +2004,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                     }
                     className="flex-1 rounded-full bg-[#e8431a] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(232,67,26,0.35)] transition-all hover:bg-[#d63917] hover:shadow-[0_6px_28px_rgba(232,67,26,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isPending ? "A publicar..." : "Publicar cotação"}
+                    {quotePublishPending ? "A publicar..." : "Publicar cotação"}
                   </button>
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={quotePublishPending}
                     onClick={() => setQuoteSendOpen(false)}
                     className="rounded-full border border-white/10 px-6 py-3 text-sm font-semibold text-slate-400 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
                   >
@@ -2044,11 +2107,17 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                   </div>
                 ) : null}
 
+                {quoteSendError ? (
+                  <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                    {quoteSendError}
+                  </div>
+                ) : null}
+
                 <div className="mt-7 h-px bg-white/[0.06]" />
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row-reverse">
                   <button
                     type="button"
-                    disabled={isPending || (!quoteSendOptions.sendWhatsapp && !quoteSendOptions.sendEmail && !quoteSendOptions.copyOnly)}
+                    disabled={quotePublishPending || Boolean(quotePublishBlockReason) || (!quoteSendOptions.sendWhatsapp && !quoteSendOptions.sendEmail && !quoteSendOptions.copyOnly)}
                     onClick={() =>
                       startTransition(async () => {
                         await sendQuote(quoteSendOptions);
@@ -2056,11 +2125,11 @@ export function ExternalOrderQuoteView({ orderId }: { orderId: string }) {
                     }
                     className="flex-1 rounded-full bg-[#e8431a] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(232,67,26,0.35)] transition-all hover:bg-[#d63917] hover:shadow-[0_6px_28px_rgba(232,67,26,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isPending ? "A enviar..." : "Enviar cotação ao cliente"}
+                    {quotePublishPending ? "A enviar..." : "Enviar cotação ao cliente"}
                   </button>
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={quotePublishPending}
                     onClick={() => setQuoteSendOpen(false)}
                     className="rounded-full border border-white/10 px-6 py-3 text-sm font-semibold text-slate-400 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
                   >
