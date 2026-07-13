@@ -20,7 +20,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     {
       method: "POST",
       body: request.body,
-    },
+      duplex: "half",
+    } as RequestInit & { duplex: "half" },
   );
   await relayAuthFailure(backendResponse);
 
