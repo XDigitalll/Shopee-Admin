@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   fetchBackend,
-  jsonError,
+  jsonErrorPayload,
+  parseBackendJson,
   relayAuthFailure,
 } from "@/app/api/admin/_utils";
 
@@ -26,8 +27,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   await relayAuthFailure(response);
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    return jsonError(errorText || "Nao foi possivel enviar a cotacao ao cliente.", response.status);
+    const payload = await parseBackendJson<unknown>(response);
+    return jsonErrorPayload(payload, response.status, "Nao foi possivel enviar a cotacao ao cliente.");
   }
 
   return NextResponse.json(await response.json().catch(() => null));
