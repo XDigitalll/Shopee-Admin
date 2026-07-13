@@ -94,8 +94,12 @@ const sections = [
   {
     title: "Catalogo",
     items: [
-      { module: "products", label: "Produtos", href: "/admin/products", icon: BoxIcon },
-      { module: "categories", label: "Categorias", href: "/admin/categories", icon: LayersIcon },
+      { module: "products", label: "Produtos locais", href: "/admin/products", icon: BoxIcon },
+      { module: "categories", label: "Categorias locais", href: "/admin/categories", icon: LayersIcon },
+      { module: "products", label: "Produtos", href: "/admin/catalog/products", icon: BoxIcon, indent: true },
+      { module: "categories", label: "Categorias", href: "/admin/catalog/categories", icon: LayersIcon, indent: true },
+      { module: "products", label: "Marcas", href: "/admin/catalog/brands", icon: LayersIcon, indent: true },
+      { module: "products", label: "Promocoes", href: "/admin/catalog/promotions", icon: BannerIcon, indent: true },
       { module: "products", label: "Multimedia", href: "/admin/media", icon: ImageIcon },
       { module: "banners", label: "Banners", href: "/admin/banners", icon: BannerIcon },
     ] satisfies SidebarItem[],
