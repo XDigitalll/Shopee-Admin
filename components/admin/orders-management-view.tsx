@@ -208,7 +208,10 @@ function OrderMobileCard({
           <p className="mt-1 truncate text-sm font-medium text-[var(--color-text-primary)]">{order.customer}</p>
           <p className="truncate text-xs text-[var(--color-text-secondary)]">{order.customerEmail || order.sourceStore}</p>
         </div>
-        <TypeBadge type={order.type} />
+        <div className="flex flex-col items-end gap-1.5">
+          {order.orderSource === "CATALOG" ? <span className="rounded-full bg-[#FFF0E6] px-2.5 py-1 text-[10px] font-black text-[#C2410C]">ESCOLHAS SHOPEEMZ</span> : null}
+          <TypeBadge type={order.type} />
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -1144,7 +1147,7 @@ function SharedOrdersView({
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4"><TypeBadge type={order.type} /></td>
+                    <td className="px-6 py-4"><div className="flex flex-col items-start gap-1.5">{order.orderSource === "CATALOG" ? <span className="rounded-full bg-[#FFF0E6] px-2.5 py-1 text-[10px] font-black text-[#C2410C]">CATÁLOGO</span> : null}<TypeBadge type={order.type} /></div></td>
                     <td className="px-6 py-4 font-[family-name:var(--font-sora)] text-base font-semibold">
                       {formatMoney(order.totalAmount)}
                     </td>

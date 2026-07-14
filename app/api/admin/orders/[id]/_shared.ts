@@ -63,6 +63,17 @@ type BackendProductDetail = {
 };
 
 type BackendOrderDetail = {
+  orderSource?: string | null;
+  catalogProductId?: number | null;
+  catalogProductSlug?: string | null;
+  catalogProductName?: string | null;
+  catalogProductImage?: string | null;
+  catalogCategoryName?: string | null;
+  catalogBrandName?: string | null;
+  catalogSelectedVariants?: string | null;
+  catalogUnitPriceMzn?: number | null;
+  catalogTotalPriceMzn?: number | null;
+  catalogEstimatedDelivery?: string | null;
   id: number;
   code?: string | null;
   orderCode?: string | null;
@@ -723,6 +734,17 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     supplierName: externalOrder ? order.supplierName ?? null : null,
     purchaseNote: externalOrder ? order.purchaseNote ?? null : null,
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
+    orderSource: order.orderSource ?? null,
+    catalogProductId: order.catalogProductId ?? null,
+    catalogProductSlug: order.catalogProductSlug ?? null,
+    catalogProductName: order.catalogProductName ?? null,
+    catalogProductImage: order.catalogProductImage ?? null,
+    catalogCategoryName: order.catalogCategoryName ?? null,
+    catalogBrandName: order.catalogBrandName ?? null,
+    catalogSelectedVariants: order.catalogSelectedVariants ?? null,
+    catalogUnitPriceMzn: order.catalogUnitPriceMzn == null ? null : Number(order.catalogUnitPriceMzn),
+    catalogTotalPriceMzn: order.catalogTotalPriceMzn == null ? null : Number(order.catalogTotalPriceMzn),
+    catalogEstimatedDelivery: order.catalogEstimatedDelivery ?? null,
     createdAt: order.orderDate ?? new Date().toISOString(),
     totalAmount: finalOrderTotal(order),
     totalBeforeDiscount: order.totalBeforeDiscount ?? null,

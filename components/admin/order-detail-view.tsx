@@ -805,6 +805,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
   const pickupOrder = isPickupOrder(detail);
   const externalOrder = detail.type === "EXTERNAL";
+  const catalogOrder = detail.orderSource === "CATALOG";
+  let catalogVariants: Record<string, string> = {};
+  if (catalogOrder && detail.catalogSelectedVariants) {
+    try { catalogVariants = JSON.parse(detail.catalogSelectedVariants) as Record<string, string>; } catch { catalogVariants = {}; }
+  }
   const canManageOrderActions = canPerform(profile, ["ORDER_MANAGER", "ADMIN", "SUPER_ADMIN"]);
   const screenshotUrls = detail.requestScreenshotUrls.length
     ? detail.requestScreenshotUrls
@@ -957,6 +962,16 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4 sm:space-y-6">
+          {catalogOrder ? <section className="admin-card border border-[#F6C7B5] p-4 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Origem da encomenda</p><h2 className="mt-1 text-xl font-semibold">Escolhas da ShopeeMz</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">Produto por encomenda · CAT-{String(detail.catalogProductId ?? "").padStart(5, "0")}</p></div>
+              <span className="rounded-full bg-[#FFF0E6] px-3 py-1.5 text-xs font-black text-[#C2410C]">CATÁLOGO</span>
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-[112px_1fr]">
+              {detail.catalogProductImage ? <img src={detail.catalogProductImage} alt={detail.catalogProductName || "Produto"} className="h-28 w-28 rounded-2xl border border-[var(--color-border)] object-contain" /> : null}
+              <div><h3 className="text-lg font-semibold">{detail.catalogProductName}</h3><p className="text-sm text-[var(--color-text-secondary)]">{[detail.catalogBrandName, detail.catalogCategoryName].filter(Boolean).join(" · ")}</p><div className="mt-3 flex flex-wrap gap-2">{Object.entries(catalogVariants).map(([key, value]) => <span key={key} className="rounded-full bg-[var(--color-background-secondary)] px-3 py-1 text-xs font-semibold">{key}: {value}</span>)}</div><p className="mt-3 text-sm">Quantidade: <strong>{detail.requestedQuantity || 1}</strong> · Unitário: <strong>{formatMoney(detail.catalogUnitPriceMzn || 0)}</strong> · Total: <strong>{formatMoney(detail.catalogTotalPriceMzn || detail.totalAmount)}</strong></p><div className="mt-3 flex flex-wrap gap-2">{detail.catalogProductSlug ? <a href={`/catalogo/${detail.catalogProductSlug}`} target="_blank" rel="noreferrer" className="admin-button-muted">Ver produto no catálogo</a> : null}{detail.externalCartUrl ? <a href={detail.externalCartUrl} target="_blank" rel="noreferrer" className="admin-button-muted">Abrir fornecedor</a> : null}</div></div>
+            </div>
+          </section> : null}
           <section className="admin-card p-4 sm:p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
               <div className="flex items-start gap-4">
