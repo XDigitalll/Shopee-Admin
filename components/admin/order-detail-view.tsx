@@ -234,7 +234,7 @@ function buildPrimaryAction(detail: ExternalOrderDetail, isSuperAdmin: boolean):
   }
 
   if (status === "TO_PURCHASE" || status === "PAID") {
-    return { label: "Enviar comprovativo de compra", action: "purchase-proof" };
+    return { label: "Confirmar compra no fornecedor", action: "purchase-proof" };
   }
   if (status === "ORDERED") {
     return { label: "Marcar em trânsito", action: "mark-status", targetStatus: "IN_TRANSIT" };
@@ -288,7 +288,7 @@ function buildQuickActions(detail: ExternalOrderDetail, isSuperAdmin: boolean) {
     }
   } else {
     if (status === "TO_PURCHASE" || status === "PAID") {
-      actions.push({ label: "Enviar comprovativo de compra", action: "purchase-proof" });
+      actions.push({ label: "Confirmar compra no fornecedor", action: "purchase-proof" });
       actions.push({ label: "Actualizar rastreio", action: "focus-tracking" });
     }
     if (status === "ORDERED") {
@@ -915,7 +915,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </div>
       ) : null}
 
-      {detail.purchaseConfirmedAt && !detail.purchaseProofUrl ? (
+      {(detail.status as string) === "PURCHASED" && detail.purchaseConfirmedAt && !detail.purchaseProofUrl ? (
         <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -938,7 +938,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </div>
       ) : null}
 
-      {detail.purchaseProofUrl ? (
+      {(detail.status as string) === "PURCHASED" && detail.purchaseConfirmedAt && detail.purchaseProofUrl ? (
         <div className="rounded-[24px] border border-[#B7DFC4] bg-[#F1FBF4] px-5 py-4 text-sm text-[#14532D]">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>

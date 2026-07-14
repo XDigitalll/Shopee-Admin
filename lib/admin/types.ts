@@ -399,6 +399,8 @@ export type ExternalOrderDetail = {
   supplierOrderReference: string | null;
   supplierName: string | null;
   purchaseNote: string | null;
+  purchaseConfirmationRevertedAt: string | null;
+  purchaseConfirmationRevertedReason: string | null;
   sourceStore: string;
   orderSource?: string | null;
   catalogProductId?: number | null;
