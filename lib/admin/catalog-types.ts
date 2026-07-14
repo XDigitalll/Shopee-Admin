@@ -3,18 +3,33 @@ export type CatalogTaxonomy = {
   name: string;
   slug: string;
   description?: string | null;
+  logoUrl?: string | null;
+  specificationTemplate?: string | null;
   active: boolean;
   displayOrder?: number | null;
 };
+
+export type CatalogProductVariantDefinition = {
+  key: string;
+  label: string;
+  required: boolean;
+  values: string[];
+};
+
+export type CatalogPromotionType = "PERCENTAGE" | "FIXED_AMOUNT" | "LABEL_ONLY";
 
 export type CatalogPromotion = {
   id: number;
   name: string;
   slug: string;
   description?: string | null;
+  promotionType?: CatalogPromotionType | null;
   discountPercent?: number | null;
+  discountValue?: number | null;
   startsAt?: string | null;
   endsAt?: string | null;
+  imageUrl?: string | null;
+  showAsHighlight?: boolean;
   active: boolean;
 };
 
@@ -56,6 +71,7 @@ export type CatalogProduct = {
   seoTitle?: string | null;
   seoDescription?: string | null;
   specifications?: Record<string, string>;
+  variants?: CatalogProductVariantDefinition[];
   images: CatalogImage[];
   badges: string[];
   createdAt?: string;
