@@ -100,11 +100,12 @@ export function jsonError(message: string, status: number) {
 
 export function jsonErrorPayload(payload: unknown, status: number, fallback: string) {
   const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const fieldErrors = body.fieldErrors ?? body.messages;
   return NextResponse.json({
     message: typeof body.message === "string" ? body.message : fallback,
     code: typeof body.code === "string" ? body.code : undefined,
     action: typeof body.action === "string" ? body.action : undefined,
-    fieldErrors: body.fieldErrors,
+    fieldErrors,
     details: body.details,
   }, { status });
 }

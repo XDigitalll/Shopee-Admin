@@ -92,12 +92,21 @@ const sections = [
     ] satisfies SidebarItem[],
   },
   {
-    title: "Catalogo",
+    title: "Catálogo · Loja local",
     items: [
-      { module: "products", label: "Produtos", href: "/admin/products", icon: BoxIcon },
-      { module: "categories", label: "Categorias", href: "/admin/categories", icon: LayersIcon },
+      { module: "products", label: "Produtos locais", href: "/admin/products", icon: BoxIcon },
+      { module: "categories", label: "Categorias locais", href: "/admin/categories", icon: LayersIcon },
       { module: "products", label: "Multimedia", href: "/admin/media", icon: ImageIcon },
       { module: "banners", label: "Banners", href: "/admin/banners", icon: BannerIcon },
+    ] satisfies SidebarItem[],
+  },
+  {
+    title: "Por encomenda",
+    items: [
+      { module: "products", label: "Catálogo por encomenda", href: "/admin/catalog/products", icon: BoxIcon },
+      { module: "categories", label: "Categorias do catálogo", href: "/admin/catalog/categories", icon: LayersIcon },
+      { module: "products", label: "Marcas do catálogo", href: "/admin/catalog/brands", icon: LayersIcon },
+      { module: "products", label: "Promoções do catálogo", href: "/admin/catalog/promotions", icon: BannerIcon },
     ] satisfies SidebarItem[],
   },
   {
