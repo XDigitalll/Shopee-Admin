@@ -30,6 +30,11 @@ type BackendPage<T> = {
 };
 
 type BackendOrder = {
+  requestedQuantity?: number | null;
+  orderSource?: string | null;
+  catalogProductId?: number | null;
+  catalogProductName?: string | null;
+  catalogSelectedVariants?: string | null;
   id: number;
   code?: string | null;
   orderCode?: string | null;
@@ -163,6 +168,11 @@ function mapAdminOrder(order: BackendOrder): AdminOrderListItem {
     priorityLabel: priority.priorityLabel,
     createdAt: order.orderDate ?? new Date().toISOString(),
     sourceStore: order.sourceStore || (order.type === "EXTERNAL" ? "Loja externa" : "Shopee X Digital"),
+    orderSource: order.orderSource ?? null,
+    catalogProductId: order.catalogProductId ?? null,
+    catalogProductName: order.catalogProductName ?? null,
+    catalogSelectedVariants: order.catalogSelectedVariants ?? null,
+    requestedQuantity: order.requestedQuantity ?? null,
     externalCartUrl: order.externalCartUrl ?? null,
     actionHref: `/admin/orders/${order.id}`,
     paymentStatus: order.payment?.status ?? null,
