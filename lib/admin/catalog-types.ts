@@ -53,6 +53,7 @@ export type CatalogProduct = {
   promotion?: CatalogPromotion | null;
   supplier?: string | null;
   supplierLink?: string | null;
+  supplierLinkVisibleToCustomer: boolean;
   currency?: string | null;
   supplierPrice?: number | null;
   exchangeRateSnapshot?: number | null;
