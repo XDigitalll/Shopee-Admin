@@ -146,6 +146,8 @@ type BackendOrderDetail = {
   supplierOrderReference?: string | null;
   supplierName?: string | null;
   purchaseNote?: string | null;
+  purchaseConfirmationRevertedAt?: string | null;
+  purchaseConfirmationRevertedReason?: string | null;
   sourceStore?: string | null;
   orderDate?: string | null;
   totalAmount?: number | null;
@@ -733,6 +735,8 @@ export async function fetchOrderDetailBundle(request: NextRequest, id: string) {
     supplierOrderReference: externalOrder ? order.supplierOrderReference ?? null : null,
     supplierName: externalOrder ? order.supplierName ?? null : null,
     purchaseNote: externalOrder ? order.purchaseNote ?? null : null,
+    purchaseConfirmationRevertedAt: externalOrder ? order.purchaseConfirmationRevertedAt ?? null : null,
+    purchaseConfirmationRevertedReason: externalOrder ? order.purchaseConfirmationRevertedReason ?? null : null,
     sourceStore: externalOrder ? order.sourceStore || "Loja externa" : "Retalho local",
     orderSource: order.orderSource ?? null,
     catalogProductId: order.catalogProductId ?? null,

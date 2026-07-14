@@ -205,7 +205,7 @@ export function getAvailableOrderActions(
       if (canManageOrders(currentUser)) {
         actions.push({
           key: "purchase-external",
-          label: detailSurface || options.usePurchaseProof ? "Enviar comprovativo de compra" : "Marcar como comprado",
+          label: detailSurface || options.usePurchaseProof ? "Confirmar compra no fornecedor" : "Marcar como comprado",
           action: detailSurface || options.usePurchaseProof ? "purchase-proof" : "mark-purchased",
         });
       }
