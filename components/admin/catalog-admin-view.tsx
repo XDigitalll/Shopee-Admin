@@ -36,6 +36,7 @@ const emptyProduct = {
   promotionId: "",
   supplier: "",
   supplierLink: "",
+  supplierLinkVisibleToCustomer: false,
   currency: "ZAR",
   originId: "",
   routeId: "",
@@ -362,7 +363,9 @@ function withCatalogPricing(form: ProductForm, options: QuoteOptionsResponse | n
     ...form,
     currency: pricing.currency || form.currency,
     exchangeRateSnapshot: pricing.exchangeRate > 0 ? String(pricing.exchangeRate) : "",
-    shippingCost: pricing.shippingMzn > 0 ? String(pricing.shippingMzn) : "",
+    shippingCost: form.shippingMode === "custom"
+      ? form.shippingCost
+      : pricing.shippingMzn > 0 ? String(pricing.shippingMzn) : "",
     customsCost: pricing.customsMzn > 0 ? String(pricing.customsMzn) : "",
     commissionValue: pricing.commissionMzn > 0 ? String(pricing.commissionMzn) : "",
     finalPrice: pricing.finalMzn > 0 ? String(pricing.finalMzn) : "",
@@ -502,6 +505,7 @@ function productToForm(product: CatalogProduct, duplicate = false): ProductForm 
     promotionId: product.promotion?.id ? String(product.promotion.id) : "",
     supplier: product.supplier || "",
     supplierLink: product.supplierLink || "",
+    supplierLinkVisibleToCustomer: Boolean(product.supplierLinkVisibleToCustomer),
     currency: product.currency || "ZAR",
     supplierPrice: String(product.supplierPrice || ""),
     exchangeRateSnapshot: String(product.exchangeRateSnapshot || ""),
@@ -534,6 +538,7 @@ function buildProductPayload(form: ProductForm, specs: SpecRow[], action: Produc
     promotionId: form.promotionId ? Number(form.promotionId) : null,
     supplier: form.supplier || null,
     supplierLink: form.supplierLink.trim() || null,
+    supplierLinkVisibleToCustomer: form.supplierLinkVisibleToCustomer,
     currency: form.currency,
     routeId: form.routeId ? Number(form.routeId) : null,
     supplierPrice: Number(form.supplierPrice || 0),
@@ -1196,7 +1201,21 @@ function CatalogProductModal({
             <Field label="Categoria"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.categoryId} onChange={(event) => updateCategory(event.target.value)}><option value="">Sem categoria</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
             <Field label="Marca"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.brandId} onChange={(event) => onChange({ ...form, brandId: event.target.value })}><option value="">Sem marca</option>{brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
             <Field label="Fornecedor"><input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplier} onChange={(event) => onChange({ ...form, supplier: event.target.value })} /></Field>
-            <Field label="Link do fornecedor"><input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplierLink} onChange={(event) => onChange({ ...form, supplierLink: event.target.value })} /></Field>
+            <Field label="Link do fornecedor">
+              <input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplierLink} onChange={(event) => onChange({ ...form, supplierLink: event.target.value })} />
+              <label className="mt-3 flex cursor-pointer items-start gap-3 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-orange-500"
+                  checked={form.supplierLinkVisibleToCustomer}
+                  onChange={(event) => onChange({ ...form, supplierLinkVisibleToCustomer: event.target.checked })}
+                />
+                <span>
+                  <strong className="block text-slate-100">Mostrar este link ao cliente</strong>
+                  Desmarcado, o link fica visível apenas para a equipa administrativa.
+                </span>
+              </label>
+            </Field>
             <Field label="Campanha promocional" helper="Associa este produto a uma campanha ativa do catálogo. Campanhas terminadas aparecem bloqueadas.">
               <select className="admin-input bg-slate-950/60 text-slate-100" value={form.promotionId} onChange={(event) => onChange({ ...form, promotionId: event.target.value })}>
                 <option value="">Sem campanha</option>
