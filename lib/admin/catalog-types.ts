@@ -86,6 +86,7 @@ export type CatalogProduct = {
   quoteResponseDeadline?: string | null;
   weight?: number | null;
   estimatedDeadline?: string | null;
+  estimatedDeliveryTime?: string | null;
   active: boolean;
   featured: boolean;
   promotionActive: boolean;

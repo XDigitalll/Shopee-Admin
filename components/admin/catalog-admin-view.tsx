@@ -53,7 +53,8 @@ const emptyProduct = {
   quoteMessage: "O preço poderá variar conforme disponibilidade, câmbio ou fornecedor. Respondemos rapidamente com uma cotação personalizada.",
   quoteResponseDeadline: "Respondemos com o preço final e prazo em até 24 horas.",
   weight: "",
-  estimatedDeadline: "",
+  estimatedDeliveryTime: "",
+  estimatedDeliveryCustom: false,
   active: true,
   featured: false,
   newProduct: false,
@@ -383,7 +384,7 @@ function withCatalogPricing(form: ProductForm, options: QuoteOptionsResponse | n
     customsCost: form.customsMode === "custom" ? form.customsCost : String(pricing.customsMzn),
     commissionValue: form.commissionMode === "custom" ? form.commissionValue : String(pricing.commissionMzn),
     finalPrice: pricing.finalMzn > 0 ? String(pricing.finalMzn) : "",
-    estimatedDeadline: form.estimatedDeadline,
+    estimatedDeliveryTime: form.estimatedDeliveryTime,
   };
 }
 
@@ -536,7 +537,9 @@ function productToForm(product: CatalogProduct, duplicate = false): ProductForm 
     quoteMessage: product.quoteMessage || "O preço poderá variar conforme disponibilidade, câmbio ou fornecedor. Respondemos rapidamente com uma cotação personalizada.",
     quoteResponseDeadline: product.quoteResponseDeadline || "Respondemos com o preço final e prazo em até 24 horas.",
     weight: String(product.weight || ""),
-    estimatedDeadline: product.estimatedDeadline || "",
+    estimatedDeliveryTime: product.estimatedDeliveryTime || product.estimatedDeadline || "",
+    estimatedDeliveryCustom: Boolean(product.estimatedDeliveryTime || product.estimatedDeadline)
+      && !estimatedDeliverySuggestions.includes(product.estimatedDeliveryTime || product.estimatedDeadline || ""),
     active: duplicate ? false : product.active,
     featured: product.featured,
     newProduct: product.newProduct,
@@ -576,7 +579,7 @@ function buildProductPayload(form: ProductForm, specs: SpecRow[], action: Produc
     quoteMessage: form.pricingMode === "QUOTE_REQUIRED" ? form.quoteMessage || null : null,
     quoteResponseDeadline: form.pricingMode === "QUOTE_REQUIRED" ? form.quoteResponseDeadline || null : null,
     weight: parseNumber(form.weight),
-    estimatedDeadline: form.estimatedDeadline || null,
+    estimatedDeliveryTime: form.estimatedDeliveryTime.trim() || null,
     active: action === "publish" ? true : form.active && action !== "draft",
     featured: form.featured,
     newProduct: form.newProduct,
@@ -639,6 +642,48 @@ function Field({ label, helper, children, error }: { label: string; helper?: str
       {helper ? <span className="block text-xs leading-5 text-slate-400">{helper}</span> : null}
       {error ? <span className="block text-xs font-semibold text-[#FF8066]">{error}</span> : null}
     </label>
+  );
+}
+
+const estimatedDeliverySuggestions = [
+  "Em stock",
+  "Entrega imediata",
+  "2–5 dias",
+  "5–10 dias úteis",
+  "10–20 dias úteis",
+  "15–25 dias úteis",
+  "Sob confirmação",
+];
+
+function EstimatedDeliveryTimeInput({ value, custom, onChange, onCustomChange }: { value: string; custom: boolean; onChange: (value: string) => void; onCustomChange: (custom: boolean) => void }) {
+  return (
+    <div className="space-y-2">
+      <select
+        className="admin-input bg-slate-950/60 text-slate-100"
+        value={custom ? "OTHER" : value}
+        onChange={(event) => {
+          if (event.target.value === "OTHER") {
+            onCustomChange(true);
+            onChange("");
+          } else {
+            onCustomChange(false);
+            onChange(event.target.value);
+          }
+        }}
+      >
+        <option value="">Sem prazo definido</option>
+        {estimatedDeliverySuggestions.map((suggestion) => <option key={suggestion} value={suggestion}>{suggestion}</option>)}
+        <option value="OTHER">Outro...</option>
+      </select>
+      {custom ? <input
+        className="admin-input bg-slate-950/60 text-slate-100"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Escreve o prazo exatamente como o cliente deverá vê-lo"
+        maxLength={255}
+        autoFocus
+      /> : null}
+    </div>
   );
 }
 
@@ -1277,6 +1322,7 @@ function CatalogProductModal({
             <Field label="Categoria / subcategoria" helper="As subcategorias aparecem agrupadas dentro da categoria principal."><select className="admin-input bg-slate-950/60 text-slate-100" value={form.categoryId} onChange={(event) => updateCategory(event.target.value)}><option value="">Sem categoria</option>{categories.filter((item) => !item.parentId).flatMap((parent) => [<option key={parent.id} value={parent.id}>{parent.name}</option>, ...categories.filter((child) => child.parentId === parent.id).map((child) => <option key={child.id} value={child.id}>　↳ {child.name}</option>)])}</select></Field>
             <Field label="Marca"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.brandId} onChange={(event) => onChange({ ...form, brandId: event.target.value })}><option value="">Sem marca</option>{brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
             <Field label="Modelo de comercialização" helper="Define se o cliente paga o preço publicado ou solicita uma cotação."><select className="admin-input bg-slate-950/60 text-slate-100" value={form.pricingMode} onChange={(event) => { const pricingMode = event.target.value as ProductForm["pricingMode"]; onChange({ ...form, pricingMode, promotionId: pricingMode === "QUOTE_REQUIRED" ? "" : form.promotionId }); }}><option value="FIXED_PRICE">Preço definido</option><option value="QUOTE_REQUIRED">Preço sob consulta</option></select></Field>
+            <Field label="Prazo estimado" helper="Informação independente do preço. O cliente verá exatamente este texto."><EstimatedDeliveryTimeInput value={form.estimatedDeliveryTime} custom={form.estimatedDeliveryCustom} onChange={(estimatedDeliveryTime) => onChange({ ...form, estimatedDeliveryTime })} onCustomChange={(estimatedDeliveryCustom) => onChange({ ...form, estimatedDeliveryCustom })} /></Field>
             <Field label="Fornecedor"><input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplier} onChange={(event) => onChange({ ...form, supplier: event.target.value })} /></Field>
             <Field label="Link do fornecedor">
               <input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplierLink} onChange={(event) => onChange({ ...form, supplierLink: event.target.value })} />
@@ -1345,15 +1391,6 @@ function CatalogProductModal({
                   <option value="">Seleciona a rota</option>
                   {routeOptions.map((route) => <option key={route.id} value={route.id}>{route.name} - {routeLabel(route)} - {route.currencyCode}</option>)}
                 </select>
-              </Field>
-              <Field label="Tempo estimado de chegada" helper="Prazo que o cliente verá na página do produto. Exemplo: 10–20 dias.">
-                <input
-                  className="admin-input bg-slate-950/60 text-slate-100"
-                  value={form.estimatedDeadline}
-                  onChange={(event) => onChange({ ...form, estimatedDeadline: event.target.value })}
-                  placeholder={pricing.route?.estimatedDaysLabel || "Ex.: 10–20 dias"}
-                  maxLength={80}
-                />
               </Field>
               <Field label="Peso"><input type="number" min="0" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={form.weight} onChange={(event) => updatePricedForm({ ...form, weight: event.target.value })} /></Field>
               <Field label="Frete">
@@ -1619,7 +1656,7 @@ function CatalogProductList({
                 <StatusPill active={product.active} />
                 {product.badges?.map((badge) => <span key={badge} className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-[#E8431A]">{badge}</span>)}
               </div>
-              <p className="mt-1 text-sm text-slate-500">{product.category?.name || "Sem categoria"} · {product.brand?.name || "Sem marca"} · {product.estimatedDeadline || "Sem prazo"}</p>
+              <p className="mt-1 text-sm text-slate-500">{product.category?.name || "Sem categoria"} · {product.brand?.name || "Sem marca"} · {product.estimatedDeliveryTime || product.estimatedDeadline || "Sem prazo"}</p>
               <p className="mt-2 font-[family-name:var(--font-sora)] text-xl font-black text-slate-950">{product.pricingMode === "QUOTE_REQUIRED" ? "Preço sob consulta" : money(Number(product.finalPrice || 0))}</p>
               <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{product.shortDescription || "Sem descrição curta."}</p>
             </div>
@@ -1864,8 +1901,7 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
     if (!form.routeId && quoteOptions?.routes?.length) {
       const rate = Number(product.exchangeRateSnapshot || 0);
       const matchingRoutes = quoteOptions.routes.filter((route) => route.currencyCode === product.currency);
-      const route = matchingRoutes.find((item) => item.estimatedDaysLabel && item.estimatedDaysLabel === product.estimatedDeadline)
-        || matchingRoutes.find((item) => Math.abs(Number(item.shippingFee || 0) * rate - Number(product.shippingCost || 0)) < 0.02)
+      const route = matchingRoutes.find((item) => Math.abs(Number(item.shippingFee || 0) * rate - Number(product.shippingCost || 0)) < 0.02)
         || (matchingRoutes.length === 1 ? matchingRoutes[0] : undefined);
       if (route) {
         const autoForm = withCatalogPricing({ ...form, routeId: String(route.id), originId: String(route.origin.id), shippingMode: "auto", customsMode: "auto", commissionMode: "auto" }, quoteOptions);
