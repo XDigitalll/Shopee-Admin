@@ -41,12 +41,17 @@ const emptyProduct = {
   originId: "",
   routeId: "",
   shippingMode: "auto" as "auto" | "custom",
+  customsMode: "auto" as "auto" | "custom",
+  commissionMode: "auto" as "auto" | "custom",
   supplierPrice: "",
   exchangeRateSnapshot: "",
   shippingCost: "",
   customsCost: "",
   commissionValue: "",
   finalPrice: "",
+  pricingMode: "FIXED_PRICE" as "FIXED_PRICE" | "QUOTE_REQUIRED",
+  quoteMessage: "O preço poderá variar conforme disponibilidade, câmbio ou fornecedor. Respondemos rapidamente com uma cotação personalizada.",
+  quoteResponseDeadline: "Respondemos com o preço final e prazo em até 24 horas.",
   weight: "",
   estimatedDeadline: "",
   active: true,
@@ -61,13 +66,13 @@ const emptyProduct = {
 };
 
 type ProductForm = typeof emptyProduct & { id?: number; existingImages?: CatalogImage[] };
-type TaxonomyForm = { id?: number; name: string; slug: string; description: string; active: boolean; displayOrder: string; logoUrl?: string; specificationTemplate?: string };
+type TaxonomyForm = { id?: number; name: string; slug: string; description: string; active: boolean; displayOrder: string; logoUrl?: string; specificationTemplate?: string; parentId: string };
 type PromotionForm = {
   id?: number;
   name: string;
   slug: string;
   description: string;
-  promotionType: "PERCENTAGE" | "FIXED_AMOUNT" | "LABEL_ONLY";
+  promotionType: "PERCENTAGE" | "FIXED_AMOUNT" | "LABEL_ONLY" | "BUNDLE_PICK";
   discountPercent: string;
   discountValue: string;
   startsAt: string;
@@ -75,9 +80,15 @@ type PromotionForm = {
   active: boolean;
   imageUrl?: string;
   showAsHighlight: boolean;
+  choiceQuantity: string;
+  bundlePrice: string;
+  fixedVolume: string;
+  allowRepeats: boolean;
+  maxPerCustomer: string;
+  participants: Array<{ productId: number; volume: string }>;
 };
 
-const emptyTaxonomyForm: TaxonomyForm = { name: "", slug: "", description: "", active: true, displayOrder: "0", logoUrl: "", specificationTemplate: "" };
+const emptyTaxonomyForm: TaxonomyForm = { name: "", slug: "", description: "", active: true, displayOrder: "0", logoUrl: "", specificationTemplate: "", parentId: "" };
 const emptyPromotionForm: PromotionForm = {
   name: "",
   slug: "",
@@ -90,6 +101,7 @@ const emptyPromotionForm: PromotionForm = {
   active: true,
   imageUrl: "",
   showAsHighlight: false,
+  choiceQuantity: "2", bundlePrice: "", fixedVolume: "30 ml", allowRepeats: false, maxPerCustomer: "", participants: [],
 };
 
 const CATEGORY_DESCRIPTION_LIMIT = 500;
@@ -334,9 +346,11 @@ function calculateCatalogPricing(form: ProductForm, options: QuoteOptionsRespons
     : roundMoney(shippingOrigin * exchangeRate);
   const customsType = route?.customsType || "PERCENT";
   const customsValue = Number(route?.customsValue ?? route?.customsPercent ?? 0);
-  const customsMzn = roundMoney(customsType === "FIXED" ? customsValue : productMzn * (customsValue / 100));
+  const automaticCustomsMzn = roundMoney(customsType === "FIXED" ? customsValue : productMzn * (customsValue / 100));
+  const customsMzn = form.customsMode === "custom" ? roundMoney(Number(form.customsCost || 0)) : automaticCustomsMzn;
   const commissionPercent = Number(route?.sitePercent || 0);
-  const commissionMzn = roundMoney(productMzn * (commissionPercent / 100));
+  const automaticCommissionMzn = roundMoney(productMzn * (commissionPercent / 100));
+  const commissionMzn = form.commissionMode === "custom" ? roundMoney(Number(form.commissionValue || 0)) : automaticCommissionMzn;
   const finalMzn = roundMoney(productMzn + shippingMzn + customsMzn + commissionMzn);
 
   return {
@@ -366,10 +380,10 @@ function withCatalogPricing(form: ProductForm, options: QuoteOptionsResponse | n
     shippingCost: form.shippingMode === "custom"
       ? form.shippingCost
       : pricing.shippingMzn > 0 ? String(pricing.shippingMzn) : "",
-    customsCost: pricing.customsMzn > 0 ? String(pricing.customsMzn) : "",
-    commissionValue: pricing.commissionMzn > 0 ? String(pricing.commissionMzn) : "",
+    customsCost: form.customsMode === "custom" ? form.customsCost : String(pricing.customsMzn),
+    commissionValue: form.commissionMode === "custom" ? form.commissionValue : String(pricing.commissionMzn),
     finalPrice: pricing.finalMzn > 0 ? String(pricing.finalMzn) : "",
-    estimatedDeadline: pricing.route?.estimatedDaysLabel || form.estimatedDeadline,
+    estimatedDeadline: form.estimatedDeadline,
   };
 }
 
@@ -448,7 +462,8 @@ function templateByKey(key?: string | null) {
 
 function categoryTemplate(categories: CatalogTaxonomy[], categoryId: string) {
   const category = categories.find((item) => String(item.id) === categoryId);
-  const explicitTemplate = templateByKey(category?.specificationTemplate);
+  const parent = category?.parentId ? categories.find((item) => item.id === category.parentId) : undefined;
+  const explicitTemplate = templateByKey(category?.specificationTemplate) || templateByKey(parent?.specificationTemplate);
   if (explicitTemplate || !category?.slug) return explicitTemplate;
   return templateByKey(SLUG_TEMPLATE_FALLBACKS[category.slug]);
 }
@@ -509,10 +524,17 @@ function productToForm(product: CatalogProduct, duplicate = false): ProductForm 
     currency: product.currency || "ZAR",
     supplierPrice: String(product.supplierPrice || ""),
     exchangeRateSnapshot: String(product.exchangeRateSnapshot || ""),
+    routeId: product.routeId ? String(product.routeId) : "",
+    shippingMode: product.shippingMode || "auto",
+    customsMode: product.customsMode || "auto",
+    commissionMode: product.commissionMode || "auto",
     shippingCost: String(product.shippingCost || ""),
     customsCost: String(product.customsCost || ""),
     commissionValue: String(product.commissionValue || ""),
     finalPrice: String(product.finalPrice || ""),
+    pricingMode: product.pricingMode || "FIXED_PRICE",
+    quoteMessage: product.quoteMessage || "O preço poderá variar conforme disponibilidade, câmbio ou fornecedor. Respondemos rapidamente com uma cotação personalizada.",
+    quoteResponseDeadline: product.quoteResponseDeadline || "Respondemos com o preço final e prazo em até 24 horas.",
     weight: String(product.weight || ""),
     estimatedDeadline: product.estimatedDeadline || "",
     active: duplicate ? false : product.active,
@@ -541,12 +563,18 @@ function buildProductPayload(form: ProductForm, specs: SpecRow[], action: Produc
     supplierLinkVisibleToCustomer: form.supplierLinkVisibleToCustomer,
     currency: form.currency,
     routeId: form.routeId ? Number(form.routeId) : null,
+    shippingMode: form.shippingMode,
+    customsMode: form.customsMode,
+    commissionMode: form.commissionMode,
     supplierPrice: Number(form.supplierPrice || 0),
     exchangeRateSnapshot: parseNumber(form.exchangeRateSnapshot),
     shippingCost: parseNumber(form.shippingCost),
     customsCost: parseNumber(form.customsCost),
     commissionValue: parseNumber(form.commissionValue),
-    finalPrice: Number(form.finalPrice || 0),
+    finalPrice: form.pricingMode === "QUOTE_REQUIRED" ? null : Number(form.finalPrice || 0),
+    pricingMode: form.pricingMode,
+    quoteMessage: form.pricingMode === "QUOTE_REQUIRED" ? form.quoteMessage || null : null,
+    quoteResponseDeadline: form.pricingMode === "QUOTE_REQUIRED" ? form.quoteResponseDeadline || null : null,
     weight: parseNumber(form.weight),
     estimatedDeadline: form.estimatedDeadline || null,
     active: action === "publish" ? true : form.active && action !== "draft",
@@ -563,9 +591,9 @@ function buildProductPayload(form: ProductForm, specs: SpecRow[], action: Produc
 
 function getProductValidationError(form: ProductForm, images: ImageDraft[], action: ProductAction, options: QuoteOptionsResponse | null, template: CatalogSpecificationTemplate | null) {
   if (!form.name.trim()) return "Indica o nome do produto.";
-  if (!form.currency.trim()) return "Indica a moeda.";
-  if (!Number(form.supplierPrice || 0)) return "Indica o preço do fornecedor.";
-  if (action === "publish") {
+  if (form.pricingMode === "FIXED_PRICE" && !form.currency.trim()) return "Indica a moeda.";
+  if (form.pricingMode === "FIXED_PRICE" && !Number(form.supplierPrice || 0)) return "Indica o preço do fornecedor.";
+  if (action === "publish" && form.pricingMode === "FIXED_PRICE") {
     const pricing = calculateCatalogPricing(form, options);
     if (!options?.currencies?.some((currency) => currency.active && currency.code === pricing.currency)) {
       return `A moeda ${pricing.currency || "selecionada"} não está activa em Finanças.`;
@@ -575,6 +603,8 @@ function getProductValidationError(form: ProductForm, images: ImageDraft[], acti
     }
     if (!pricing.route) return "Seleciona uma rota de transporte.";
     if (pricing.finalMzn <= 0) return "O preço final calculado não pode ser zero.";
+  }
+  if (action === "publish") {
     const missingField = template?.fields.find((field) => field.required && (field.isVariant ? variantValues(form, field.key).length === 0 : !form.templateValues[field.key]));
     if (missingField) return `Preenche ${missingField.label}.`;
   }
@@ -899,6 +929,7 @@ function CatalogDynamicSpecifications({ template, form, onChange }: { template: 
 
   const specs = template.fields.filter((field) => !field.isVariant);
   const variants = template.fields.filter((field) => field.isVariant);
+  const perfumeTemplate = template.key === "PERFUMES";
 
   function updateSpec(key: string, value: string) {
     onChange({ ...form, templateValues: { ...form.templateValues, [key]: value } });
@@ -933,14 +964,52 @@ function CatalogDynamicSpecifications({ template, form, onChange }: { template: 
       </div>
       <div>
         <p className="text-sm font-black text-slate-100">Variantes</p>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
+        {perfumeTemplate ? (
+          <CatalogPerfumeVariants form={form} onChange={onChange} />
+        ) : <div className="mt-3 grid gap-4 md:grid-cols-2">
           {variants.map((field) => (
             <Field key={field.key} label={field.label} helper={field.required ? "Obrigatório para encomendar" : undefined}>
               <CatalogMultiSelect field={field} values={variantValues(form, field.key)} onChange={(values) => onChange(updateVariant(form, field, values))} />
             </Field>
           ))}
-        </div>
+        </div>}
       </div>
+    </div>
+  );
+}
+
+function CatalogPerfumeVariants({ form, onChange }: { form: ProductForm; onChange: (form: ProductForm) => void }) {
+  const definition = form.variants.find((variant) => variant.key === "volume");
+  const options = definition?.options || [];
+  const suggestions = ["30 ml", "50 ml", "75 ml", "100 ml", "125 ml", "200 ml"];
+  const commit = (next: typeof options) => onChange({
+    ...form,
+    variants: [
+      ...form.variants.filter((variant) => variant.key !== "volume"),
+      { key: "volume", label: "Volume", required: true, values: next.map((item) => item.value), options: next },
+    ],
+  });
+  const add = (value: string) => {
+    if (!value || options.some((option) => option.value.toLowerCase() === value.toLowerCase())) return;
+    commit([...options, { value, price: null, imageUrl: "", available: true, stock: null }]);
+  };
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((value) => <button key={value} type="button" className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200" onClick={() => add(value)}>+ {value}</button>)}
+        <button type="button" className="rounded-xl border border-orange-500 px-3 py-2 text-xs font-bold text-orange-400" onClick={() => { const value = window.prompt("Indica o volume, por exemplo 60 ml"); if (value) add(value.trim()); }}>+ Volume personalizado</button>
+      </div>
+      {options.map((option, index) => (
+        <div key={`${option.value}-${index}`} className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-950/50 p-4 md:grid-cols-[1fr_1fr_2fr_auto_auto] md:items-end">
+          <Field label="Volume"><input className="admin-input bg-slate-950/60 text-slate-100" value={option.value} onChange={(event) => commit(options.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} /></Field>
+          <Field label="Preço em MZN"><input type="number" min="0.01" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={option.price ?? ""} onChange={(event) => commit(options.map((item, itemIndex) => itemIndex === index ? { ...item, price: event.target.value ? Number(event.target.value) : null } : item))} /></Field>
+          <Field label="Fotografia da variante (URL)"><input className="admin-input bg-slate-950/60 text-slate-100" value={option.imageUrl || ""} onChange={(event) => commit(options.map((item, itemIndex) => itemIndex === index ? { ...item, imageUrl: event.target.value } : item))} /></Field>
+          <CatalogStatusSwitch label="Disponível" checked={option.available !== false} onChange={(available) => commit(options.map((item, itemIndex) => itemIndex === index ? { ...item, available } : item))} />
+          <button type="button" className="rounded-xl border border-red-500 px-3 py-3 text-sm font-bold text-red-400" onClick={() => commit(options.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>
+          {option.imageUrl ? <img src={option.imageUrl} alt={option.value} className="h-20 w-20 rounded-xl object-cover" /> : null}
+        </div>
+      ))}
+      {!options.length ? <p className="text-sm text-amber-300">Adiciona pelo menos um volume com preço, fotografia e disponibilidade.</p> : null}
     </div>
   );
 }
@@ -954,11 +1023,14 @@ function CatalogImageUploader({
   drafts: ImageDraft[];
   onChange: (drafts: ImageDraft[]) => void;
 }) {
+  const [fileError, setFileError] = useState("");
   function addFiles(files: FileList | null) {
     if (!files?.length) return;
     const accepted = Array.from(files).filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= 8 * 1024 * 1024);
+    const rejected = files.length - accepted.length;
+    setFileError(rejected ? `${rejected} fotografia(s) ignorada(s). Usa JPG, PNG ou WEBP com até 8 MB.` : "");
     const next = accepted.map((file, index) => ({
-      id: `${file.name}-${file.lastModified}-${index}`,
+      id: `${file.name}-${file.lastModified}-${index}-${crypto.randomUUID()}`,
       file,
       previewUrl: URL.createObjectURL(file),
       primary: !existingImages?.length && drafts.length === 0 && index === 0,
@@ -988,8 +1060,9 @@ function CatalogImageUploader({
       >
         <span className="text-lg font-black text-slate-100">Arrasta fotografias para aqui</span>
         <span className="mt-2 text-sm leading-6 text-slate-400">JPG, PNG ou WEBP até 8 MB. Também podes clicar para selecionar.</span>
-        <input type="file" multiple accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => addFiles(event.target.files)} />
+        <input type="file" multiple accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
       </label>
+      {fileError ? <p role="alert" className="rounded-xl border border-red-700/50 bg-red-950/40 px-4 py-3 text-sm font-semibold text-red-200">{fileError}</p> : null}
 
       {existingImages?.length ? (
         <div>
@@ -1182,11 +1255,14 @@ function CatalogProductModal({
       subtitle="Cria um produto para o catálogo “Escolhas da ShopeeMz”. O cliente verá apenas o preço final em Meticais."
       onClose={onClose}
       footer={
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" className={secondaryButton} onClick={onClose}>Cancelar</button>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <button type="button" className={secondaryButton} disabled={saving} onClick={() => onSubmit("draft")}>{saving ? "A guardar..." : "Guardar rascunho"}</button>
-            <button type="button" className={primaryButton} disabled={saving} onClick={() => onSubmit("publish")}>{saving ? "A publicar..." : "Publicar produto"}</button>
+        <div className="space-y-3">
+          {feedback ? <AdminBanner tone={feedback.tone} message={feedback.message} /> : null}
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" className={secondaryButton} onClick={onClose}>Cancelar</button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button type="button" className={secondaryButton} disabled={saving} onClick={() => onSubmit("draft")}>{saving ? "A guardar..." : "Guardar rascunho"}</button>
+              <button type="button" className={primaryButton} disabled={saving} onClick={() => onSubmit("publish")}>{saving ? "A publicar..." : "Publicar produto"}</button>
+            </div>
           </div>
         </div>
       }
@@ -1198,8 +1274,9 @@ function CatalogProductModal({
           <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-slate-100">Informação principal</h3>
           <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Field label="Nome do produto"><input className="admin-input bg-slate-950/60 text-slate-100" value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} required /></Field>
-            <Field label="Categoria"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.categoryId} onChange={(event) => updateCategory(event.target.value)}><option value="">Sem categoria</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+            <Field label="Categoria / subcategoria" helper="As subcategorias aparecem agrupadas dentro da categoria principal."><select className="admin-input bg-slate-950/60 text-slate-100" value={form.categoryId} onChange={(event) => updateCategory(event.target.value)}><option value="">Sem categoria</option>{categories.filter((item) => !item.parentId).flatMap((parent) => [<option key={parent.id} value={parent.id}>{parent.name}</option>, ...categories.filter((child) => child.parentId === parent.id).map((child) => <option key={child.id} value={child.id}>　↳ {child.name}</option>)])}</select></Field>
             <Field label="Marca"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.brandId} onChange={(event) => onChange({ ...form, brandId: event.target.value })}><option value="">Sem marca</option>{brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+            <Field label="Modelo de comercialização" helper="Define se o cliente paga o preço publicado ou solicita uma cotação."><select className="admin-input bg-slate-950/60 text-slate-100" value={form.pricingMode} onChange={(event) => { const pricingMode = event.target.value as ProductForm["pricingMode"]; onChange({ ...form, pricingMode, promotionId: pricingMode === "QUOTE_REQUIRED" ? "" : form.promotionId }); }}><option value="FIXED_PRICE">Preço definido</option><option value="QUOTE_REQUIRED">Preço sob consulta</option></select></Field>
             <Field label="Fornecedor"><input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplier} onChange={(event) => onChange({ ...form, supplier: event.target.value })} /></Field>
             <Field label="Link do fornecedor">
               <input className="admin-input bg-slate-950/60 text-slate-100" value={form.supplierLink} onChange={(event) => onChange({ ...form, supplierLink: event.target.value })} />
@@ -1216,7 +1293,7 @@ function CatalogProductModal({
                 </span>
               </label>
             </Field>
-            <Field label="Campanha promocional" helper="Associa este produto a uma campanha ativa do catálogo. Campanhas terminadas aparecem bloqueadas.">
+            {form.pricingMode === "FIXED_PRICE" ? <Field label="Campanha promocional" helper="Associa este produto a uma campanha ativa do catálogo. Campanhas terminadas aparecem bloqueadas.">
               <select className="admin-input bg-slate-950/60 text-slate-100" value={form.promotionId} onChange={(event) => onChange({ ...form, promotionId: event.target.value })}>
                 <option value="">Sem campanha</option>
                 {promotions.map((item) => (
@@ -1225,8 +1302,9 @@ function CatalogProductModal({
                   </option>
                 ))}
               </select>
-            </Field>
+            </Field> : null}
           </div>
+          {form.pricingMode === "QUOTE_REQUIRED" ? <div className="mt-4 grid gap-4 md:grid-cols-2"><Field label="Mensagem ao cliente"><textarea className="admin-input min-h-28 resize-y bg-slate-950/60 text-slate-100" value={form.quoteMessage} onChange={(event) => onChange({ ...form, quoteMessage: event.target.value })} maxLength={500} /></Field><Field label="Prazo médio para resposta"><input className="admin-input bg-slate-950/60 text-slate-100" value={form.quoteResponseDeadline} onChange={(event) => onChange({ ...form, quoteResponseDeadline: event.target.value })} placeholder="Respondemos com o preço final e prazo em até 24 horas." maxLength={120} /></Field></div> : null}
           <div className="mt-4">
             <Field label="Descrição curta"><textarea className="admin-input min-h-24 resize-y bg-slate-950/60 text-slate-100" value={form.shortDescription} onChange={(event) => onChange({ ...form, shortDescription: event.target.value })} /></Field>
           </div>
@@ -1238,7 +1316,7 @@ function CatalogProductModal({
           <div className="mt-4"><CatalogImageUploader existingImages={form.existingImages} drafts={images} onChange={onImagesChange} /></div>
         </section>
 
-        <section className="rounded-3xl border border-slate-700 bg-slate-900/70 p-4">
+        {form.pricingMode === "FIXED_PRICE" ? <section className="rounded-3xl border border-slate-700 bg-slate-900/70 p-4">
           <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-slate-100">Preço e importação</h3>
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="grid gap-4 md:grid-cols-2">
@@ -1261,12 +1339,21 @@ function CatalogProductModal({
                   value={form.routeId}
                   onChange={(event) => {
                     const route = routeById(quoteOptions, event.target.value);
-                    updatePricedForm({ ...form, originId: route?.origin?.id ? String(route.origin.id) : form.originId, routeId: event.target.value, currency: route?.currencyCode || form.currency, shippingMode: "auto" });
+                    updatePricedForm({ ...form, originId: route?.origin?.id ? String(route.origin.id) : form.originId, routeId: event.target.value, currency: route?.currencyCode || form.currency, shippingMode: "auto", customsMode: "auto", commissionMode: "auto" });
                   }}
                 >
                   <option value="">Seleciona a rota</option>
                   {routeOptions.map((route) => <option key={route.id} value={route.id}>{route.name} - {routeLabel(route)} - {route.currencyCode}</option>)}
                 </select>
+              </Field>
+              <Field label="Tempo estimado de chegada" helper="Prazo que o cliente verá na página do produto. Exemplo: 10–20 dias.">
+                <input
+                  className="admin-input bg-slate-950/60 text-slate-100"
+                  value={form.estimatedDeadline}
+                  onChange={(event) => onChange({ ...form, estimatedDeadline: event.target.value })}
+                  placeholder={pricing.route?.estimatedDaysLabel || "Ex.: 10–20 dias"}
+                  maxLength={80}
+                />
               </Field>
               <Field label="Peso"><input type="number" min="0" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={form.weight} onChange={(event) => updatePricedForm({ ...form, weight: event.target.value })} /></Field>
               <Field label="Frete">
@@ -1277,12 +1364,14 @@ function CatalogProductModal({
               </Field>
               {form.shippingMode === "custom" ? <Field label="Frete personalizado em MZN"><input type="number" min="0" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={form.shippingCost} onChange={(event) => updatePricedForm({ ...form, shippingCost: event.target.value })} /></Field> : null}
               <Field label="Taxa utilizada"><input readOnly className="admin-input bg-slate-950/60 text-slate-300" value={pricing.exchangeRate > 0 ? `1 ${pricing.currency} = ${pricing.exchangeRate} MT` : "Sem taxa activa"} /></Field>
-              <Field label="Alfândega"><input readOnly className="admin-input bg-slate-950/60 text-slate-300" value={pricing.route ? (pricing.customsType === "FIXED" ? money(pricing.customsMzn) : `${pricing.customsValue}% (${money(pricing.customsMzn)})`) : "Seleciona uma rota"} /></Field>
-              <Field label="Comissão"><input readOnly className="admin-input bg-slate-950/60 text-slate-300" value={pricing.route ? `${pricing.commissionPercent}% (${money(pricing.commissionMzn)})` : "Seleciona uma rota"} /></Field>
+              <Field label="Alfândega"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.customsMode} onChange={(event) => updatePricedForm({ ...form, customsMode: event.target.value as ProductForm["customsMode"] })}><option value="auto">Automática pela rota</option><option value="custom">Valor personalizado</option></select></Field>
+              {form.customsMode === "custom" ? <Field label="Alfândega personalizada em MZN"><input type="number" min="0" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={form.customsCost} onChange={(event) => updatePricedForm({ ...form, customsCost: event.target.value })} /></Field> : <Field label="Alfândega calculada"><input readOnly className="admin-input bg-slate-950/60 text-slate-300" value={pricing.route ? (pricing.customsType === "FIXED" ? money(pricing.customsMzn) : `${pricing.customsValue}% (${money(pricing.customsMzn)})`) : "Seleciona uma rota"} /></Field>}
+              <Field label="Comissão"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.commissionMode} onChange={(event) => updatePricedForm({ ...form, commissionMode: event.target.value as ProductForm["commissionMode"] })}><option value="auto">Automática pela rota</option><option value="custom">Valor personalizado</option></select></Field>
+              {form.commissionMode === "custom" ? <Field label="Comissão personalizada em MZN"><input type="number" min="0" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={form.commissionValue} onChange={(event) => updatePricedForm({ ...form, commissionValue: event.target.value })} /></Field> : <Field label="Comissão calculada"><input readOnly className="admin-input bg-slate-950/60 text-slate-300" value={pricing.route ? `${pricing.commissionPercent}% (${money(pricing.commissionMzn)})` : "Seleciona uma rota"} /></Field>}
             </div>
             <CatalogPriceSummary form={form} options={quoteOptions} />
           </div>
-        </section>
+        </section> : null}
 
         <section className="rounded-3xl border border-slate-700 bg-slate-900/70 p-4">
           <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-slate-100">Conteúdo</h3>
@@ -1305,7 +1394,7 @@ function CatalogProductModal({
             <CatalogStatusSwitch label="Marcar como novidade" checked={form.newProduct} onChange={(checked) => onChange({ ...form, newProduct: checked })} />
             <CatalogStatusSwitch label="Marcar como mais vendido" checked={form.bestSeller} onChange={(checked) => onChange({ ...form, bestSeller: checked })} />
             <CatalogStatusSwitch label="Recomendado pela ShopeeMz" checked={form.recommended} onChange={(checked) => onChange({ ...form, recommended: checked })} />
-            <CatalogStatusSwitch label="Produto em promoção" checked={Boolean(form.promotionId)} helper="Escolhe uma campanha ativa na secção principal." onChange={(checked) => onChange({ ...form, promotionId: checked ? form.promotionId : "" })} />
+            {form.pricingMode === "FIXED_PRICE" ? <CatalogStatusSwitch label="Produto em promoção" checked={Boolean(form.promotionId)} helper="Escolhe uma campanha ativa na secção principal." onChange={(checked) => onChange({ ...form, promotionId: checked ? form.promotionId : "" })} /> : null}
           </div>
         </section>
       </div>
@@ -1325,6 +1414,7 @@ function CatalogCategoryModal({
   onLogoDraftChange,
   onSubmit,
   onClose,
+  categories,
 }: {
   open: boolean;
   mode: "categories" | "brands";
@@ -1337,6 +1427,7 @@ function CatalogCategoryModal({
   onLogoDraftChange: (draft: CatalogAssetDraft | null) => void;
   onSubmit: () => void;
   onClose: () => void;
+  categories: CatalogTaxonomy[];
 }) {
   const isBrand = mode === "brands";
   const descriptionLimit = isBrand ? BRAND_DESCRIPTION_LIMIT : CATEGORY_DESCRIPTION_LIMIT;
@@ -1359,6 +1450,7 @@ function CatalogCategoryModal({
       <div className="space-y-4">
         {feedback ? <AdminBanner tone={feedback.tone} message={feedback.message} /> : null}
         <Field label="Nome" error={fieldErrors.name}><input id="catalog-taxonomy-name" className="admin-input bg-slate-950/60 text-slate-100" value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value, slug: form.slug || slugify(event.target.value) })} /></Field>
+        {!isBrand ? <Field label="Categoria principal" helper="Deixa sem seleção para criar uma categoria principal; seleciona uma categoria para criar uma subcategoria."><select className="admin-input bg-slate-950/60 text-slate-100" value={form.parentId} onChange={(event) => onChange({ ...form, parentId: event.target.value })}><option value="">Categoria principal</option>{categories.filter((item) => !item.parentId && item.id !== form.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field> : null}
         <Field label="Descrição" helper={`${descriptionLength.toLocaleString("pt-MZ")} / ${descriptionLimit.toLocaleString("pt-MZ")} caracteres`} error={descriptionError}>
           <textarea id="catalog-taxonomy-description" maxLength={descriptionLimit} className="admin-input min-h-28 resize-y bg-slate-950/60 text-slate-100" value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} />
         </Field>
@@ -1401,6 +1493,7 @@ function CatalogPromotionModal({
   onImageDraftChange,
   onSubmit,
   onClose,
+  products,
 }: {
   open: boolean;
   form: PromotionForm;
@@ -1411,6 +1504,7 @@ function CatalogPromotionModal({
   onImageDraftChange: (draft: CatalogAssetDraft | null) => void;
   onSubmit: () => void;
   onClose: () => void;
+  products: CatalogProduct[];
 }) {
   return (
     <CatalogModal
@@ -1439,6 +1533,7 @@ function CatalogPromotionModal({
               <option value="PERCENTAGE">Percentagem</option>
               <option value="FIXED_AMOUNT">Valor fixo</option>
               <option value="LABEL_ONLY">Apenas destaque visual</option>
+              <option value="BUNDLE_PICK">Escolha os teus perfumes</option>
             </select>
           </Field>
           {form.promotionType === "PERCENTAGE" ? (
@@ -1452,6 +1547,14 @@ function CatalogPromotionModal({
           ) : null}
           <Field label="Data de início"><input type="date" className="admin-input bg-slate-950/60 text-slate-100" value={form.startsAt} onChange={(event) => onChange({ ...form, startsAt: event.target.value })} /></Field>
           <Field label="Data de fim"><input type="date" className="admin-input bg-slate-950/60 text-slate-100" value={form.endsAt} onChange={(event) => onChange({ ...form, endsAt: event.target.value })} /></Field>
+          {form.promotionType === "BUNDLE_PICK" ? <>
+            <Field label="Quantidade exata"><input type="number" min="2" className="admin-input bg-slate-950/60 text-slate-100" value={form.choiceQuantity} onChange={(event) => onChange({ ...form, choiceQuantity: event.target.value })} /></Field>
+            <Field label="Preço total em MZN"><input type="number" min="0.01" step="0.01" className="admin-input bg-slate-950/60 text-slate-100" value={form.bundlePrice} onChange={(event) => onChange({ ...form, bundlePrice: event.target.value })} /></Field>
+            <Field label="Volume fixo"><select className="admin-input bg-slate-950/60 text-slate-100" value={form.fixedVolume} onChange={(event) => onChange({ ...form, fixedVolume: event.target.value, participants: [] })}>{["30 ml", "50 ml", "75 ml", "100 ml", "125 ml", "200 ml"].map((value) => <option key={value}>{value}</option>)}</select></Field>
+            <Field label="Limite por cliente"><input type="number" min="1" className="admin-input bg-slate-950/60 text-slate-100" value={form.maxPerCustomer} onChange={(event) => onChange({ ...form, maxPerCustomer: event.target.value })} /></Field>
+            <div className="md:col-span-2"><CatalogStatusSwitch label="Permitir repetir o mesmo perfume" checked={form.allowRepeats} onChange={(allowRepeats) => onChange({ ...form, allowRepeats })} /></div>
+            <div className="space-y-2 md:col-span-2"><p className="text-sm font-bold text-slate-200">Perfumes elegíveis de {form.fixedVolume}</p>{products.filter((product) => product.active && product.variants?.some((variant) => variant.key === "volume" && variant.options?.some((option) => option.value === form.fixedVolume && option.available !== false))).map((product) => { const checked = form.participants.some((item) => item.productId === product.id); const option = product.variants?.find((variant) => variant.key === "volume")?.options?.find((item) => item.value === form.fixedVolume); return <label key={product.id} className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-700 p-3"><input type="checkbox" checked={checked} onChange={(event) => onChange({ ...form, participants: event.target.checked ? [...form.participants, { productId: product.id, volume: form.fixedVolume }] : form.participants.filter((item) => item.productId !== product.id) })} />{option?.imageUrl ? <img src={option.imageUrl} className="h-12 w-12 rounded-lg object-cover" alt="" /> : null}<span className="text-sm text-slate-100">{product.name} · {form.fixedVolume} · {money(Number(option?.price || 0))}</span></label>; })}</div>
+          </> : null}
         </div>
         <CatalogAssetUploader
           label="Imagem ou banner da promoção"
@@ -1517,7 +1620,7 @@ function CatalogProductList({
                 {product.badges?.map((badge) => <span key={badge} className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-[#E8431A]">{badge}</span>)}
               </div>
               <p className="mt-1 text-sm text-slate-500">{product.category?.name || "Sem categoria"} · {product.brand?.name || "Sem marca"} · {product.estimatedDeadline || "Sem prazo"}</p>
-              <p className="mt-2 font-[family-name:var(--font-sora)] text-xl font-black text-slate-950">{money(product.finalPrice)}</p>
+              <p className="mt-2 font-[family-name:var(--font-sora)] text-xl font-black text-slate-950">{product.pricingMode === "QUOTE_REQUIRED" ? "Preço sob consulta" : money(Number(product.finalPrice || 0))}</p>
               <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{product.shortDescription || "Sem descrição curta."}</p>
             </div>
             <div className="flex flex-wrap content-start gap-2 lg:justify-end">
@@ -1551,7 +1654,14 @@ function CatalogTaxonomyList({
   onEdit: (item: CatalogTaxonomy) => void;
   onDelete: (item: CatalogTaxonomy) => void;
 }) {
-  const productCount = (id: number) => products.filter((product) => (mode === "categories" ? product.category?.id : product.brand?.id) === id).length;
+  const productCount = (id: number) => {
+    if (mode === "brands") return products.filter((product) => product.brand?.id === id).length;
+    const categoryIds = new Set([id, ...items.filter((item) => item.parentId === id).map((item) => item.id)]);
+    return products.filter((product) => product.category?.id && categoryIds.has(product.category.id)).length;
+  };
+  const orderedItems = mode === "categories"
+    ? items.filter((item) => !item.parentId).flatMap((parent) => [parent, ...items.filter((item) => item.parentId === parent.id)])
+    : items;
   return (
     <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
       <div className="admin-table-scroll">
@@ -1567,7 +1677,7 @@ function CatalogTaxonomyList({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.map((item) => (
+            {orderedItems.map((item) => (
               <tr key={item.id}>
                 {mode === "brands" ? (
                   <td className="px-4 py-4">
@@ -1579,8 +1689,8 @@ function CatalogTaxonomyList({
                   </td>
                 ) : null}
                 <td className="px-4 py-4">
-                  <p className="font-bold text-slate-950">{item.name}</p>
-                  <p className="text-sm text-slate-500">{item.slug}</p>
+                  <p className={`font-bold text-slate-950 ${item.parentId ? "pl-5" : ""}`}>{item.parentId ? "↳ " : ""}{item.name}</p>
+                  <p className={`text-sm text-slate-500 ${item.parentId ? "pl-5" : ""}`}>{item.parentName ? `${item.parentName} / ` : ""}{item.slug}</p>
                 </td>
                 <td className="px-4 py-4 text-sm font-bold text-slate-700">{productCount(item.id)}</td>
                 <td className="px-4 py-4"><StatusPill active={item.active} /></td>
@@ -1750,7 +1860,26 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
   }
 
   function editProduct(product: CatalogProduct, duplicate = false) {
-    setProductForm(productToForm(product, duplicate));
+    let form = productToForm(product, duplicate);
+    if (!form.routeId && quoteOptions?.routes?.length) {
+      const rate = Number(product.exchangeRateSnapshot || 0);
+      const matchingRoutes = quoteOptions.routes.filter((route) => route.currencyCode === product.currency);
+      const route = matchingRoutes.find((item) => item.estimatedDaysLabel && item.estimatedDaysLabel === product.estimatedDeadline)
+        || matchingRoutes.find((item) => Math.abs(Number(item.shippingFee || 0) * rate - Number(product.shippingCost || 0)) < 0.02)
+        || (matchingRoutes.length === 1 ? matchingRoutes[0] : undefined);
+      if (route) {
+        const autoForm = withCatalogPricing({ ...form, routeId: String(route.id), originId: String(route.origin.id), shippingMode: "auto", customsMode: "auto", commissionMode: "auto" }, quoteOptions);
+        form = {
+          ...form,
+          routeId: String(route.id),
+          originId: String(route.origin.id),
+          shippingMode: Math.abs(Number(autoForm.shippingCost || 0) - Number(product.shippingCost || 0)) < 0.02 ? "auto" : "custom",
+          customsMode: Math.abs(Number(autoForm.customsCost || 0) - Number(product.customsCost || 0)) < 0.02 ? "auto" : "custom",
+          commissionMode: Math.abs(Number(autoForm.commissionValue || 0) - Number(product.commissionValue || 0)) < 0.02 ? "auto" : "custom",
+        };
+      }
+    }
+    setProductForm(form);
     setSpecRows(specsToRows(product.specifications));
     setImageDrafts([]);
     setModalFeedback(null);
@@ -1759,9 +1888,12 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
 
   async function uploadProductImages(productId: number, drafts: ImageDraft[]) {
     if (!drafts.length) return;
-    const body = new FormData();
-    drafts.forEach((draft) => body.append("files", draft.file));
-    await adminApiFetch(`/api/admin/catalog/products/${productId}/images`, { method: "POST", body });
+    for (const draft of drafts) {
+      const body = new FormData();
+      body.append("files", draft.file);
+      await adminApiFetch(`/api/admin/catalog/products/${productId}/images`, { method: "POST", body });
+      setImageDrafts((current) => current.filter((item) => item.id !== draft.id));
+    }
   }
 
   async function uploadCatalogAsset(type: CatalogAssetType, draft: CatalogAssetDraft) {
@@ -1851,6 +1983,7 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
       description: taxonomyForm.description || null,
       logoUrl: mode === "brands" ? taxonomyForm.logoUrl || null : null,
       specificationTemplate: mode === "categories" ? taxonomyForm.specificationTemplate || null : null,
+      parentId: mode === "categories" && taxonomyForm.parentId ? Number(taxonomyForm.parentId) : null,
       active: taxonomyForm.active,
       displayOrder: Number(taxonomyForm.displayOrder || 0),
     };
@@ -1925,6 +2058,10 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
         return;
       }
     }
+    if (promotionForm.promotionType === "BUNDLE_PICK" && (Number(promotionForm.choiceQuantity) < 2 || Number(promotionForm.bundlePrice) <= 0 || !promotionForm.fixedVolume || promotionForm.participants.length === 0)) {
+      setModalFeedback({ tone: "error", message: "Define quantidade mínima de 2, preço total, volume fixo e pelo menos um perfume participante." });
+      return;
+    }
     if (promotionImageDraft?.status === "error") {
       setModalFeedback({ tone: "error", message: promotionImageDraft.error || "Seleciona uma imagem válida." });
       return;
@@ -1938,6 +2075,12 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
       promotionType: promotionForm.promotionType,
       discountPercent: promotionForm.promotionType === "PERCENTAGE" ? Number(promotionForm.discountPercent || 0) : null,
       discountValue: promotionForm.promotionType === "FIXED_AMOUNT" ? Number(promotionForm.discountValue || 0) : null,
+      choiceQuantity: promotionForm.promotionType === "BUNDLE_PICK" ? Number(promotionForm.choiceQuantity) : null,
+      bundlePrice: promotionForm.promotionType === "BUNDLE_PICK" ? Number(promotionForm.bundlePrice) : null,
+      fixedVolume: promotionForm.promotionType === "BUNDLE_PICK" ? promotionForm.fixedVolume : null,
+      allowRepeats: promotionForm.promotionType === "BUNDLE_PICK" && promotionForm.allowRepeats,
+      maxPerCustomer: promotionForm.promotionType === "BUNDLE_PICK" && promotionForm.maxPerCustomer ? Number(promotionForm.maxPerCustomer) : null,
+      participants: promotionForm.promotionType === "BUNDLE_PICK" ? promotionForm.participants : [],
       startsAt: promotionForm.startsAt || null,
       endsAt: promotionForm.endsAt || null,
       imageUrl: promotionForm.imageUrl || null,
@@ -2031,7 +2174,7 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
             items={filteredTaxonomyItems}
             products={products}
             onEdit={(item) => {
-              setTaxonomyForm({ id: item.id, name: item.name, slug: item.slug, description: item.description || "", active: item.active, displayOrder: String(item.displayOrder || 0), logoUrl: item.logoUrl || "", specificationTemplate: item.specificationTemplate || "" });
+              setTaxonomyForm({ id: item.id, name: item.name, slug: item.slug, description: item.description || "", active: item.active, displayOrder: String(item.displayOrder || 0), logoUrl: item.logoUrl || "", specificationTemplate: item.specificationTemplate || "", parentId: item.parentId ? String(item.parentId) : "" });
               setBrandLogoDraft(null);
               setModalFeedback(null);
               setTaxonomyFieldErrors({});
@@ -2057,6 +2200,12 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
                 active: item.active,
                 imageUrl: item.imageUrl || "",
                 showAsHighlight: Boolean(item.showAsHighlight),
+                choiceQuantity: String(item.choiceQuantity || 2),
+                bundlePrice: String(item.bundlePrice || ""),
+                fixedVolume: item.fixedVolume || "30 ml",
+                allowRepeats: Boolean(item.allowRepeats),
+                maxPerCustomer: String(item.maxPerCustomer || ""),
+                participants: item.participants || [],
               });
               setPromotionImageDraft(null);
               setModalFeedback(null);
@@ -2101,6 +2250,7 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
         onClose={() => {
           if (!saving) setTaxonomyModalOpen(false);
         }}
+        categories={categories}
       />
 
       <CatalogPromotionModal
@@ -2115,6 +2265,7 @@ export function CatalogAdminView({ mode }: { mode: Mode }) {
         onClose={() => {
           if (!saving) setPromotionModalOpen(false);
         }}
+        products={products}
       />
     </div>
   );

@@ -4,6 +4,9 @@ export type CatalogTaxonomy = {
   slug: string;
   description?: string | null;
   logoUrl?: string | null;
+  parentId?: number | null;
+  parentName?: string | null;
+  parentSlug?: string | null;
   specificationTemplate?: string | null;
   active: boolean;
   displayOrder?: number | null;
@@ -14,9 +17,16 @@ export type CatalogProductVariantDefinition = {
   label: string;
   required: boolean;
   values: string[];
+  options?: Array<{
+    value: string;
+    price?: number | null;
+    imageUrl?: string | null;
+    available?: boolean | null;
+    stock?: number | null;
+  }>;
 };
 
-export type CatalogPromotionType = "PERCENTAGE" | "FIXED_AMOUNT" | "LABEL_ONLY";
+export type CatalogPromotionType = "PERCENTAGE" | "FIXED_AMOUNT" | "LABEL_ONLY" | "BUNDLE_PICK";
 
 export type CatalogPromotion = {
   id: number;
@@ -26,6 +36,12 @@ export type CatalogPromotion = {
   promotionType?: CatalogPromotionType | null;
   discountPercent?: number | null;
   discountValue?: number | null;
+  choiceQuantity?: number | null;
+  bundlePrice?: number | null;
+  fixedVolume?: string | null;
+  allowRepeats?: boolean;
+  maxPerCustomer?: number | null;
+  participants?: Array<{ productId: number; volume: string }>;
   startsAt?: string | null;
   endsAt?: string | null;
   imageUrl?: string | null;
@@ -57,10 +73,17 @@ export type CatalogProduct = {
   currency?: string | null;
   supplierPrice?: number | null;
   exchangeRateSnapshot?: number | null;
+  routeId?: number | null;
+  shippingMode?: "auto" | "custom" | null;
+  customsMode?: "auto" | "custom" | null;
+  commissionMode?: "auto" | "custom" | null;
   shippingCost?: number | null;
   customsCost?: number | null;
   commissionValue?: number | null;
-  finalPrice: number;
+  finalPrice?: number | null;
+  pricingMode?: "FIXED_PRICE" | "QUOTE_REQUIRED" | null;
+  quoteMessage?: string | null;
+  quoteResponseDeadline?: string | null;
   weight?: number | null;
   estimatedDeadline?: string | null;
   active: boolean;
