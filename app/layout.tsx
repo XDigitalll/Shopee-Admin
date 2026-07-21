@@ -14,7 +14,7 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "ShopeeX Admin",
+  title: "ShopeeMz Admin",
   description: "Painel administrativo da Shopee X Digital",
   icons: {
     icon: "/favicon.ico",

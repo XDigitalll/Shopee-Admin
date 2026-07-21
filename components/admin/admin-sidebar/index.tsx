@@ -470,7 +470,7 @@ export function AdminSidebar({
             SX
           </div>
           {!collapsed ? <div className="min-w-0">
-            <p className="font-[family-name:var(--font-sora)] text-base font-semibold">ShopeeX Admin</p>
+            <p className="font-[family-name:var(--font-sora)] text-base font-semibold">ShopeeMz Admin</p>
             <span className="mt-2 inline-flex rounded-full bg-[#E8431A] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
               {humanizeRole(effectiveRole)}
             </span>

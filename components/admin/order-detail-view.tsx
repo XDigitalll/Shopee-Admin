@@ -88,6 +88,7 @@ const STATUS_THEME: Record<string, string> = {
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
   OUT_FOR_DELIVERY: "bg-[#FDE68A] text-[#854D0E]",
+  AWAITING_DELIVERY_PAYMENT: "bg-[#FFF2D6] text-[#8A5A00]",
   DELIVERED: "bg-[#EAF3DE] text-[#27500A]",
   CANCELLED: "bg-[#FCEBEB] text-[#791F1F]",
   FAILED: "bg-[#FCEBEB] text-[#791F1F]",
