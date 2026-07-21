@@ -61,7 +61,7 @@ export function humanizeOrderStatus(status: string | null | undefined) {
     PAYMENT_SUBMITTED: "Pagamento submetido",
     PAYMENT_UNDER_REVIEW: "Pagamento em analise",
     PAYMENT_REJECTED: "Pagamento rejeitado",
-    PAYMENT_ON_DELIVERY_PENDING: "Pagamento na entrega",
+    PAYMENT_ON_DELIVERY_PENDING: "Pagamento na entrega pendente",
     READY_FOR_FULFILLMENT: "Preparar produto",
     PICKING: "Em separacao",
     PREPARING: "Em preparacao",
@@ -69,6 +69,7 @@ export function humanizeOrderStatus(status: string | null | undefined) {
     TO_PURCHASE: "Comprar no fornecedor",
     PURCHASED: "Comprado",
     DELIVERY_FAILED: "Problema na entrega",
+    AWAITING_DELIVERY_PAYMENT: "Aguardando pagamento na entrega",
     CREATED: "Criado",
     RECEIVED: "Recebido",
     PRICING: "Em analise",
@@ -79,7 +80,7 @@ export function humanizeOrderStatus(status: string | null | undefined) {
     AT_HQ: "Na nossa sede",
     ON_THE_WAY: "A caminho",
     CANCELLED: "Cancelado",
-    FAILED: "Pagamento recusado",
+    FAILED: "Não foi possível concluir",
   };
 
   return status ? labels[status] ?? status : "Sem estado";

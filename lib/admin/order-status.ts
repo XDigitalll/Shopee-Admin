@@ -7,6 +7,7 @@ export const RAW_ADMIN_ORDER_STATUSES = [
   "PAYMENT_SUBMITTED",
   "PAYMENT_UNDER_REVIEW",
   "PAYMENT_REJECTED",
+  "PAYMENT_ON_DELIVERY_PENDING",
   "PAID",
   "READY_FOR_FULFILLMENT",
   "PICKING",
@@ -18,6 +19,7 @@ export const RAW_ADMIN_ORDER_STATUSES = [
   "IN_TRANSIT",
   "ARRIVED",
   "OUT_FOR_DELIVERY",
+  "AWAITING_DELIVERY_PAYMENT",
   "DELIVERY_FAILED",
   "DELIVERED",
   "CANCELLED",
@@ -88,6 +90,7 @@ export function resolveOrderQueueStatus(status: string | null | undefined): Excl
     case "PAYMENT_SUBMITTED":
     case "PAYMENT_UNDER_REVIEW":
     case "PAYMENT_REJECTED":
+    case "PAYMENT_ON_DELIVERY_PENDING":
       return "PAYMENT";
     case "PAID":
     case "READY_FOR_FULFILLMENT":
@@ -101,6 +104,7 @@ export function resolveOrderQueueStatus(status: string | null | undefined): Excl
       return "EXECUTION";
     case "READY_FOR_DELIVERY":
     case "OUT_FOR_DELIVERY":
+    case "AWAITING_DELIVERY_PAYMENT":
     case "DELIVERY_FAILED":
       return "DELIVERY";
     case "DELIVERED":
@@ -126,6 +130,8 @@ export function resolveCustomerOrderStage(status: string | null | undefined): Cu
     case "PAYMENT_UNDER_REVIEW":
     case "PAYMENT_REJECTED":
       return "AWAITING_PAYMENT";
+    case "PAYMENT_ON_DELIVERY_PENDING":
+      return "AWAITING_PAYMENT";
     case "PAID":
     case "READY_FOR_FULFILLMENT":
     case "PICKING":
@@ -142,6 +148,7 @@ export function resolveCustomerOrderStage(status: string | null | undefined): Cu
       return "AT_HQ";
     case "OUT_FOR_DELIVERY":
     case "DELIVERY_FAILED":
+    case "AWAITING_DELIVERY_PAYMENT":
       return "ON_THE_WAY";
     case "DELIVERED":
       return "DELIVERED";

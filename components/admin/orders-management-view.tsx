@@ -63,6 +63,7 @@ const STATUS_THEME: Record<string, string> = {
   PAYMENT_SUBMITTED: "bg-[#E8F1FE] text-[#1D4ED8]",
   PAYMENT_UNDER_REVIEW: "bg-[#EEEDFE] text-[#3C3489]",
   PAYMENT_REJECTED: "bg-[#FCEBEB] text-[#B42318]",
+  PAYMENT_ON_DELIVERY_PENDING: "bg-[#FFF2D6] text-[#8A5A00]",
   PAID: "bg-[#EAF3DE] text-[#173404]",
   READY_FOR_FULFILLMENT: "bg-[#FFF2D6] text-[#8A5A00]",
   PICKING: "bg-[#E6F7EE] text-[#0E5B3A]",
@@ -74,9 +75,11 @@ const STATUS_THEME: Record<string, string> = {
   IN_TRANSIT: "bg-[#DBEAFE] text-[#1E3A5F]",
   ARRIVED: "bg-[#E0F2FE] text-[#0C4A6E]",
   OUT_FOR_DELIVERY: "bg-[#FDE68A] text-[#854D0E]",
+  AWAITING_DELIVERY_PAYMENT: "bg-[#FFF2D6] text-[#8A5A00]",
   DELIVERY_FAILED: "bg-[#FCEBEB] text-[#B42318]",
   DELIVERED: "bg-[#EAF3DE] text-[#27500A]",
   CANCELLED: "bg-[#FCEBEB] text-[#791F1F]",
+  FAILED: "bg-[#FCEBEB] text-[#B42318]",
 };
 
 const DELIVERY_NEXT_ACTION: Record<
